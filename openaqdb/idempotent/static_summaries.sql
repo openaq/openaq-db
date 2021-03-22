@@ -8,9 +8,6 @@
 -- recalculated periodically.
 BEGIN;
 
-create table if not exists analyses_summary as SELECT sensors_id, min(datetime) as first_datetime, max(datetime) as last_datetime, last(value,datetime)as last_value, count(*) as value_count, sum(value) as value_sum, min(lon) as minx, min(lat) as miny, max(lon) as maxx, max(lat) as maxy, st_makepoint(last(lon, datetime), last(lat, datetime))::geography as last_point from analyses group by sensors_id;
-
-BEGIN;
 TRUNCATE analyses_summary;
 INSERT INTO analyses_summary
 SELECT sensors_id, min(datetime) as first_datetime, max(datetime) as last_datetime, last(value,datetime)as last_value, count(*) as value_count, sum(value) as value_sum, min(lon) as minx, min(lat) as miny, max(lon) as maxx, max(lat) as maxy, st_makepoint(last(lon, datetime), last(lat, datetime))::geography as last_point from analyses group by sensors_id;
