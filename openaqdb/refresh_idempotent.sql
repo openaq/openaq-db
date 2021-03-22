@@ -1,4 +1,5 @@
 BEGIN;
+\i idempotent/static_summaries.sql
 \i idempotent/systeminfo.sql
 \i idempotent/util_functions.sql
 \i idempotent/views.sql

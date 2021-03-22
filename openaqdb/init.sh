@@ -1,5 +1,4 @@
 #!/bin/bash
-source .env
 createdb openaq
 export PGDATABASE=openaq
 psql <<"EOSQL"
