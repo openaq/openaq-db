@@ -521,8 +521,8 @@ BEGIN
     SELECT (config->>'start')::timestamptz INTO STRICT _st;
     SELECT (config->>'end')::timestamptz INTO STRICT _et;
 
-    _st:=coalesce(_st, now() - '1 days'::interval);
-    _et:=coalesce(_et, now());
+    _st:=date_trunc('day',coalesce(_st, now() - '1 days'::interval));
+    _et:=date_trunc('day',coalesce(_et, now()));
 
     RAISE NOTICE 'updating timezones';
     update sensor_nodes
