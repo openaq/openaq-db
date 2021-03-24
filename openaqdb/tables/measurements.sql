@@ -23,3 +23,7 @@ SELECT create_hypertable('measurements', 'datetime', chunk_time_interval=>'1 mon
 --ALTER TABLE measurements set (timescaledb.compress, timescaledb.compress_segmentby = 'sensors_id');
 
 --SELECT add_compression_policy('measurements', '3 month'::interval);
+
+CREATE TABLE analyses (LIKE measurements);
+CREATE INDEX analyses_datetime_idx on analyses USING BTREE(datetime);
+CREATE INDEX analyses_sensors_id_idx on analyses USING BTREE(sensors_id);
