@@ -29,6 +29,7 @@ BEGIN;
 \i tables/rollups.sql
 \i tables/readmes.sql
 \i tables/rejects.sql
+\i tables/versions.sql
 COMMIT;
 
 BEGIN;

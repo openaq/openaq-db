@@ -1,8 +1,28 @@
 
 BEGIN;
 
+--------------------------------------------------------
+-- To revert back to using the groups_id we just need --
+-- to uncomment out the groups views and then         --
+-- uncomment out the lines in the sensor_stats view   --
+-- which is around line 212
+--------------------------------------------------------
 
-create table if not exists analyses_summary as SELECT sensors_id, min(datetime) as first_datetime, max(datetime) as last_datetime, last(value,datetime)as last_value, count(*) as value_count, sum(value) as value_sum, min(lon) as minx, min(lat) as miny, max(lon) as maxx, max(lat) as maxy, st_makepoint(last(lon, datetime), last(lat, datetime))::geography as last_point from analyses group by sensors_id;
+CREATE TABLE IF NOT EXISTS analyses_summary as
+SELECT sensors_id
+, min(datetime) as first_datetime
+, max(datetime) as last_datetime
+, last(value,datetime)as last_value
+, count(*) as value_count
+, sum(value) as value_sum
+, min(lon) as minx
+, min(lat) as miny
+, max(lon) as maxx
+, max(lat) as maxy
+, st_makepoint(last(lon, datetime)
+, last(lat, datetime))::geography as last_point
+FROM analyses
+GROUP BY sensors_id;
 
 DROP MATERIALIZED VIEW IF EXISTS sensors_first_last;
 CREATE MATERIALIZED VIEW sensors_first_last AS
@@ -59,7 +79,6 @@ FROM
     LEFT JOIN
     sensor_nodes_sources_view USING (sensor_nodes_id)
 ;
-
 
 
 DROP MATERIALIZED VIEW IF EXISTS groups_view_pre CASCADE;
@@ -148,9 +167,8 @@ SELECT
     array_agg(DISTINCT sensor_nodes_id) as sensor_nodes_arr,
     array_agg(DISTINCT country) FILTER (WHERE country is not null) as countries,
     count(distinct sensor_nodes_id) as locations
-FROM
-groups_view_pre LEFT JOIN
-groups_sources_classify USING (groups_id)
+FROM groups_view_pre
+LEFT JOIN groups_sources_classify USING (groups_id)
 GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12
 ;
 
@@ -159,9 +177,8 @@ ANALYZE groups_view;
 
 DROP MATERIALIZED VIEW IF EXISTS sensor_stats;
 CREATE MATERIALIZED VIEW sensor_stats AS
-WITH
-    analyses AS
-    (SELECT
+WITH analyses AS (
+     SELECT
         sensors_id,
         value_count,
         value_sum,
@@ -173,10 +190,9 @@ WITH
         miny,
         maxx,
         maxy
-    FROM analyses_summary
-    ),
-    sensorsdata as (
-    SELECT
+      FROM analyses_summary
+    ), sensorsdata as (
+      SELECT
         sensors_id,
         value_count,
         value_sum,
@@ -188,17 +204,15 @@ WITH
         miny,
         maxx,
         maxy
-    FROM
-        rollups
-    LEFT JOIN groups_view USING (groups_id, measurands_id)
-    WHERE
-        rollup='total' and groups_view.type='node'
-    ),
-    out as (
-        SELECT * FROM analyses
-        UNION ALL
-        SELECT * FROM sensorsdata
-        WHERE sensors_id NOT IN (SELECT sensors_id FROM analyses)
+      FROM rollups
+      JOIN groups_view USING (groups_id, measurands_id)
+      WHERE rollup='total'
+      AND groups_view.type='node'
+    ), out as (
+      SELECT * FROM analyses
+      UNION ALL
+      SELECT * FROM sensorsdata
+      WHERE sensors_id NOT IN (SELECT sensors_id FROM analyses)
     )
     SELECT
         out.*,
@@ -307,6 +321,76 @@ CREATE INDEX ON sensor_nodes_json USING GIST (geog);
 CREATE INDEX ON sensor_nodes_json USING GIN (json);
 
 
+-- Stale sensor ids
+-- latest version, regardless of life cycle,
+-- ties are broken with sort order
+-- meant to be used as:
+-- sensors_id NOT IN (
+DROP VIEW IF EXISTS version_ranks CASCADE;
+CREATE OR REPLACE VIEW version_ranks AS
+SELECT v.parent_sensors_id
+, v.sensors_id
+, lc.life_cycles_id
+, v.version_date
+, lc.sort_order
+, lc.label
+, row_number() OVER (
+  PARTITION BY parent_sensors_id
+  ORDER BY v.version_date DESC, lc.sort_order DESC
+) as version_rank
+FROM versions v
+JOIN life_cycles lc USING (life_cycles_id);
+
+-- create a version of the sensor stats view that will not use the groups pattern
+-- the purpose of this query is to be able to update other queries that use the
+-- sensor_stats table without making too many changes that might be difficult to
+-- undo if we change the way that we are doing the versions
+DROP VIEW IF EXISTS sensor_stats_versioning CASCADE;
+CREATE VIEW sensor_stats_versioning AS
+-- start by rolling up the measurements
+WITH m AS (
+SELECT sensors_id
+, COUNT(1) as value_count
+, SUM(value) as value_sum
+, MIN(datetime) as first_datetime
+, MAX(datetime) as last_datetime
+, last(value, datetime) as last_value
+, last(lon, datetime) as lastx
+, last(lat, datetime) as lasty
+, MIN(lon) as minx
+, MAX(lon) as maxx
+, MIN(lat) as miny
+, MAX(lat) as maxy
+FROM measurements
+GROUP BY sensors_id)
+-- and then add the attribution and versioning information
+SELECT m.sensors_id
+, m.value_count
+, m.value_sum
+, m.first_datetime
+, m.last_datetime
+, m.last_value
+, COALESCE(m.minx, st_x(sn.geom)) as minx
+, COALESCE(m.maxx, st_x(sn.geom)) as maxx
+, COALESCE(m.miny, st_y(sn.geom)) as miny
+, COALESCE(m.maxy, st_y(sn.geom)) as maxy
+, st_setsrid(st_point(COALESCE(m.maxx, st_x(sn.geom)), COALESCE(m.maxy, st_y(sn.geom))), 4326)::geography as last_point
+, v.parent_sensors_id IS NOT NULL as is_versioned
+, v.parent_sensors_id
+, (v.version_rank IS NULL OR v.version_rank = 1) as is_latest
+, v.version_date
+, v.life_cycles_id
+, v.label as life_cycles_label
+, sn.sensor_nodes_id
+, s.measurands_id
+, sn.city
+, sn.country
+FROM m
+JOIN sensors s ON (s.sensors_id = m.sensors_id)
+JOIN sensor_systems ss ON (s.sensor_systems_id = ss.sensor_systems_id)
+JOIN sensor_nodes sn ON (ss.sensor_nodes_id = sn.sensor_nodes_id)
+LEFT JOIN version_ranks v ON (v.sensors_id = s.sensors_id);
+
 
 
 DROP materialized view if exists measurements_fastapi_base;
@@ -325,6 +409,13 @@ SELECT
     country,
     city,
     ismobile,
+    v.parent_sensors_id IS NOT NULL as is_versioned,
+    v.parent_sensors_id,
+    -- All non versioned sensors should be considered the latest
+    (v.version_rank IS NULL OR v.version_rank = 1) as is_latest,
+    v.version_date,
+    v.life_cycles_id,
+    v.label as life_cycles_label,
     (sensor_nodes.metadata->>'is_analysis')::boolean as is_analysis,
     source_name as "sourceName",
     sensor_nodes.metadata->'attribution' as attribution,
@@ -334,6 +425,7 @@ FROM
     LEFT JOIN sensor_systems USING (sensor_nodes_id)
     LEFT JOIN sensors USING (sensor_systems_id)
     LEFT JOIN measurands USING (measurands_id)
+    LEFT JOIN version_ranks v using (sensors_id)
 ;
 CREATE UNIQUE INDEX ON measurements_fastapi_base (sensors_id);
 CREATE INDEX ON measurements_fastapi_base  (sensor_nodes_id);
@@ -343,9 +435,10 @@ CREATE INDEX ON measurements_fastapi_base  (country);
 CREATE INDEX ON measurements_fastapi_base  (city);
 CREATE INDEX ON measurements_fastapi_base USING GIST (geog);
 
-
-
-
+-- 2021-11-30
+-- Has been updated to use handle versions
+-- to remove the versions method just change the sensor_stats table
+-- and then remove the extra fields from the parameters section of the query
 DROP MATERIALIZED VIEW IF EXISTS locations_base_v2;
 CREATE MATERIALIZED VIEW locations_base_v2 AS
 WITH base AS (
@@ -374,13 +467,21 @@ WITH base AS (
                 maxx,
                 maxy,
                 (sensor_nodes.metadata->>'is_analysis')::bool as "isAnalysis"
+                , ss.is_versioned
+                , ss.parent_sensors_id
+                , ss.is_latest
+                , ss.version_date
+                , ss.life_cycles_id
+                , ss.life_cycles_label
             FROM
             sensor_nodes
             JOIN sensor_nodes_json USING (sensor_nodes_id)
             JOIN sensor_systems USING(sensor_nodes_id)
             JOIN sensors USING (sensor_systems_id)
-            JOIN sensor_stats using (sensors_id)
+            -- JOIN sensor_stats using (sensors_id)
+            JOIN sensor_stats_versioning ss using (sensors_id)
             JOIN measurands on (measurands.measurands_id = sensors.measurands_id)
+            LEFT JOIN version_ranks v using (sensors_id)
         ),
         overall AS (
         SELECT
@@ -406,7 +507,7 @@ WITH base AS (
             coalesce((last(last_point, last_datetime)), geom::geography) as geog,
             CASE WHEN ismobile THEN to_jsonb(ARRAY[min(minx), min(miny), max(maxx), max(maxy)]) ELSE NULL::jsonb END as bounds
         FROM base
-        group by id, name,city,country,json,geom,sources,"sensorType","isMobile","isAnalysis"
+        GROUP BY id, name,city,country,json,geom,sources,"sensorType","isMobile","isAnalysis"
         ),
         byparameter AS (
             SELECT
@@ -419,16 +520,20 @@ WITH base AS (
                 value_sum / value_count as average,
                 first_datetime as "firstUpdated",
                 last_datetime as "lastUpdated",
-                last_value as "lastValue",
-                jsonb_agg(DISTINCT mfr) FILTER (WHERE mfr is not Null) as manufacturers
+                last_value as "lastValue"
+                , is_latest as "isLatest"
+                , is_versioned as "isVersioned"
+                , version_date as "versionDate"
+                , life_cycles_label as "lifeCycle"
+                , parent_sensors_id as "parentSensorsId"
+                , jsonb_agg(DISTINCT mfr) FILTER (WHERE mfr is not Null) as manufacturers
             FROM
             base
-            GROUP BY 1,2,3,4,5,6,7,8,9,10
+            GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
         )
         SELECT
             overall.*,
             jsonb_agg((to_jsonb(byparameter) || parameter("parameterId"))-'{sensor_nodes_id}'::text[]) as parameters
-
         FROM overall
         LEFT JOIN byparameter ON (overall.id=sensor_nodes_id)
         GROUP BY
