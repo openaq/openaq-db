@@ -341,6 +341,14 @@ SELECT v.parent_sensors_id
 FROM versions v
 JOIN life_cycles lc USING (life_cycles_id);
 
+CREATE OR REPLACE VIEW stale_versions AS
+SELECT sensors_id
+FROM version_ranks
+WHERE version_rank > 1
+UNION ALL
+SELECT parent_sensors_id
+FROM versions;
+
 -- create a version of the sensor stats view that will not use the groups pattern
 -- the purpose of this query is to be able to update other queries that use the
 -- sensor_stats table without making too many changes that might be difficult to

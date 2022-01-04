@@ -1,15 +1,18 @@
 FROM postgres:13 as pg
 
-LABEL maintainer="David Bitner"
+LABEL maintainer="OpenAQ"
 
 ENV POSTGIS_MAJOR 3
+
+# defaults that may be overwritten by env
 ENV PGUSER postgres
 ENV PGDATABASE postgres
 ENV PGHOST localhost
 ENV POSTGRES_USER postgres
 ENV POSTGRES_DB postgres
+ENV POSTGRES_PASSWORD postgres
 
-COPY --chown=postgres:postgres setup/ /setup/
+COPY --chown=postgres:postgres openaqdb/ /setup/
 
 RUN \
     apt-get update \
@@ -37,7 +40,9 @@ RUN \
     && rm -rf /var/lib/apt/lists/*
 
 EXPOSE 5432
+
 RUN mkdir -p /docker-entrypoint-initdb.d \
+    && ls -lht \
     && echo "#!/bin/bash" >/docker-entrypoint-initdb.d/001_initdb.sh \
     && echo "timescaledb-tune --quiet --yes" >>/docker-entrypoint-initdb.d/001_initdb.sh \
     && echo "/setup/init.sh" >>/docker-entrypoint-initdb.d/001_initdb.sh

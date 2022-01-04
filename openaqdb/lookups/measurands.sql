@@ -53,3 +53,88 @@ COPY public.measurands (measurands_id, measurand, units, display, description, i
 
 -- need to fix the sequence now
 SELECT setval(pg_get_serial_sequence('measurands', 'measurands_id'), (SELECT max(measurands_id) FROM measurands));
+
+
+-- now lets add some new ones and
+
+INSERT INTO measurands (measurand, units, display, description, is_core) VALUES
+( 'wind_speed'
+, 'm/s'
+, 'ws'
+, 'Average wind speed in meters per second'
+, true)
+, ( 'pressure'
+, 'hpa'
+, 'atm'
+, 'Atmospheric or barometric pressure'
+, true)
+, ( 'wind_direction'
+, 'deg'
+, 'wd'
+, 'Direction that the wind originates from'
+, true)
+, ( 'so4'
+, 'ppb'
+, 'SO4'
+, 'Sulfate'
+, true)
+, ( 'ec'
+, 'ppb'
+, 'EC'
+, 'Elemental Carbon'
+, true)
+, ( 'oc'
+, 'ppb'
+, 'OC'
+, 'Organic Carbon'
+, true)
+, ( 'cl'
+, 'ppb'
+, 'Cl'
+, 'Chloride'
+, true)
+, ( 'k'
+, 'ppb'
+, 'K'
+, 'Potassium'
+, true)
+, ( 'no3'
+, 'ppb'
+, 'NO3'
+, 'Nitrite'
+, true)
+, ( 'pb'
+, 'ppb'
+, 'Pb'
+, 'Lead'
+, true)
+, ( 'as'
+, 'ppb'
+, 'As'
+, 'Arsenic'
+, true)
+, ( 'ca'
+, 'ppb'
+, 'Ca'
+, 'Calcium'
+, true)
+, ( 'fe'
+, 'ppb'
+, 'Fe'
+, 'Iron'
+, true)
+, ( 'ni'
+, 'ppb'
+, 'Ni'
+, 'Nickle'
+, true)
+, ( 'v'
+, 'ppb'
+, 'V'
+, 'Vanadium'
+, true)
+ON CONFLICT (measurand, units) DO UPDATE
+SET description = EXCLUDED.description
+, is_core = EXCLUDED.is_core
+, display = EXCLUDED.display
+;
