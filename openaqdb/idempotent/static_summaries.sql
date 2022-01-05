@@ -57,9 +57,7 @@ SELECT
 FROM
     mobile_generalized
 GROUP BY 1;
-CREATE INDEX ON mobile_gen_boxes (sensor_nodes_id);
+CREATE UNIQUE INDEX ON mobile_gen_boxes (sensor_nodes_id);
 CREATE INDEX ON mobile_gen_boxes USING GIST (box, sensor_nodes_id);
-
-\i views.sql
 
 COMMIT;

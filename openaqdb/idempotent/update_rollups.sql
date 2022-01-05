@@ -114,7 +114,9 @@ CREATE OR REPLACE FUNCTION update_groups() RETURNS VOID AS $$
 
     -- Each sensor_node
     INSERT INTO groups (type, name, subtitle)
-    SELECT 'node', sensor_nodes_id::text, site_name
+    SELECT 'node'
+    , sensor_nodes_id::text
+    , site_name
     FROM sensor_nodes
     ON CONFLICT (type, name) DO
     UPDATE
@@ -158,14 +160,15 @@ CREATE OR REPLACE FUNCTION update_groups() RETURNS VOID AS $$
 
     -- each aqdc organization
     INSERT INTO groups(type, name, subtitle)
-    SELECT DISTINCT 'organization', slugify(sources.metadata->>'organization'), sources.metadata->>'organization'
+    SELECT DISTINCT 'organization'
+    , slugify(sources.metadata->>'organization')
+    , sources.metadata->>'organization'
     FROM sources
     JOIN sensor_nodes_sources USING (sources_id)
     JOIN sensor_nodes USING (sensor_nodes_id)
     WHERE origin='AQDC' and sources.metadata ? 'organization'
     ON CONFLICT DO NOTHING
     ;
-
 
     --add country sensors
     INSERT INTO groups_sensors (groups_id, sensors_id)
@@ -229,7 +232,6 @@ CREATE OR REPLACE FUNCTION update_groups() RETURNS VOID AS $$
 $$ LANGUAGE SQL;
 
 
-
 CREATE OR REPLACE FUNCTION rollups_daily(
     _start timestamptz = now()
 )
@@ -242,15 +244,15 @@ _st timestamptz := date_trunc('day', _start);
 _et timestamptz := date_trunc('day', _start) + '1 day'::interval - '1 second'::interval;
 BEGIN
 RAISE NOTICE 'Updating daily Rollups  %  --- %', _start, clock_timestamp();
-RAISE NOTICE '% %', _st, _et;
-RAISE NOTICE 'Deleting %', clock_timestamp();
+--RAISE NOTICE '% %', _st, _et;
+--RAISE NOTICE 'Deleting %', clock_timestamp();
     DELETE FROM rollups
     WHERE
         rollup='day'
         AND
         st=_st
     ;
-RAISE NOTICE 'Creating temp table by sensor %', clock_timestamp();
+--RAISE NOTICE 'Creating temp table by sensor %', clock_timestamp();
 CREATE TEMP TABLE dailyrolluptemp_by_sensor AS
 SELECT
         sensors_id,
@@ -270,11 +272,13 @@ SELECT
     FROM measurements
     JOIN groups_sensors USING (sensors_id)
     JOIN sensors USING (sensors_id)
-    WHERE
-        datetime >= _st and datetime <= _et
+    WHERE datetime >= _st
+    AND datetime <= _et
     GROUP BY 1,2,3,4
         ;
-RAISE NOTICE 'Creating temp table by group %', clock_timestamp();
+
+--RAISE NOTICE 'Created temp table by sensor from % to % - %: %', _st, _et, clock_timestamp(), (SELECT COUNT(1) FROM dailyrolluptemp_by_sensor);
+--RAISE NOTICE 'Creating temp table by group %', clock_timestamp();
 
     CREATE TEMP TABLE dailyrolluptemp AS
     SELECT
@@ -301,7 +305,7 @@ RAISE NOTICE 'Creating temp table by group %', clock_timestamp();
         ;
 
 
-    RAISE NOTICE 'inserting %', clock_timestamp();
+    RAISE NOTICE 'inserting % records - %', (SELECT COUNT(1) FROM dailyrolluptemp), clock_timestamp();
 
     INSERT INTO rollups (
         groups_id,
@@ -328,6 +332,17 @@ RAISE NOTICE 'Creating temp table by group %', clock_timestamp();
 END;
 $$;
 
+-- Added just to make it easier to rebuild the daily rollups during dev
+DROP FUNCTION IF EXISTS rollups_daily_full();
+CREATE OR REPLACE FUNCTION rollups_daily_full() RETURNS VOID AS $$
+WITH days AS (
+  SELECT date_trunc('day', datetime - '1sec'::interval) as day
+  FROM measurements
+  GROUP BY date_trunc('day', datetime - '1sec'::interval)
+)
+SELECT rollups_daily(day)
+FROM days;
+$$ LANGUAGE SQL;
 
 
 CREATE OR REPLACE FUNCTION rollups_monthly(
@@ -521,8 +536,8 @@ BEGIN
     SELECT (config->>'start')::timestamptz INTO STRICT _st;
     SELECT (config->>'end')::timestamptz INTO STRICT _et;
 
-    _st:=coalesce(_st, now() - '1 days'::interval);
-    _et:=coalesce(_et, now());
+    _st:=date_trunc('day',coalesce(_st, now() - '1 days'::interval));
+    _et:=date_trunc('day',coalesce(_et, now()));
 
     RAISE NOTICE 'updating timezones';
     update sensor_nodes
@@ -534,12 +549,11 @@ BEGIN
     where not metadata ? 'timezone' and geom is null and ismobile;
 
     RAISE NOTICE 'updating countries';
-    update sensor_nodes set country = country(geom) where country is null and geom is not null;
+    update sensor_nodes set country = country(geom)
+    where country is null and geom is not null;
     update sensor_nodes set country = country(sn_lastpoint(sensor_nodes_id))
     where country is null and geom is null and ismobile;
     COMMIT;
-
-
 
     RAISE NOTICE 'Updating sources Tables';
     PERFORM update_sources();
@@ -590,6 +604,14 @@ BEGIN
     REFRESH MATERIALIZED VIEW sensor_stats;
     COMMIT;
 
+    RAISE NOTICE 'REFRESHING city_stats';
+    REFRESH MATERIALIZED VIEW city_stats;
+    COMMIT;
+
+    RAISE NOTICE 'REFRESHING country_stats';
+    REFRESH MATERIALIZED VIEW country_stats;
+    COMMIT;
+
     RAISE NOTICE 'REFRESHING locations_base_v2';
     REFRESH MATERIALIZED VIEW locations_base_v2;
     COMMIT;
@@ -605,3 +627,14 @@ BEGIN
 
 END;
 $$;
+
+
+DROP PROCEDURE IF EXISTS run_updates_full();
+CREATE OR REPLACE PROCEDURE run_updates_full() AS $$
+DECLARE
+_start timestamptz;
+BEGIN
+SELECT MIN(datetime) INTO _start FROM measurements;
+CALL run_updates(NULL, jsonb_build_object('start', _start));
+END;
+$$ LANGUAGE plpgsql;

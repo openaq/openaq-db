@@ -1,0 +1,24 @@
+{
+  "vpc-provider:account=938704120948:filter.vpc-id=vpc-087fcdfe0ad78766f:region=us-west-2:returnAsymmetricSubnets=true": {
+    "vpcId": "vpc-087fcdfe0ad78766f",
+    "vpcCidrBlock": "10.0.0.0/16",
+    "availabilityZones": [],
+    "subnetGroups": []
+  },
+  "ami:account=938704120948:filters.image-type.0=machine:filters.name.0=amzn2-ami-hvm-2.0.20200520.1-x86_64-gp2:filters.state.0=available:region=us-west-2": "ami-0e34e7b9ca0ace12d",
+  "availability-zones:account=938704120948:region=us-west-2": [
+    "us-west-2a",
+    "us-west-2b",
+    "us-west-2c",
+    "us-west-2d"
+  ],
+  "availability-zones:account=470049585876:region=us-east-1": [
+    "us-east-1a",
+    "us-east-1b",
+    "us-east-1c",
+    "us-east-1d",
+    "us-east-1e",
+    "us-east-1f"
+  ],
+  "ami:account=470049585876:filters.image-type.0=machine:filters.name.0=amzn2-ami-hvm-2.0.20200520.1-x86_64-gp2:filters.state.0=available:region=us-east-1": "ami-09d95fab7fff3776c"
+}

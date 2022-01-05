@@ -1,0 +1,1 @@
+CREATE TABLE rejects (t timestamptz, tbl text, r jsonb);

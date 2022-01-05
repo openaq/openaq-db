@@ -1,6 +1,7 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE EXTENSION IF NOT EXISTS timescaledb;
+CREATE EXTENSION IF NOT EXISTS btree_gist;
 END;
 
 BEGIN;
@@ -27,6 +28,8 @@ BEGIN;
 \i tables/groups.sql
 \i tables/rollups.sql
 \i tables/readmes.sql
+\i tables/rejects.sql
+\i tables/versions.sql
 COMMIT;
 
 BEGIN;
