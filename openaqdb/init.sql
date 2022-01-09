@@ -28,6 +28,7 @@ BEGIN;
 \i tables/groups.sql
 \i tables/rollups.sql
 \i tables/readmes.sql
+\i tables/exports.sql
 COMMIT;
 
 BEGIN;
