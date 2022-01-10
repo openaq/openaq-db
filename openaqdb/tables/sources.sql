@@ -2,7 +2,7 @@ CREATE TABLE sources(
     sources_id int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     slug text,
     name text not null,
-    type text not null,
+ --   type text not null,
     readme text,
     metadata jsonb
 );

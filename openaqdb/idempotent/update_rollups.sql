@@ -11,11 +11,10 @@ CREATE OR REPLACE FUNCTION update_sources() RETURNS VOID AS $$
 
     --AQDC
     -- Not sure how type is used but its a required field and was not included here
-    INSERT INTO sources (slug, name, type)
+    INSERT INTO sources (slug, name)
     SELECT DISTINCT
         source_name,
         metadata->>'sensor_node_source_fullname'
-        , 'na'
     FROM
         sensor_nodes
     WHERE
@@ -47,11 +46,10 @@ CREATE OR REPLACE FUNCTION update_sources() RETURNS VOID AS $$
         and
         metadata ? 'attribution'
     )
-    INSERT INTO sources (name, metadata, type)
+    INSERT INTO sources (name, metadata)
     SELECT
         j->>'name'
         , jsonb_merge_agg(j - '{name}'::text[])
-        , 'na'
     FROM t
     GROUP BY 1
     ON CONFLICT DO NOTHING
@@ -73,11 +71,10 @@ CREATE OR REPLACE FUNCTION update_sources() RETURNS VOID AS $$
     ;
 
     -- Other
-    INSERT INTO sources(slug, name, type)
+    INSERT INTO sources(slug, name)
     SELECT DISTINCT
         slugify(source_name),
         source_name
-        , 'na'
     FROM
         sensor_nodes
     WHERE
