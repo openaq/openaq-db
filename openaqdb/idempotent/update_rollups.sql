@@ -38,7 +38,6 @@ CREATE OR REPLACE FUNCTION update_sources() RETURNS VOID AS $$
 
 
 
-
     -- OpenAQ
     WITH t AS (
         select distinct jsonb_array_elements(metadata->'attribution') as j
@@ -605,3 +604,14 @@ BEGIN
 
 END;
 $$;
+
+
+DROP PROCEDURE IF EXISTS run_updates_full();
+CREATE OR REPLACE PROCEDURE run_updates_full() AS $$
+DECLARE
+_start timestamptz;
+BEGIN
+SELECT MIN(datetime) INTO _start FROM measurements;
+CALL run_updates(NULL, jsonb_build_object('start', _start));
+END;
+$$ LANGUAGE plpgsql;
