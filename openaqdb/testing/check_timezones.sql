@@ -1,12 +1,15 @@
+BEGIN;
+
 \set origin '''dev-station'''
 
 \i testing_schema.sql
 
-SELECT generate_fake_data(24, :origin, '1hours', '1month');
 
-SELECT generate_canary_data(:origin, '1hours', '1month');
+SELECT testing.generate_fake_data(24, :origin, '1hours', '1month');
 
-SELECT generate_version_data(2, :origin, '2hours', '1month');
+SELECT testing.generate_canary_data(:origin, '1hours', '1month');
+
+--SELECT testing.generate_version_data(2, :origin, '2hours', '1month');
 
 CALL run_updates_full();
 
@@ -30,3 +33,5 @@ WHERE site_name ~* 'tz:5'
 LIMIT 10;
 
 -- SELECT remove_testing_data();
+
+COMMIT;

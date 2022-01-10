@@ -31,7 +31,9 @@ JOIN sensors s ON (m.sensors_id = s.sensors_id)
 JOIN measurands p ON (s.measurands_id = p.measurands_id)
 JOIN sensor_systems ss ON (s.sensor_systems_id = ss.sensor_systems_id)
 JOIN sensor_nodes sn ON (ss.sensor_nodes_id = sn.sensor_nodes_id)
-WHERE s.sensors_id NOT IN (SELECT sensors_id FROM versions);
+-- once we have versioning we can uncomment this line
+--WHERE s.sensors_id NOT IN (SELECT sensors_id FROM versions)
+;
 
 
 -- A function to query the database and then create or reset

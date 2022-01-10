@@ -125,58 +125,58 @@ RETURN n;
 END;
 $$ LANGUAGE plpgsql;
 
--- version data function to create versions of the existing data
-CREATE OR REPLACE FUNCTION generate_version_data(
-       sensors int    -- The number of locations to create
-       , origin text   --
-       , averaging interval = '1hour'
-       , period interval = '7days'
-       ) RETURNS int AS $$
-DECLARE
-mid int;
-n int;
-BEGIN
--- now take some of those and make some versions
--- make sure we add the version to the metadata
-INSERT INTO sensors (sensor_systems_id, source_id, measurands_id, metadata)
-WITH v as (
-SELECT '2021-12-01'::date as version_date
-, 2 as df
-), s as (
-SELECT sensor_systems_id, sensors_id, measurands_id, source_id
-FROM sensors
-WHERE source_id ~* $2
-LIMIT $1)
-SELECT sensor_systems_id
-, source_id||'-'||v.version_date::text as source_id
-, measurands_id
-, jsonb_build_object('parent_sensors_id', sensors_id, 'version_date', v.version_date, 'df', v.df)
-FROM s, v
-ON CONFLICT (sensor_systems_id, measurands_id, source_id) DO UPDATE
-SET metadata = EXCLUDED.metadata;
--- Now add some adjusted data
-INSERT INTO measurements (sensors_id, datetime, value)
-SELECT s.sensors_id
-, m.datetime
-, m.value * (s.metadata->>'df')::int
-FROM sensors s
-JOIN measurements m ON ((s.metadata->>'parent_sensors_id')::int = m.sensors_id)
-WHERE metadata->>'parent_sensors_id' IS NOT NULL
-ON CONFLICT (sensors_id, datetime) DO UPDATE
-SET value = EXCLUDED.value;
--- Now add the verions
-INSERT INTO versions (sensors_id, parent_sensors_id, version_date, life_cycles_id, readme)
-SELECT s.sensors_id
-, (s.metadata->>'parent_sensors_id')::int as parent_sensors_id
-, (s.metadata->>'version_date')::date as version_date
-, 3 as life_cycles_id
-, 'Added as part of testing'
-FROM sensors s
-WHERE metadata->>'parent_sensors_id' IS NOT NULL
-ON CONFLICT DO NOTHING;
-RETURN 1;
-END;
-$$ LANGUAGE plpgsql;
+-- -- version data function to create versions of the existing data
+-- CREATE OR REPLACE FUNCTION generate_version_data(
+--        sensors int    -- The number of locations to create
+--        , origin text   --
+--        , averaging interval = '1hour'
+--        , period interval = '7days'
+--        ) RETURNS int AS $$
+-- DECLARE
+-- mid int;
+-- n int;
+-- BEGIN
+-- -- now take some of those and make some versions
+-- -- make sure we add the version to the metadata
+-- INSERT INTO sensors (sensor_systems_id, source_id, measurands_id, metadata)
+-- WITH v as (
+-- SELECT '2021-12-01'::date as version_date
+-- , 2 as df
+-- ), s as (
+-- SELECT sensor_systems_id, sensors_id, measurands_id, source_id
+-- FROM sensors
+-- WHERE source_id ~* $2
+-- LIMIT $1)
+-- SELECT sensor_systems_id
+-- , source_id||'-'||v.version_date::text as source_id
+-- , measurands_id
+-- , jsonb_build_object('parent_sensors_id', sensors_id, 'version_date', v.version_date, 'df', v.df)
+-- FROM s, v
+-- ON CONFLICT (sensor_systems_id, measurands_id, source_id) DO UPDATE
+-- SET metadata = EXCLUDED.metadata;
+-- -- Now add some adjusted data
+-- INSERT INTO measurements (sensors_id, datetime, value)
+-- SELECT s.sensors_id
+-- , m.datetime
+-- , m.value * (s.metadata->>'df')::int
+-- FROM sensors s
+-- JOIN measurements m ON ((s.metadata->>'parent_sensors_id')::int = m.sensors_id)
+-- WHERE metadata->>'parent_sensors_id' IS NOT NULL
+-- ON CONFLICT (sensors_id, datetime) DO UPDATE
+-- SET value = EXCLUDED.value;
+-- -- Now add the verions
+-- INSERT INTO versions (sensors_id, parent_sensors_id, version_date, life_cycles_id, readme)
+-- SELECT s.sensors_id
+-- , (s.metadata->>'parent_sensors_id')::int as parent_sensors_id
+-- , (s.metadata->>'version_date')::date as version_date
+-- , 3 as life_cycles_id
+-- , 'Added as part of testing'
+-- FROM sensors s
+-- WHERE metadata->>'parent_sensors_id' IS NOT NULL
+-- ON CONFLICT DO NOTHING;
+-- RETURN 1;
+-- END;
+-- $$ LANGUAGE plpgsql;
 
 DROP FUNCTION IF EXISTS remove_testing_data();
 CREATE OR REPLACE FUNCTION remove_testing_data() RETURNS int AS $$

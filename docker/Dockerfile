@@ -42,7 +42,6 @@ RUN \
 EXPOSE 5432
 
 RUN mkdir -p /docker-entrypoint-initdb.d \
-    && ls -lht \
     && echo "#!/bin/bash" >/docker-entrypoint-initdb.d/001_initdb.sh \
     && echo "timescaledb-tune --quiet --yes" >>/docker-entrypoint-initdb.d/001_initdb.sh \
     && echo "/setup/init.sh" >>/docker-entrypoint-initdb.d/001_initdb.sh

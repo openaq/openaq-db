@@ -1,21 +1,22 @@
 BEGIN;
+
 CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 CREATE EXTENSION IF NOT EXISTS btree_gist;
-END;
+--END;
 
-BEGIN;
+--BEGIN;
 -- General lookup tables
 \i tables/countries.sql
 \i tables/timezones.sql
-COMMIT;
+--COMMIT;
 
-BEGIN;
+--BEGIN;
 -- Lookup tables for legacy OPENAQ
 \i tables/sources_from_openaq_v1.sql
-COMMIT;
+--COMMIT;
 
-BEGIN;
+--BEGIN;
 -- Tables for LCS Data Model
 \i tables/fetchlogs.sql
 \i tables/sensor_nodes.sql
@@ -31,7 +32,6 @@ BEGIN;
 \i tables/exports.sql
 COMMIT;
 
-BEGIN;
 -- Load immutable views/functions
+-- file contains begin/commit
 \i refresh_idempotent.sql
-COMMIT;

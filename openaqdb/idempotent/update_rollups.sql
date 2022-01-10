@@ -10,10 +10,12 @@ CREATE OR REPLACE FUNCTION update_sources() RETURNS VOID AS $$
         origins o WHERE sn.origin is not null and NOT sn.metadata ? 'entity' AND sn.origin=o.origin;
 
     --AQDC
-    INSERT INTO sources (slug, name)
+    -- Not sure how type is used but its a required field and was not included here
+    INSERT INTO sources (slug, name, type)
     SELECT DISTINCT
         source_name,
         metadata->>'sensor_node_source_fullname'
+        , 'na'
     FROM
         sensor_nodes
     WHERE
@@ -36,9 +38,6 @@ CREATE OR REPLACE FUNCTION update_sources() RETURNS VOID AS $$
     ON CONFLICT DO NOTHING
     ;
 
-
-
-
     -- OpenAQ
     WITH t AS (
         select distinct jsonb_array_elements(metadata->'attribution') as j
@@ -48,10 +47,11 @@ CREATE OR REPLACE FUNCTION update_sources() RETURNS VOID AS $$
         and
         metadata ? 'attribution'
     )
-    INSERT INTO sources (name, metadata)
+    INSERT INTO sources (name, metadata, type)
     SELECT
-        j->>'name',
-        jsonb_merge_agg(j - '{name}'::text[])
+        j->>'name'
+        , jsonb_merge_agg(j - '{name}'::text[])
+        , 'na'
     FROM t
     GROUP BY 1
     ON CONFLICT DO NOTHING
@@ -73,10 +73,11 @@ CREATE OR REPLACE FUNCTION update_sources() RETURNS VOID AS $$
     ;
 
     -- Other
-    INSERT INTO sources(slug, name)
+    INSERT INTO sources(slug, name, type)
     SELECT DISTINCT
         slugify(source_name),
         source_name
+        , 'na'
     FROM
         sensor_nodes
     WHERE
@@ -539,8 +540,6 @@ BEGIN
     where country is null and geom is null and ismobile;
     COMMIT;
 
-
-
     RAISE NOTICE 'Updating sources Tables';
     PERFORM update_sources();
     COMMIT;
@@ -605,3 +604,13 @@ BEGIN
 
 END;
 $$;
+
+DROP PROCEDURE IF EXISTS run_updates_full();
+CREATE OR REPLACE PROCEDURE run_updates_full() AS $$
+DECLARE
+_start timestamptz;
+BEGIN
+SELECT MIN(datetime) INTO _start FROM measurements;
+CALL run_updates(NULL, jsonb_build_object('start', _start));
+END;
+$$ LANGUAGE plpgsql;
