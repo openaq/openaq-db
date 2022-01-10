@@ -5,8 +5,10 @@ SET search_path = public;
 -- the current setup
 DROP VIEW IF EXISTS measurement_data_export;
 CREATE OR REPLACE VIEW measurement_data_export AS
-SELECT sn.site_name||'-'||ss.sensor_systems_id as location
+SELECT
+, s.sensors_id
 , sn.sensor_nodes_id
+, sn.site_name||'-'||ss.sensor_systems_id as location
 , p.measurands_id
 , CASE WHEN sn.ismobile
     THEN 'mobile'
