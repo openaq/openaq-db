@@ -16,6 +16,7 @@ COMMIT;
 -- cant be called from inside a commit block
 CALL run_updates_full();
 
+
 SELECT *
 FROM testing.canary_rollup_days
 WHERE subtitle ~* 'tz:0';

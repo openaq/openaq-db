@@ -5,8 +5,7 @@ SET search_path = public;
 -- the current setup
 DROP VIEW IF EXISTS measurement_data_export;
 CREATE OR REPLACE VIEW measurement_data_export AS
-SELECT
-, s.sensors_id
+SELECT s.sensors_id
 , sn.sensor_nodes_id
 , sn.site_name||'-'||ss.sensor_systems_id as location
 , p.measurands_id
@@ -16,8 +15,11 @@ SELECT
     END as country
 , sn.ismobile
 , s.source_id as sensor
-, m.datetime
-, p.measurand||'-'||p.units as measurand
+-- local time for use in query
+, (m.datetime AT TIME ZONE (sn.metadata->>'timezone')::text) as datetime
+-- local time with tz for exporting
+, format_timestamp(m.datetime, sn.metadata->>'timezone') as datetime_str
+, p.measurand
 , p.units
 , m.value
 , CASE WHEN sn.ismobile
@@ -33,8 +35,9 @@ JOIN sensors s ON (m.sensors_id = s.sensors_id)
 JOIN measurands p ON (s.measurands_id = p.measurands_id)
 JOIN sensor_systems ss ON (s.sensor_systems_id = ss.sensor_systems_id)
 JOIN sensor_nodes sn ON (ss.sensor_nodes_id = sn.sensor_nodes_id)
+WHERE sn.metadata->'timezone' IS NOT NULL
 -- once we have versioning we can uncomment this line
---WHERE s.sensors_id NOT IN (SELECT sensors_id FROM versions)
+--AND s.sensors_id NOT IN (SELECT sensors_id FROM versions)
 ;
 
 
@@ -78,6 +81,39 @@ WITH inserts AS (
   GROUP BY sensor_nodes_id;
 $$ LANGUAGE SQL;
 
+
+-- A list of modiified location days without paying attention to the timzone
+DROP VIEW IF EXISTS modified_location_days;
+CREATE OR REPLACE VIEW modified_location_days AS
+SELECT l.sensor_nodes_id
+, day
+, records
+, measurands
+, modified_on
+--, queued_on
+--, exported_on
+, age(day + '1day'::interval, (now() AT TIME ZONE (sn.metadata->>'timezone')::text)) as wait_interval
+FROM public.open_data_export_logs l
+JOIN public.sensor_nodes sn ON (l.sensor_nodes_id = sn.sensor_nodes_id)
+WHERE (queued_on IS NULL OR modified_on > queued_on);
+
+-- The view that is used in the pending function
+-- this allows us to look at the pending list without updating it
+CREATE OR REPLACE VIEW pending_location_days AS
+SELECT l.sensor_nodes_id
+, day
+, records
+, measurands
+, modified_on
+, queued_on
+, exported_on
+FROM public.open_data_export_logs l
+JOIN public.sensor_nodes sn ON (l.sensor_nodes_id = sn.sensor_nodes_id)
+WHERE (queued_on IS NULL OR modified_on > queued_on)
+-- wait until the day is done in that timezone to export data
+AND day < (now() AT TIME ZONE (sn.metadata->>'timezone')::text)::date;
+
+
 -- A function to use to get a list of days that need to be exported
 -- the method will also mark the entries as queued so we dont fetch
 -- them again under a different process
@@ -93,16 +129,8 @@ CREATE OR REPLACE FUNCTION get_pending(lmt int = 100) RETURNS TABLE(
  , exported_on timestamptz
  ) AS $$
 WITH pending AS (
-  SELECT sensor_nodes_id
-  , day
-  , records
-  , measurands
-  , modified_on
-  , queued_on
-  , exported_on
-  FROM public.open_data_export_logs
-  WHERE queued_on IS NULL
-  OR modified_on > queued_on
+  SELECT *
+  FROM pending_location_days
   LIMIT lmt)
 UPDATE public.open_data_export_logs
 SET queued_on = now()
@@ -113,9 +141,10 @@ RETURNING pending.*;
 $$ LANGUAGE SQL;
 
 -- used to make the entry as finished
-CREATE OR REPLACE FUNCTION update_export_log_exported(dy date, id int) RETURNS interval AS $$
+CREATE OR REPLACE FUNCTION update_export_log_exported(dy date, id int, n int) RETURNS interval AS $$
 UPDATE public.open_data_export_logs
 SET exported_on = now()
+, records = n
 WHERE day = dy AND sensor_nodes_id = id
 RETURNING exported_on - queued_on;
 $$ LANGUAGE SQL;

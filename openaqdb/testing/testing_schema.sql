@@ -4,26 +4,89 @@ SET search_path = testing, public;
 --SET TIMEZONE TO 'US/Pacific';
 SET TIMEZONE TO 'UTC';
 
+
+-- generate random points inside a polygon
+-- adapted from https://trac.osgeo.org/postgis/wiki/UserWikiRandomPoint
+CREATE OR REPLACE FUNCTION RandomPointsFromTimezone(
+       tz text = 'America/New_York'
+       , num_points integer = 1
+       ) RETURNS SETOF geometry AS
+$BODY$DECLARE
+  geom geometry;
+  target_proportion numeric;
+  n_ret integer := 0;
+  loops integer := 0;
+  x_min float8;
+  y_min float8;
+  x_max float8;
+  y_max float8;
+  srid integer;
+  rpoint geometry;
+BEGIN
+  SELECT geog::geometry INTO geom FROM timezones WHERE tzid = tz;
+  IF geom IS NULL THEN
+    RAISE EXCEPTION 'Could not find timezone for %', tz;
+  END IF;
+  -- Get envelope and SRID of source polygon
+  SELECT ST_XMin(geom), ST_YMin(geom), ST_XMax(geom), ST_YMax(geom), ST_SRID(geom)
+    INTO x_min, y_min, x_max, y_max, srid;
+  -- Get the area proportion of envelope size to determine if a
+  -- result can be returned in a reasonable amount of time
+  SELECT ST_Area(geom)/ST_Area(ST_Envelope(geom)) INTO target_proportion;
+  RAISE DEBUG 'geom: SRID %, NumGeometries %, NPoints %, area proportion within envelope %',
+                srid, ST_NumGeometries(geom), ST_NPoints(geom),
+                round(100.0*target_proportion, 2) || '%';
+  IF target_proportion < 0.0001 THEN
+    RAISE EXCEPTION 'Target area proportion of geometry is too low (%)',
+                    100.0*target_proportion || '%';
+  END IF;
+  RAISE DEBUG 'bounds: % % % %', x_min, y_min, x_max, y_max;
+
+  WHILE n_ret < num_points LOOP
+    loops := loops + 1;
+    SELECT ST_SetSRID(ST_MakePoint(random()*(x_max - x_min) + x_min,
+                                   random()*(y_max - y_min) + y_min),
+                      srid) INTO rpoint;
+    IF ST_Contains(geom, rpoint) THEN
+      n_ret := n_ret + 1;
+      RETURN NEXT rpoint;
+    END IF;
+  END LOOP;
+  RAISE DEBUG 'determined in % loops (% efficiency)', loops, round(100.0*num_points/loops, 2) || '%';
+END$BODY$
+  LANGUAGE plpgsql VOLATILE
+  COST 100
+  ROWS 1000;
+
+
 -- A function to make it easier to generate sets of fake data
 CREATE OR REPLACE FUNCTION generate_fake_data(
        stations int    -- The number of locations to create
        , origin text   --
        , averaging interval = '1hour'
        , period interval = '7days'
+       , timezones text[] = ARRAY['America/Los_Angeles']
        ) RETURNS int AS $$
 DECLARE
 n int;
 BEGIN
 -- Create some test stations
-INSERT INTO sensor_nodes (site_name, source_name, source_id, origin, metadata)
-WITH stations AS (
-SELECT generate_series(1,stations,1) as id)
-SELECT 'Station #'||id||' (tz:'||((MOD(id, 24)+1)-12)::text||')'
+INSERT INTO sensor_nodes (site_name, source_name, source_id, origin, geom, country, metadata)
+WITH points AS (
+SELECT tz as timezone
+, RandomPointsFromTimezone(tz, stations) as geom
+FROM unnest(timezones) as tz
+), stations AS (
+SELECT *, ROW_NUMBER() OVER () as id
+FROM points)
+SELECT 'Station #'||id||' ('||timezone||')'
 , origin||'-'||id
 , origin
 , origin
+, geom
+, country(geom)
 , jsonb_build_object(
-   'utc_offset', to_char((MOD(id, 24)+1)-12, 'S00')||':00:00',
+   'timezone', timezone,
    'testing', true
    )
 FROM stations
@@ -48,7 +111,7 @@ ON CONFLICT DO NOTHING;
 -- Add some test data
 INSERT INTO measurements (datetime, sensors_id, value)
 WITH dates AS (
-SELECT generate_series(current_date - period::interval, current_date, averaging::interval) as datetime)
+SELECT generate_series(current_date - period::interval, now(), averaging::interval) as datetime)
 SELECT datetime
 , sensors_id
 , measurands_id as value -- keep this simple for testing purposes
@@ -96,7 +159,7 @@ ON CONFLICT DO NOTHING;
 -- and use the local day of the month as the value
 INSERT INTO measurements (datetime, sensors_id, value)
 WITH dates AS (
-     SELECT generate_series(current_date - period, current_date + averaging, averaging)::timestamp as datetime
+     SELECT generate_series(current_date - period, current_date, averaging)::timestamp as datetime
 ), datestz AS (
    SELECT datetime::text||(sn.metadata->>'utc_offset') as datetimetz
    , datetime
