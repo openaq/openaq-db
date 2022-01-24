@@ -1,5 +1,6 @@
 SET search_path = public;
 
+
 -- A view to pull the data from. This can be modified as needed
 -- but will need to be structured the same way
 -- the current setup
@@ -15,8 +16,9 @@ SELECT s.sensors_id
     END as country
 , sn.ismobile
 , s.source_id as sensor
--- local time for use in query
-, (m.datetime AT TIME ZONE (sn.metadata->>'timezone')::text) as datetime
+-- utc time for use in query
+, datetime
+, utc_offset(sn.metadata->>'timezone') as utc_offset
 -- local time with tz for exporting
 , format_timestamp(m.datetime, sn.metadata->>'timezone') as datetime_str
 , p.measurand
@@ -97,6 +99,14 @@ FROM public.open_data_export_logs l
 JOIN public.sensor_nodes sn ON (l.sensor_nodes_id = sn.sensor_nodes_id)
 WHERE (queued_on IS NULL OR modified_on > queued_on);
 
+-- A method to adjust the time for query purposes
+-- right now the indexing on the measurements table is based off of the
+-- timestamp and does not handle the local time or date very well
+-- and so this is a work around
+CREATE OR REPLACE FUNCTION utc_offset(tz text) RETURNS interval AS $$
+SELECT timezone(tz, now()) - timezone('UTC', now());
+$$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
+
 -- The view that is used in the pending function
 -- this allows us to look at the pending list without updating it
 CREATE OR REPLACE VIEW pending_location_days AS
@@ -107,6 +117,7 @@ SELECT l.sensor_nodes_id
 , modified_on
 , queued_on
 , exported_on
+, utc_offset(sn.metadata->>'timezone') as utc_offset
 FROM public.open_data_export_logs l
 JOIN public.sensor_nodes sn ON (l.sensor_nodes_id = sn.sensor_nodes_id)
 WHERE (queued_on IS NULL OR modified_on > queued_on)
