@@ -1,5 +1,13 @@
+BEGIN;
 SET search_path = public;
 
+-- A method to adjust the time for query purposes
+-- right now the indexing on the measurements table is based off of the
+-- timestamp and does not handle the local time or date very well
+-- and so this is a work around
+CREATE OR REPLACE FUNCTION utc_offset(tz text) RETURNS interval AS $$
+SELECT timezone(tz, now()) - timezone('UTC', now());
+$$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
 
 -- A view to pull the data from. This can be modified as needed
 -- but will need to be structured the same way
@@ -76,9 +84,9 @@ WITH inserts AS (
   SELECT sensor_nodes_id
   , MIN(day) as first_day
   , MAX(day) as last_day
-  , COUNT(day) as days
-  , SUM(records) as records
-  , MAX(measurands) as measurands
+  , COUNT(day)::int as days
+  , SUM(records)::int as records
+  , MAX(measurands)::int as measurands
   FROM inserts
   GROUP BY sensor_nodes_id;
 $$ LANGUAGE SQL;
@@ -99,13 +107,6 @@ FROM public.open_data_export_logs l
 JOIN public.sensor_nodes sn ON (l.sensor_nodes_id = sn.sensor_nodes_id)
 WHERE (queued_on IS NULL OR modified_on > queued_on);
 
--- A method to adjust the time for query purposes
--- right now the indexing on the measurements table is based off of the
--- timestamp and does not handle the local time or date very well
--- and so this is a work around
-CREATE OR REPLACE FUNCTION utc_offset(tz text) RETURNS interval AS $$
-SELECT timezone(tz, now()) - timezone('UTC', now());
-$$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
 
 -- The view that is used in the pending function
 -- this allows us to look at the pending list without updating it
@@ -138,6 +139,7 @@ CREATE OR REPLACE FUNCTION get_pending(lmt int = 100) RETURNS TABLE(
  , modified_on timestamptz
  , queued_on timestamptz
  , exported_on timestamptz
+ , utc_offset interval
  ) AS $$
 WITH pending AS (
   SELECT *
@@ -168,3 +170,5 @@ SET modified_on = now()
 WHERE day = dy AND sensor_nodes_id = id
 RETURNING exported_on - queued_on;
 $$ LANGUAGE SQL;
+
+COMMIT;
