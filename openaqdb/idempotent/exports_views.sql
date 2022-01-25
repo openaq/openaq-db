@@ -9,6 +9,11 @@ CREATE OR REPLACE FUNCTION utc_offset(tz text) RETURNS interval AS $$
 SELECT timezone(tz, now()) - timezone('UTC', now());
 $$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
 
+
+CREATE OR REPLACE FUNCTION utc_offset(dt timestamptz, tz text) RETURNS interval AS $$
+SELECT timezone(tz, dt) - timezone('UTC', dt);
+$$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
+
 -- A view to pull the data from. This can be modified as needed
 -- but will need to be structured the same way
 -- the current setup
@@ -25,8 +30,10 @@ SELECT s.sensors_id
 , sn.ismobile
 , s.source_id as sensor
 -- utc time for use in query
-, datetime
-, utc_offset(sn.metadata->>'timezone') as utc_offset
+, m.datetime
+-- get the current offset
+, sn.metadata->>'timezone' as tz
+--, utc_offset(m.datetime, sn.metadata->>'timezone') as utc_offset
 -- local time with tz for exporting
 , format_timestamp(m.datetime, sn.metadata->>'timezone') as datetime_str
 , p.measurand
@@ -121,7 +128,8 @@ SELECT l.sensor_nodes_id
 , utc_offset(sn.metadata->>'timezone') as utc_offset
 FROM public.open_data_export_logs l
 JOIN public.sensor_nodes sn ON (l.sensor_nodes_id = sn.sensor_nodes_id)
-WHERE (queued_on IS NULL OR modified_on > queued_on)
+WHERE (queued_on IS NULL -- has not been done yet
+OR modified_on > queued_on) -- has changed since being done
 -- wait until the day is done in that timezone to export data
 AND day < (now() AT TIME ZONE (sn.metadata->>'timezone')::text)::date;
 
@@ -154,10 +162,12 @@ RETURNING pending.*;
 $$ LANGUAGE SQL;
 
 -- used to make the entry as finished
+-- also resets any error that was registered
 CREATE OR REPLACE FUNCTION update_export_log_exported(dy date, id int, n int) RETURNS interval AS $$
 UPDATE public.open_data_export_logs
 SET exported_on = now()
 , records = n
+, metadata = '{}'::json
 WHERE day = dy AND sensor_nodes_id = id
 RETURNING exported_on - queued_on;
 $$ LANGUAGE SQL;
