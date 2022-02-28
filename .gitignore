@@ -1,1 +1,2 @@
 /.env
+/openaqdb/lookups/sensor_nodes.sql
