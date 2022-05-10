@@ -47,11 +47,13 @@ SELECT s.sensors_id
     THEN lon
     ELSE st_y(geom)
     END as lat
+, pr.export_prefix as provider
 FROM measurements m
 JOIN sensors s ON (m.sensors_id = s.sensors_id)
 JOIN measurands p ON (s.measurands_id = p.measurands_id)
 JOIN sensor_systems ss ON (s.sensor_systems_id = ss.sensor_systems_id)
 JOIN sensor_nodes sn ON (ss.sensor_nodes_id = sn.sensor_nodes_id)
+JOIN providers pr ON (sn.source_name = pr.source_name)
 WHERE sn.metadata->'timezone' IS NOT NULL
 -- once we have versioning we can uncomment this line
 --AND s.sensors_id NOT IN (SELECT sensors_id FROM versions)
@@ -132,6 +134,106 @@ WHERE (queued_on IS NULL -- has not been done yet
 OR modified_on > queued_on) -- has changed since being done
 -- wait until the day is done in that timezone to export data
 AND day < (now() AT TIME ZONE (sn.metadata->>'timezone')::text)::date;
+
+SELECT COUNT(1)
+FROM open_data_export_logs l
+WHERE (day < current_date AND age(now(), queued_on) > '1hour'::interval AND l.metadata->>'error' IS NULL)
+AND (
+  exported_on IS NULL
+  OR (queued_on > exported_on)
+  OR (l.metadata->>'version' IS NULL OR (l.metadata->>'version')::int < 1)
+);
+
+SELECT COUNT(1) FROM open_data_export_logs;
+
+  SELECT l.sensor_nodes_id
+  , day
+  , records
+  , measurands
+  , modified_on
+  , queued_on
+  , exported_on
+  , utc_offset(sn.metadata->>'timezone') as utc_offset
+  , (l.metadata->>'version')::int as version
+  FROM public.open_data_export_logs l
+  JOIN public.sensor_nodes sn ON (l.sensor_nodes_id = sn.sensor_nodes_id)
+  WHERE
+  -- first the requirements
+  (day < current_date AND age(now(), queued_on) > '1hour'::interval AND l.metadata->>'error' IS NULL)
+  -- now the optional
+  AND (
+    -- its never been exported
+    exported_on IS NULL
+    -- or its been re-queued
+    OR (queued_on > exported_on)
+    -- or its an older version
+    OR (l.metadata->>'version' IS NULL OR (l.metadata->>'version')::int < 1)
+  ) LIMIT 10;
+
+
+
+SELECT l.sensor_nodes_id
+, day
+, records
+, measurands
+, modified_on
+, queued_on
+, exported_on
+FROM public.open_data_export_logs l
+WHERE day < current_date -- nothing new
+-- has not been queued or exported
+AND ((exported_on IS NULL AND queued_on IS NULL)
+-- Or it was done but the version is outdated
+OR (exported_on > queued_on
+AND (metadata->>'version' IS NULL
+OR (metadata->>'version')::int < 1))
+-- was queued but timed out before it could finish
+OR (exported_on < queued_on AND queued_on > now() - '1hour'::interval)
+)
+LIMIT 10;
+
+-- a function to get a list of location days that have an older data format
+-- or just may have been missed by a previous attempt
+CREATE OR REPLACE FUNCTION outdated_location_days(vsn int = 0, lmt int = 100) RETURNS TABLE(
+   sensor_nodes_id int
+ , day date
+ , records int
+ , measurands int
+ , modified_on timestamptz
+ , queued_on timestamptz
+ , exported_on timestamptz
+ , utc_offset interval
+ ) AS $$
+WITH pending AS (
+  SELECT l.sensor_nodes_id
+  , day
+  , records
+  , measurands
+  , modified_on
+  , queued_on
+  , exported_on
+  , utc_offset(sn.metadata->>'timezone') as utc_offset
+  FROM public.open_data_export_logs l
+  JOIN public.sensor_nodes sn ON (l.sensor_nodes_id = sn.sensor_nodes_id)
+  WHERE
+  -- first the requirements
+  (day < current_date AND age(now(), queued_on) > '1hour'::interval AND l.metadata->>'error' IS NULL)
+  -- now the optional
+  AND (
+    -- its never been exported
+    exported_on IS NULL
+    -- or its been re-queued
+    OR (queued_on > exported_on)
+    -- or its an older version
+    OR (l.metadata->>'version' IS NULL OR (l.metadata->>'version')::int < vsn)
+  ) LIMIT lmt)
+UPDATE public.open_data_export_logs
+SET queued_on = now()
+FROM pending
+WHERE pending.day = open_data_export_logs.day
+AND pending.sensor_nodes_id = open_data_export_logs.sensor_nodes_id
+RETURNING pending.*;
+$$ LANGUAGE SQL;
 
 
 -- A function to use to get a list of days that need to be exported

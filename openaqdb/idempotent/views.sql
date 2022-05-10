@@ -458,7 +458,8 @@ CREATE INDEX ON locations_base_v2 (id);
 CREATE INDEX ON locations_base_v2 (name);
 
 DROP MATERIALIZED VIEW IF EXISTS public.locations;
-CREATE MATERIALIZED VIEW locations AS WITH s AS (
+CREATE MATERIALIZED VIEW locations AS
+WITH s AS (
 SELECT
        sensor_nodes_id as location_id,
        site_name as location,
