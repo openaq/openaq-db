@@ -40,12 +40,11 @@ SELECT
     sn.source_name,
     sn.origin,
     jsonb_strip_nulls(coalesce(sn.metadata-'{attribution}'::text[], '{}'::jsonb)
-    || o.metadata
+    || COALESCE(o.metadata, '{}'::jsonb)
     || jsonb_build_object('pvals', to_jsonb(h)-'{sensor_nodes_id}'::text[])
     || jsonb_build_object('sources', sources)
     )
     as metadata
-
 FROM
     sensor_nodes sn
     LEFT JOIN
