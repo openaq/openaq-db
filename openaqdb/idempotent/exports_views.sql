@@ -44,7 +44,7 @@ SELECT s.sensors_id
     ELSE st_x(geom)
     END as lon
 , CASE WHEN sn.ismobile
-    THEN lon
+    THEN lat
     ELSE st_y(geom)
     END as lat
 , pr.export_prefix as provider
@@ -194,6 +194,7 @@ LIMIT 10;
 
 -- a function to get a list of location days that have an older data format
 -- or just may have been missed by a previous attempt
+DROP FUNCTION outdated_location_days(integer,integer);
 CREATE OR REPLACE FUNCTION outdated_location_days(vsn int = 0, lmt int = 100) RETURNS TABLE(
    sensor_nodes_id int
  , day date
@@ -203,6 +204,7 @@ CREATE OR REPLACE FUNCTION outdated_location_days(vsn int = 0, lmt int = 100) RE
  , queued_on timestamptz
  , exported_on timestamptz
  , utc_offset interval
+ , metadata json
  ) AS $$
 WITH pending AS (
   SELECT l.sensor_nodes_id
@@ -217,7 +219,7 @@ WITH pending AS (
   JOIN public.sensor_nodes sn ON (l.sensor_nodes_id = sn.sensor_nodes_id)
   WHERE
   -- first the requirements
-  (day < current_date AND age(now(), queued_on) > '1hour'::interval AND l.metadata->>'error' IS NULL)
+  (day < current_date AND (queued_on IS NULL OR age(now(), queued_on) > '4hour'::interval) AND l.metadata->>'error' IS NULL)
   -- now the optional
   AND (
     -- its never been exported
@@ -226,13 +228,16 @@ WITH pending AS (
     OR (queued_on > exported_on)
     -- or its an older version
     OR (l.metadata->>'version' IS NULL OR (l.metadata->>'version')::int < vsn)
-  ) LIMIT lmt)
+  ) ORDER BY day
+    LIMIT lmt
+    FOR UPDATE
+    SKIP LOCKED)
 UPDATE public.open_data_export_logs
 SET queued_on = now()
 FROM pending
 WHERE pending.day = open_data_export_logs.day
 AND pending.sensor_nodes_id = open_data_export_logs.sensor_nodes_id
-RETURNING pending.*;
+RETURNING pending.*, metadata;
 $$ LANGUAGE SQL;
 
 
