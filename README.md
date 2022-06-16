@@ -19,4 +19,6 @@ Rather than tracking version to version migration files, it is recommended to ma
 ## you may or may not need the sudo
 sudo docker build -t openaq-dev-db -f docker/Dockerfile .
 sudo docker run --name openaq-testing -e POSTGRES_PASSWORD=postgres -t openaq-dev-db:latest
+## to determine the IP address of the container use
+sudo docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' openaq-testing
 ```

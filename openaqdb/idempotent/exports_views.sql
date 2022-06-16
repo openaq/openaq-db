@@ -194,7 +194,7 @@ LIMIT 10;
 
 -- a function to get a list of location days that have an older data format
 -- or just may have been missed by a previous attempt
-DROP FUNCTION outdated_location_days(integer,integer);
+DROP FUNCTION IF EXISTS outdated_location_days(integer,integer);
 CREATE OR REPLACE FUNCTION outdated_location_days(vsn int = 0, lmt int = 100) RETURNS TABLE(
    sensor_nodes_id int
  , day date
