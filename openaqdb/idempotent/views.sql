@@ -1,7 +1,4 @@
 
-BEGIN;
-
-
 create table if not exists analyses_summary as SELECT sensors_id, min(datetime) as first_datetime, max(datetime) as last_datetime, last(value,datetime)as last_value, count(*) as value_count, sum(value) as value_sum, min(lon) as minx, min(lat) as miny, max(lon) as maxx, max(lat) as maxy, st_makepoint(last(lon, datetime), last(lat, datetime))::geography as last_point from analyses group by sensors_id;
 
 DROP MATERIALIZED VIEW IF EXISTS sensors_first_last;
@@ -43,12 +40,11 @@ SELECT
     sn.source_name,
     sn.origin,
     jsonb_strip_nulls(coalesce(sn.metadata-'{attribution}'::text[], '{}'::jsonb)
-    || o.metadata
+    || COALESCE(o.metadata, '{}'::jsonb)
     || jsonb_build_object('pvals', to_jsonb(h)-'{sensor_nodes_id}'::text[])
     || jsonb_build_object('sources', sources)
     )
     as metadata
-
 FROM
     sensor_nodes sn
     LEFT JOIN
@@ -461,7 +457,8 @@ CREATE INDEX ON locations_base_v2 (id);
 CREATE INDEX ON locations_base_v2 (name);
 
 DROP MATERIALIZED VIEW IF EXISTS public.locations;
-CREATE MATERIALIZED VIEW locations AS WITH s AS (
+CREATE MATERIALIZED VIEW locations AS
+WITH s AS (
 SELECT
        sensor_nodes_id as location_id,
        site_name as location,
@@ -589,8 +586,3 @@ GROUP BY 1;
 CREATE INDEX ON mobile_gen_boxes (sensors_id);
 CREATE INDEX ON mobile_gen_boxes USING GIST (box, sensors_id);
 */
-
-
-
-
-COMMIT;

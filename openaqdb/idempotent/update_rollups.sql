@@ -10,6 +10,7 @@ CREATE OR REPLACE FUNCTION update_sources() RETURNS VOID AS $$
         origins o WHERE sn.origin is not null and NOT sn.metadata ? 'entity' AND sn.origin=o.origin;
 
     --AQDC
+    -- Not sure how type is used but its a required field and was not included here
     INSERT INTO sources (slug, name)
     SELECT DISTINCT
         source_name,
@@ -36,8 +37,6 @@ CREATE OR REPLACE FUNCTION update_sources() RETURNS VOID AS $$
     ON CONFLICT DO NOTHING
     ;
 
-
-
     -- OpenAQ
     WITH t AS (
         select distinct jsonb_array_elements(metadata->'attribution') as j
@@ -49,8 +48,8 @@ CREATE OR REPLACE FUNCTION update_sources() RETURNS VOID AS $$
     )
     INSERT INTO sources (name, metadata)
     SELECT
-        j->>'name',
-        jsonb_merge_agg(j - '{name}'::text[])
+        j->>'name'
+        , jsonb_merge_agg(j - '{name}'::text[])
     FROM t
     GROUP BY 1
     ON CONFLICT DO NOTHING
@@ -537,8 +536,6 @@ BEGIN
     update sensor_nodes set country = country(sn_lastpoint(sensor_nodes_id))
     where country is null and geom is null and ismobile;
     COMMIT;
-
-
 
     RAISE NOTICE 'Updating sources Tables';
     PERFORM update_sources();
