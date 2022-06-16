@@ -1,3 +1,4 @@
 .env*
 cdk.out/
 __pycache__/
+/openaqdb/lookups/sensor_nodes.sql

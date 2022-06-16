@@ -3,7 +3,6 @@ from pathlib import Path
 
 import aws_cdk
 from aws_cdk import (
-    Environment,
     Tags,
 )
 
@@ -34,6 +33,5 @@ db = DatabaseStack(
 )
 
 Tags.of(db).add("Project", settings.ENV)
-
 
 app.synth()
