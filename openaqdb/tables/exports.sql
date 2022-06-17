@@ -30,4 +30,4 @@ CREATE TABLE IF NOT EXISTS providers (
   , metadata jsonb
 );
 
-CREATE UNIQUE INDEX providers_source_name_idx ON providers(source_name);
+CREATE UNIQUE INDEX IF NOT EXISTS providers_source_name_idx ON providers(source_name);
