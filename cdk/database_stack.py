@@ -30,18 +30,26 @@ class DatabaseStack(Stack):
         databaseHost: str = 'localhost',
         databasePort: str = '5432',
         databaseDb: str = 'openaq',
+        vpcId: str = None,
         **kwargs,
     ) -> None:
         """Define stack."""
         super().__init__(scope, id, **kwargs)
 
-        # create vpc
-        vpc = _ec2.Vpc(
-            self,
-            f"{id}-dbstack-vpc",
-            cidr="10.0.0.0/16",
-            nat_gateways=1,
-        )
+        # Get the VPC or create a new one
+        if vpcId is not None:
+            vpc = _ec2.Vpc.from_lookup(
+                self,
+                f"{id}-dbstack-vpc",
+                vpc_id=vpcId,
+            )
+        else:
+            vpc = _ec2.Vpc(
+                self,
+                f"{id}-dbstack-vpc",
+                cidr="10.0.0.0/16",
+                nat_gateways=1,
+            )
 
         # add some security groups
         sg = _ec2.SecurityGroup(
@@ -65,7 +73,9 @@ class DatabaseStack(Stack):
                 connection=_ec2.Port.tcp(5432)
             )
 
-        # update and install everything that is needed for docker
+        # Transfer some key data on to the instance
+        # must be done in UserData and not as initElements
+        # add anything else as needed
         UserData = _ec2.UserData.for_linux()
         data = {
             "DATABASE_READ_USER": databaseReadUser,
@@ -79,6 +89,8 @@ class DatabaseStack(Stack):
 
         for key in data:
             value = data[key]
+            # this will make sure that they are accessible
+            # to all users on the server
             cmd = f'export {key}={value} && echo "{key}=${{{key}}}" >> /etc/environment'
             UserData.add_commands(cmd)
 
@@ -97,17 +109,18 @@ class DatabaseStack(Stack):
 
         if snapshotId is not None:
             snapshotVolume = _ec2.BlockDevice(
-                device_name="/dev/xvda",
+                device_name="/dev/sdb",
                 volume=_ec2.BlockDeviceVolume(
                     ebs_device=_ec2.EbsDeviceProps(
                         snapshot_id=snapshotId,
                         iops=3000,
-                        # volume_size=5500,
+                        volume_size=5500,
                         volume_type=_ec2.EbsDeviceVolumeType.IO2,
                     )
                 )
             )
             blockDevices.append(snapshotVolume)
+            UserData.add_commands('mkdir /db && mount /dev/sdb /db')
 
         # dataVolume = _ec2.BlockDevice(
         #     device_name="/dev/sdb",
@@ -132,16 +145,12 @@ class DatabaseStack(Stack):
             # the permissions by default so
             # we need to make the init file executable
             _ec2.InitCommand.shell_command(
-                'echo $DATABASE_READ_USER >> /tmp/test3.txt'
-            ),
-            _ec2.InitCommand.shell_command(
                 'cd /app && unzip db.zip -d openaqdb'
-            ),
-            _ec2.InitCommand.shell_command(
-                'cat /etc/environment > /tmp/env.txt'
             ),
         )
 
+        # Would be nice to add support for a docker method back
+        # just would need to add some logic here
         # docker_dir = os.path.join(codeDirectory, 'docker')
         # initElements = _ec2.CloudFormationInit.from_elements(
         #     # Add some files and then build and run the docker image
@@ -171,7 +180,12 @@ class DatabaseStack(Stack):
             instance_name=f"{id}-dbstack-database",
             instance_type=_ec2.InstanceType(instanceType),
             machine_image=_ec2.MachineImage.latest_amazon_linux(
-               generation=_ec2.AmazonLinuxGeneration.AMAZON_LINUX_2,
+                # If we use a next gen AMI we will need to change the
+                # cpu type here
+                generation=_ec2.AmazonLinuxGeneration.AMAZON_LINUX_2,
+                cpu_type=_ec2.AmazonLinuxCpuType.X86_64,
+                # generation=_ec2.AmazonLinuxGeneration.AMAZON_LINUX_2022,
+                # cpu_type=_ec2.AmazonLinuxCpuType.ARM_64,
             ),
             init=initElements,
             vpc=vpc,

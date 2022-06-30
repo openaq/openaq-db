@@ -30,6 +30,11 @@ db = DatabaseStack(
     databaseHost=settings.DATABASE_HOST,
     databasePort=settings.DATABASE_PORT,
     databaseDb=settings.DATABASE_DB,
+    vpcId=settings.VPC_ID,
+    env={
+        'account': os.environ['CDK_DEFAULT_ACCOUNT'],
+        'region': os.environ['CDK_DEFAULT_REGION']
+    }
 )
 
 Tags.of(db).add("Project", settings.ENV)

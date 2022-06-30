@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     IP_ADDRESS: str = None
     ELASTIC_IP_ALLOCTION_ID: str = None
     SNAPSHOT_ID: str = None
+    VPC_ID: str = None
 
     class Config:
         parent = Path(__file__).resolve().parent.parent
