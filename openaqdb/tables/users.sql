@@ -2,6 +2,8 @@
 -- Adding a gate keeper to api usage
 -- Allowing users to have more more than one key if needed
 -- Storing information about the api users
+-- we will be using ltree for the contact relationships
+CREATE EXTENSION IF NOT EXISTS ltree;
 
 -- A user is someone that uses the api and/or
 -- will log into the platform
@@ -17,11 +19,12 @@ CREATE TABLE IF NOT EXISTS users (
   -- reverification for each new key or edit
   , verification_code text
   , added_on timestamptz DEFAULT now()
-  , modified_on
+  , modified_on timestamptz
   , verified_on timestamptz
   , expires_on timestamptz
   -- we cant delete users so we must inactivate them
-  , is_active NOT NULL DEFAULT 't'::boolean
+  , is_active boolean NOT NULL DEFAULT 't'::boolean
+  , ip_address cidr NOT NULL
 );
 
 -- An optional key type table to hold some defaults
@@ -56,7 +59,7 @@ CREATE TABLE IF NOT EXISTS user_keys (
   -- as an override, it was just need to be nullable
   , uses_per_minute int NOT NULL DEFAULT 60
   -- attributes can store things like refresh tokes (if used)
-  , attributes jsonb,
+  , attributes jsonb
   , added_on timestamptz DEFAULT now()
   , expires_on timestamptz
   , last_used_on timestamptz
@@ -89,11 +92,11 @@ CREATE TYPE contact_type AS ENUM (
 -- information on and reference in the system somewhere
 CREATE SEQUENCE IF NOT EXISTS contacts_sq START 10;
 CREATE TABLE IF NOT EXISTS contacts (
-  contacts_id int PRIMARY KEY DEFAULT nextval('contacts_sq'),
+  contacts_id int PRIMARY KEY DEFAULT nextval('contacts_sq')
   , contact_type contact_type NOT NULL
   -- add any details that we want to track about a person
   -- some tracking tables that we may want to include
-  , added_on timestamptz NOT NULL DEFAULT now
+  , added_on timestamptz NOT NULL DEFAULT now()
   , added_by int NOT NULL REFERENCES users
   , modified_on timestamptz
   , modified_by int REFERENCES users
@@ -103,7 +106,7 @@ CREATE TABLE IF NOT EXISTS contacts (
 -- And then we link the contact to a specific user
 CREATE SEQUENCE IF NOT EXISTS users_contacts_sq START 10;
 CREATE TABLE IF NOT EXISTS users_contacts (
-  users_contacts_id int PRIMARY KEY DEFAULT nextval('users_contacts_sq'),
+  users_contacts_id int PRIMARY KEY DEFAULT nextval('users_contacts_sq')
   , users_id int NOT NULL REFERENCES users ON DELETE CASCADE
   , contacts_id int NOT NULL REFERENCES contacts ON DELETE CASCADE
   , UNIQUE(users_id, contacts_id)
@@ -117,7 +120,7 @@ CREATE TABLE IF NOT EXISTS users_contacts (
 -- Tree method
 CREATE SEQUENCE IF NOT EXISTS contact_paths_sq START 10;
 CREATE TABLE IF NOT EXISTS contact_paths (
-  contact_paths_id int PRIMARY KEY DEFAULT nextval('contact_paths_sq'),
+  contact_paths_id int PRIMARY KEY DEFAULT nextval('contact_paths_sq')
   , contacts_id int NOT NULL REFERENCES contacts
   , contacts_path ltree NOT NULL
   -- add other details here
@@ -141,33 +144,5 @@ $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS contacts_path_tgr ON contact_path;
 CREATE TRIGGER contacts_path_tgr
-BEFORE INSERT OR UPDATE ON contacts_paths
+BEFORE INSERT OR UPDATE ON contact_paths
 FOR EACH ROW EXECUTE PROCEDURE check_contacts_path();
-
-
--- Or the parent/child method
--- This the table that would link a person (child) to an organization (parent)
-CREATE SEQUENCE IF NOT EXISTS contacts_groups_sq START 10;
-CREATE TABLE IF NOT EXISTS contacts_groups (
-  contacts_groups_id int PRIMARY KEY DEFAULT nextval('contacts_groups_sq'),
-  , parent_contact_id int NOT NULL REFERENCES contacts(contacts_id)
-  , child_contact_id int NOT NULL REFERENCES contacts(contacts_id)
-  -- could add more details like start and end dates
-  -- but probably not worth it for this platform
-);
-
--- and here is the function that would get all the members of a given
--- group. Basically
-CREATE OR REPLACE FUNCTION group_contacts(grp int) RETURNS SETOF int AS $$
- WITH RECURSIVE cts AS (
-  SELECT  parent_contact, child_contact--, 1 as level
-    FROM contacts.contact_groups
-    WHERE parent_contact = grp
-  UNION
-  SELECT ct.parent_contact, ct.child_contact--, c.level+1
-    FROM contacts.contact_groups ct
-    JOIN cts c ON (ct.parent_contact = c.child_contact)
- )
- SELECT DISTINCT child_contact
- FROM cts;
-$$ LANGUAGE SQL STABLE;
