@@ -94,10 +94,11 @@ CREATE SEQUENCE IF NOT EXISTS contacts_sq START 10;
 CREATE TABLE IF NOT EXISTS contacts (
   contacts_id int PRIMARY KEY DEFAULT nextval('contacts_sq')
   , contact_type contact_type NOT NULL
+  , full_name text NOT NULL
   -- add any details that we want to track about a person
   -- some tracking tables that we may want to include
   , added_on timestamptz NOT NULL DEFAULT now()
-  , added_by int NOT NULL REFERENCES users
+  , added_by int NOT NULL REFERENCES users DEFAULT 1
   , modified_on timestamptz
   , modified_by int REFERENCES users
 );
@@ -146,3 +147,9 @@ DROP TRIGGER IF EXISTS contacts_path_tgr ON contact_path;
 CREATE TRIGGER contacts_path_tgr
 BEFORE INSERT OR UPDATE ON contact_paths
 FOR EACH ROW EXECUTE PROCEDURE check_contacts_path();
+
+-- Grant access to the api user
+GRANT SELECT ON public.users TO apiuser;
+GRANT SELECT ON public.contacts TO apiuser;
+GRANT SELECT ON public.user_keys TO apiuser;
+GRANT SELECT ON public.users_contacts TO apiuser;
