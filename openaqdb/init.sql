@@ -30,6 +30,7 @@ CREATE EXTENSION IF NOT EXISTS btree_gist;
 \i tables/rollups.sql
 \i tables/readmes.sql
 \i tables/exports.sql
+\i tables/rejects.sql
 COMMIT;
 
 -- Load immutable views/functions

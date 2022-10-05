@@ -1,8 +1,7 @@
 #!/bin/bash
-cd $( dirname "${BASH_SOURCE[0]}")
-pg_ctl -D $PGDATA -o "-c listen_addresses='*' -p 5432" -m fast -w restart
-
-sleep 3
+# cd $( dirname "${BASH_SOURCE[0]}")
+# pg_ctl -D $PGDATA -o "-c listen_addresses='*' -p 5432" -m fast -w restart
+# sleep 3
 
 createdb $DATABASE_DB
 export PGDATABASE=$DATABASE_DB
@@ -19,13 +18,13 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
 GRANT USAGE ON SEQUENCES to public;
 
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
-GRANT ALL ON TABLES to rwuser;
+GRANT ALL ON TABLES to ${DATABASE_WRITE_USER};
 
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
-GRANT ALL ON SEQUENCES to rwuser;
+GRANT ALL ON SEQUENCES to ${DATABASE_WRITE_USER};
 
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
-GRANT ALL ON FUNCTIONS to rwuser;
+GRANT ALL ON FUNCTIONS to ${DATABASE_WRITE_USER};
 EOSQL
 
 set -e

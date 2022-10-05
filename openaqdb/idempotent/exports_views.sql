@@ -135,16 +135,6 @@ OR modified_on > queued_on) -- has changed since being done
 -- wait until the day is done in that timezone to export data
 AND day < (now() AT TIME ZONE (sn.metadata->>'timezone')::text)::date;
 
-SELECT COUNT(1)
-FROM open_data_export_logs l
-WHERE (day < current_date AND age(now(), queued_on) > '1hour'::interval AND l.metadata->>'error' IS NULL)
-AND (
-  exported_on IS NULL
-  OR (queued_on > exported_on)
-  OR (l.metadata->>'version' IS NULL OR (l.metadata->>'version')::int < 1)
-);
-
-SELECT COUNT(1) FROM open_data_export_logs;
 
   SELECT l.sensor_nodes_id
   , day
@@ -172,25 +162,6 @@ SELECT COUNT(1) FROM open_data_export_logs;
 
 
 
-SELECT l.sensor_nodes_id
-, day
-, records
-, measurands
-, modified_on
-, queued_on
-, exported_on
-FROM public.open_data_export_logs l
-WHERE day < current_date -- nothing new
--- has not been queued or exported
-AND ((exported_on IS NULL AND queued_on IS NULL)
--- Or it was done but the version is outdated
-OR (exported_on > queued_on
-AND (metadata->>'version' IS NULL
-OR (metadata->>'version')::int < 1))
--- was queued but timed out before it could finish
-OR (exported_on < queued_on AND queued_on > now() - '1hour'::interval)
-)
-LIMIT 10;
 
 -- a function to get a list of location days that have an older data format
 -- or just may have been missed by a previous attempt

@@ -2,6 +2,7 @@ from aws_cdk import (
     aws_ec2 as _ec2,
     Stack,
     CfnOutput,
+    Duration,
 )
 
 from constructs import Construct
@@ -16,6 +17,8 @@ class DatabaseStack(Stack):
         codeDirectory: str,
         rootVolumeSize: int = 25,
         rootVolumeIops: int = 2000,
+        dataVolumeSize: int = 1000,
+        dataVolumeIops: int = 3000,
         elasticIpAllocationId: str = None,
         snapshotId: str = None,
         keyName: str = None,
@@ -85,6 +88,7 @@ class DatabaseStack(Stack):
             "DATABASE_HOST": databaseHost,
             "DATABASE_PORT": databasePort,
             "DATABASE_DB": databaseDb,
+            "SNAPSHOT_ID": snapshotId,
         }
 
         for key in data:
@@ -107,7 +111,7 @@ class DatabaseStack(Stack):
         )
         blockDevices.append(rootVolume)
 
-        if snapshotId is not None:
+        if snapshotId not in [None, '']:
             snapshotVolume = _ec2.BlockDevice(
                 device_name="/dev/sdb",
                 volume=_ec2.BlockDeviceVolume(
@@ -120,34 +124,41 @@ class DatabaseStack(Stack):
                 )
             )
             blockDevices.append(snapshotVolume)
-            UserData.add_commands('mkdir /db && mount /dev/sdb /db')
+        else:
+            dataVolume = _ec2.BlockDevice(
+                device_name="/dev/sdb",
+                volume=_ec2.BlockDeviceVolume(
+                    ebs_device=_ec2.EbsDeviceProps(
+                        iops=dataVolumeIops,
+                        volume_size=dataVolumeSize,
+                        volume_type=_ec2.EbsDeviceVolumeType.IO2,
+                    )
+                )
+            )
+            blockDevices.append(dataVolume)
+            UserData.add_commands('mkfs -t xfs /dev/sdb && mkdir /db && mount /dev/sdb /db')
 
-        # dataVolume = _ec2.BlockDevice(
-        #     device_name="/dev/sdb",
-        #     volume=_ec2.BlockDeviceVolume.ebs(
-        #         250,
-        #         iops=2000,
-        #         volume_type=_ec2.EbsDeviceVolumeType.IO2
-        #     )
-        # )
-
-        initElements = _ec2.CloudFormationInit.from_elements(
-            # Add some files and then build and run the docker image
-            # env data to use for the docker container
-            # _ec2.InitFile.from_asset("/app/env", envPath),
-            # _ec2.InitFile.from_asset("/etc/environment", envPath),
-            # Because of all the subdirectories its easier just
-            # to copy everything and unzip it later
-            _ec2.InitFile.from_asset("/app/db.zip", setup_dir),
-            # Once we copy the files over we need to
-            # build and start the instance
-            # the initfile method does not copy over
-            # the permissions by default so
-            # we need to make the init file executable
-            _ec2.InitCommand.shell_command(
-                'cd /app && unzip db.zip -d openaqdb'
-            ),
-        )
+        if snapshotId not in [None, '']:
+            initElements = None
+        else:
+            initElements = _ec2.CloudFormationInit.from_elements(
+                # Add some files and then build and run the docker image
+                # env data to use for the docker container
+                # _ec2.InitFile.from_asset("/app/env", envPath),
+                # _ec2.InitFile.from_asset("/etc/environment", envPath),
+                # Because of all the subdirectories its easier just
+                # to copy everything and unzip it later
+                _ec2.InitFile.from_asset("/app/db.zip", setup_dir),
+                # Once we copy the files over we need to
+                # build and start the instance
+                # the initfile method does not copy over
+                # the permissions by default so
+                # we need to make the init file executable
+                #
+                #_ec2.InitCommand.shell_command(
+                #    'cd /app && unzip db.zip -d openaqdb && /app/openaqdb/build.sh'
+                #),
+            )
 
         # Would be nice to add support for a docker method back
         # just would need to add some logic here
@@ -188,6 +199,13 @@ class DatabaseStack(Stack):
                 # cpu_type=_ec2.AmazonLinuxCpuType.ARM_64,
             ),
             init=initElements,
+            init_options=_ec2.ApplyCloudFormationInitOptions(
+                # helpful when diagnosing issues
+                ignore_failures=True,
+                # Optional, how long the installation is expected to take
+                # (5 minutes by default)
+                timeout=Duration.minutes(60),
+            ),
             vpc=vpc,
             security_group=sg,
             key_name=keyName,

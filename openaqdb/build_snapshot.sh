@@ -19,7 +19,7 @@ PROJ_VERSION=6.1.0 # cant move to 6.2 unless we update sqlite
 GDAL_VERSION=3.4.3 # 3.2
 GEOS_VERSION=3.10.3 # 3.
 PGIS_VERSION=3.2.1
-TIMESCALEDB_VERSION=2.7.0 # current prod version is 2.0.0
+TIMESCALEDB_VERSION=2.0.0 # current prod version is 2.0.0
 GO_VERSION=1.18.3
 PROTOBUF_VERSION=2.6.1
 PROTOBUF_C_VERSION=1.1.0
@@ -59,6 +59,7 @@ yum install -y \
     libtiff-devel \
     curl-devel \
     json-c-devel \
+    libevent-devel \
     git
 
 # how to install gdal
@@ -168,10 +169,11 @@ cd /tmp
 git clone https://github.com/timescale/timescaledb.git
 cd timescaledb
 git checkout $TIMESCALEDB_VERSION
-./bootstrap
+./bootstrap -DREGRESS_CHECKS=OFF -DWARNINGS_AS_ERRORS=OFF
 cd ./build && make -j $JOBS
 make install
 # installs to /usr/lib64/pgsql
+
 
 # make sure that postgres owns the $PGDATA directory
 # as long as you are building this from a snapshot they do
@@ -180,12 +182,19 @@ make install
 # sudo -i -u postgres $PGPATH/initdb -D $PGDATA
 # ls $PGDATA --ignore=sed* --ignore=core* -lht
 # ls $PGDATA/*postgres*.conf -lht
+# if we dont have a snapshot id we need to create and init
+if [ -z "$SNAPSHOT_ID" ]; then
+    mkdir -p $PGDATA
+    chown postgres:postgres $PGDATA
+    sudo -i -u postgres $PGPATH/initdb -D $PGDATA
+else
+    # now create the log file. This needs to be done because
+    # this is where the snapshot expects the log file to be
+    mkdir /var/log/postgresql
+    chown postgres:postgres /var/log/postgresql
+    sudo -i -u postgres touch /var/log/postgresql/postgresql.log
+fi
 
-# now create the log file. This needs to be done because
-# this is where the snapshot expects the log file to be
-mkdir /var/log/postgresql
-chown postgres:postgres /var/log/postgresql
-sudo -i -u postgres touch /var/log/postgresql/postgresql.log
 
 # instead of modifying the base config we will add any updates
 # to a different file which will be easier for us to track and update
@@ -198,6 +207,7 @@ echo "listen_addresses='*'" >> $PGDATA/openaq_postgresql.conf
 printf "# TYPE DATABASE USER CIDR-ADDRESS  METHOD\nhost  all  all 0.0.0.0/0 md5" >> $PGDATA/pg_hba.conf
 # and start it
 sudo -i -u postgres $PGPATH/pg_ctl -D $PGDATA -o "-c listen_addresses='*' -p 5432" -m fast -w start
+
 
 # at this point everything we need is built and started
 # but the extensions may need to be updated

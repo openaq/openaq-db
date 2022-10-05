@@ -17,6 +17,48 @@ EXCEPTION WHEN OTHERS THEN
     --END;
 END$$;
 
+-- not going to work on hypertables
+-- DO $$
+-- BEGIN
+--   ALTER TABLE measurements
+--   ADD COLUMN added_on timestamptz DEFAULT now();
+-- EXCEPTION WHEN OTHERS THEN
+--     RAISE NOTICE 'measurements alter error';
+--     --END;
+-- END$$;
+
+
+DO $$
+BEGIN
+  ALTER TABLE sensor_nodes
+  ADD COLUMN added_on timestamptz DEFAULT now(),
+  ADD COLUMN modified_on timestamptz;
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'sensors alter error';
+    --END;
+END$$;
+
+DO $$
+BEGIN
+  ALTER TABLE sensor_systems
+  ADD COLUMN added_on timestamptz DEFAULT now(),
+  ADD COLUMN modified_on timestamptz;
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'sensors alter error';
+    --END;
+END$$;
+
+DO $$
+BEGIN
+  ALTER TABLE sensors
+  ADD COLUMN added_on timestamptz DEFAULT now(),
+  ADD COLUMN modified_on timestamptz;
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'sensors alter error';
+    --END;
+END$$;
+
+
 
 COMMENT ON COLUMN sensors.data_averaging_period_seconds IS
 'The number of seconds that is averaged in each measurement';
@@ -196,6 +238,28 @@ JOIN (SELECT manufacturer_contacts_id
 
 -- use the instrument model sensors to get a list
 -- of all possible sensor units
+
+INSERT INTO contacts (contacts_id
+, full_name
+, contact_type) VALUES
+(1, 'OpenAQ admin', 'Person'::contact_type);
+
+INSERT INTO instruments (instruments_id
+, label
+, description
+, manufacturer_contacts_id) VALUES
+(1, 'N/A', 'Instrument is not available', 1);
+
+DO $$
+BEGIN
+  ALTER TABLE sensor_systems
+  ADD COLUMN instruments_id int REFERENCES instruments DEFAULT 1
+  , ADD COLUMN deployed_by int REFERENCES contacts DEFAULT 1
+  , ADD COLUMN deployed_on date NOT NULL DEFAULT current_date;
+EXCEPTION WHEN OTHERS THEN
+   RAISE NOTICE 'sensor systems alter error';
+END$$;
+
 
 -- testing
 -- try to add a flag with known measurand
