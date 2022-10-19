@@ -1,4 +1,4 @@
-CREATE TABLE timezones (
+CREATE TABLE IF NOT EXISTS timezones (
     gid integer primary key,
     tzid text,
     geog geography

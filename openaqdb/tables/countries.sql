@@ -1,4 +1,4 @@
-CREATE TABLE countries(
+CREATE TABLE IF NOT EXISTS countries(
     iso text,
     name text,
     geom geometry

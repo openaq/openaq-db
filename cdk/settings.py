@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     ELASTIC_IP_ALLOCTION_ID: str = None
     SNAPSHOT_ID: str = None
     VPC_ID: str = None
+    LINUX_VERSION: str = 'AMAZON_LINUX_2' # UBUNTU | AMAZON_LINUX_2022
+    INSTANCE_TYPE: str = None
+    MACHINE_IMAGE_NAME: str = None
 
     class Config:
         parent = Path(__file__).resolve().parent.parent

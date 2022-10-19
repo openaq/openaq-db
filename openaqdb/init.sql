@@ -5,6 +5,22 @@ CREATE EXTENSION IF NOT EXISTS timescaledb;
 CREATE EXTENSION IF NOT EXISTS btree_gist;
 --END;
 
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+GRANT SELECT ON TABLES to public;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+GRANT USAGE ON SEQUENCES to public;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+GRANT ALL ON TABLES to rwuser;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+GRANT ALL ON SEQUENCES to rwuser;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+GRANT ALL ON FUNCTIONS to rwuser;
+
+
 --BEGIN;
 -- General lookup tables
 \i tables/countries.sql
@@ -36,3 +52,8 @@ COMMIT;
 -- Load immutable views/functions
 -- file contains begin/commit
 \i refresh_idempotent.sql
+
+INSERT INTO fetchlogs (key) VALUES
+  ('lcs-etl-pipeline/measures/purpleair/1664911958-z2atn.csv.gz')
+, ('realtime-gzipped/2022-10-04/1664912239.ndjson.gz')
+;

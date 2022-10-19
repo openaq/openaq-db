@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 from pathlib import Path
-
 import aws_cdk
 from aws_cdk import (
     Tags,
@@ -17,12 +16,15 @@ app = aws_cdk.App()
 
 db = DatabaseStack(
     app,
-    f"{settings.ENV}-database",
+    f"openaq-db-{settings.ENV}",
     codeDirectory=code_dir,
     keyName=settings.KEY_NAME,
     sshIpRange=settings.IP_ADDRESS,
     elasticIpAllocationId=settings.ELASTIC_IP_ALLOCTION_ID,
+    linuxVersion=settings.LINUX_VERSION,
     snapshotId=settings.SNAPSHOT_ID,
+    machineImageName=settings.MACHINE_IMAGE_NAME,
+    instanceType=settings.INSTANCE_TYPE,
     databaseReadUser=settings.DATABASE_READ_USER,
     databaseReadPassword=settings.DATABASE_READ_PASSWORD,
     databaseWriteUser=settings.DATABASE_WRITE_USER,

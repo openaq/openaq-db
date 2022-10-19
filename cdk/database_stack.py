@@ -3,8 +3,10 @@ from aws_cdk import (
     Stack,
     CfnOutput,
     Duration,
+    Tags,
 )
 
+from utils import get_latest_snapshot
 from constructs import Construct
 import os
 
@@ -20,16 +22,22 @@ class DatabaseStack(Stack):
         dataVolumeSize: int = 1000,
         dataVolumeIops: int = 3000,
         elasticIpAllocationId: str = None,
+        machineImageName: str = None,
         snapshotId: str = None,
         keyName: str = None,
         expose5432: bool = True,
+        expose6432: bool = True,
+        expose9187: bool = True,
         httpIpRange: str = '0.0.0.0/0',
         sshIpRange: str = None,
+        linuxVersion: str = 'amazon_linux_2',
         instanceType: str = "r5.xlarge",
         databaseReadUser: str = 'postgres',
         databaseReadPassword: str = 'postgres',
         databaseWriteUser: str = 'postgres',
         databaseWritePassword: str = 'postgres',
+        databaseMonitorUser: str = 'postgres',
+        databaseMonitorPassword: str = 'postgres',
         databaseHost: str = 'localhost',
         databasePort: str = '5432',
         databaseDb: str = 'openaq',
@@ -76,6 +84,23 @@ class DatabaseStack(Stack):
                 connection=_ec2.Port.tcp(5432)
             )
 
+        if expose6432:
+            sg.add_ingress_rule(
+                peer=_ec2.Peer.ipv4(httpIpRange),
+                connection=_ec2.Port.tcp(6432)
+            )
+
+        if expose9187:
+            sg.add_ingress_rule(
+                peer=_ec2.Peer.ipv4(httpIpRange),
+                connection=_ec2.Port.tcp(9187)
+            )
+
+        # Check if we need to lookup the snapshot id
+        if snapshotId == 'LATEST':
+            snapshotId = get_latest_snapshot('Scalegrid-LCSDatabase-41094-')
+
+
         # Transfer some key data on to the instance
         # must be done in UserData and not as initElements
         # add anything else as needed
@@ -85,12 +110,19 @@ class DatabaseStack(Stack):
             "DATABASE_READ_PASSWORD": databaseReadPassword,
             "DATABASE_WRITE_USER": databaseWriteUser,
             "DATABASE_WRITE_PASSWORD": databaseWritePassword,
+            "DATABASE_MONITOR_USER": databaseMonitorUser,
+            "DATABASE_MONITOR_PASSWORD": databaseMonitorPassword,
             "DATABASE_HOST": databaseHost,
             "DATABASE_PORT": databasePort,
             "DATABASE_DB": databaseDb,
             "SNAPSHOT_ID": snapshotId,
+            "PGPATH": "/usr/bin",
+            "PGDATA": "/db/data",
+            "PGCONFIG": "/db/data/postgresql.conf",
         }
-
+        # clear the env file in case it comes from an existing image
+        # in which case it already may have values
+        UserData.add_commands('> /etc/environment')
         for key in data:
             value = data[key]
             # this will make sure that they are accessible
@@ -103,11 +135,13 @@ class DatabaseStack(Stack):
         blockDevices = []
         rootVolume = _ec2.BlockDevice(
             device_name="/dev/xvda",
-            volume=_ec2.BlockDeviceVolume.ebs(
-                rootVolumeSize,
-                iops=rootVolumeIops,
-                volume_type=_ec2.EbsDeviceVolumeType.IO2
-            )
+            volume=_ec2.BlockDeviceVolume(
+                ebs_device=_ec2.EbsDeviceProps(
+                    iops=rootVolumeIops,
+                    volume_size=rootVolumeSize,
+                    volume_type=_ec2.EbsDeviceVolumeType.IO2,
+                )
+            ),
         )
         blockDevices.append(rootVolume)
 
@@ -124,6 +158,7 @@ class DatabaseStack(Stack):
                 )
             )
             blockDevices.append(snapshotVolume)
+            UserData.add_commands('mkdir /db && mount /dev/sdb /db')
         else:
             dataVolume = _ec2.BlockDevice(
                 device_name="/dev/sdb",
@@ -138,27 +173,20 @@ class DatabaseStack(Stack):
             blockDevices.append(dataVolume)
             UserData.add_commands('mkfs -t xfs /dev/sdb && mkdir /db && mount /dev/sdb /db')
 
-        if snapshotId not in [None, '']:
-            initElements = None
-        else:
-            initElements = _ec2.CloudFormationInit.from_elements(
-                # Add some files and then build and run the docker image
-                # env data to use for the docker container
-                # _ec2.InitFile.from_asset("/app/env", envPath),
-                # _ec2.InitFile.from_asset("/etc/environment", envPath),
-                # Because of all the subdirectories its easier just
-                # to copy everything and unzip it later
-                _ec2.InitFile.from_asset("/app/db.zip", setup_dir),
-                # Once we copy the files over we need to
-                # build and start the instance
-                # the initfile method does not copy over
-                # the permissions by default so
-                # we need to make the init file executable
-                #
-                #_ec2.InitCommand.shell_command(
-                #    'cd /app && unzip db.zip -d openaqdb && /app/openaqdb/build.sh'
-                #),
-            )
+        initElements = _ec2.CloudFormationInit.from_elements(
+            _ec2.InitFile.from_asset("/app/db.zip", setup_dir),
+            # _ec2.InitCommand.shell_command(
+            #    'cd /app && unzip -o db.zip -d openaqdb && /app/openaqdb/build_instance.sh'
+            # ),
+        )
+
+        initOptions = _ec2.ApplyCloudFormationInitOptions(
+            # helpful when diagnosing issues
+            ignore_failures=True,
+            # Optional, how long the installation is expected to take
+            # (5 minutes by default)
+            timeout=Duration.minutes(60),
+        )
 
         # Would be nice to add support for a docker method back
         # just would need to add some logic here
@@ -185,27 +213,28 @@ class DatabaseStack(Stack):
         # )
 
         # create the instance
+        if machineImageName not in [None, '']:
+            image = _ec2.MachineImage.lookup(
+                name=machineImageName,
+            )
+        elif linuxVersion == 'ubuntu':
+            image = _ec2.MachineImage.from_ssm_parameter(
+                '/aws/service/canonical/ubuntu/server/impish/stable/current/amd64/hvm/ebs-gp2/ami-id',
+            )
+        else:
+            image = _ec2.MachineImage.latest_amazon_linux(
+                generation=_ec2.AmazonLinuxGeneration.AMAZON_LINUX_2,
+                cpu_type=_ec2.AmazonLinuxCpuType.X86_64,
+            )
+
         ec2 = _ec2.Instance(
             self,
             f"{id}-dbstack-database",
             instance_name=f"{id}-dbstack-database",
             instance_type=_ec2.InstanceType(instanceType),
-            machine_image=_ec2.MachineImage.latest_amazon_linux(
-                # If we use a next gen AMI we will need to change the
-                # cpu type here
-                generation=_ec2.AmazonLinuxGeneration.AMAZON_LINUX_2,
-                cpu_type=_ec2.AmazonLinuxCpuType.X86_64,
-                # generation=_ec2.AmazonLinuxGeneration.AMAZON_LINUX_2022,
-                # cpu_type=_ec2.AmazonLinuxCpuType.ARM_64,
-            ),
+            machine_image=image,
             init=initElements,
-            init_options=_ec2.ApplyCloudFormationInitOptions(
-                # helpful when diagnosing issues
-                ignore_failures=True,
-                # Optional, how long the installation is expected to take
-                # (5 minutes by default)
-                timeout=Duration.minutes(60),
-            ),
+            init_options=initOptions,
             vpc=vpc,
             security_group=sg,
             key_name=keyName,
@@ -221,7 +250,7 @@ class DatabaseStack(Stack):
         # may be destroying and rebuilding a lot but
         # not worth it for production
         # where something will be deployed and left alone
-        if elasticIpAllocationId is not None:
+        if elasticIpAllocationId not in [None, '']:
             _ec2.CfnEIPAssociation(
                 self,
                 f"{id}-dbstack-ipaddress",

@@ -54,18 +54,6 @@ CREATE INDEX hourly_rollups_datetime_idx
 ON hourly_rollups
 USING btree (datetime);
 
--- Create a hypertable (partitioned) using timescaledb
--- Data will also be partitioned by measurand id to make queries
--- within one measurand faster
-SELECT create_hypertable(
-  relation => 'hourly_rollups'
-, time_column_name => 'datetime'
-, partitioning_column => 'measurands_id'
-, number_partitions => 10
-, chunk_time_interval => '1month'::interval
-, if_not_exists => TRUE
-);
-
 
 -- create a table to help us keep track of what days have been updated
 -- This table is used to back calculate rollup days. If the rollup service (lambda)
