@@ -219,7 +219,21 @@ class DatabaseStack(Stack):
             )
         elif linuxVersion == 'ubuntu':
             image = _ec2.MachineImage.from_ssm_parameter(
-                '/aws/service/canonical/ubuntu/server/impish/stable/current/amd64/hvm/ebs-gp2/ami-id',
+                '/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id',
+            )
+            # ubuntu does not come with some needed things
+            # so we can add them here
+            UserData.add_commands(
+                'apt-get update -y',
+                'apt-get install -y git awscli ec2-instance-connect',
+                'until git clone https://github.com/aws-quickstart/quickstart-linux-utilities.git; do echo "Retrying"; done',
+                'cd /quickstart-linux-utilities',
+                'source quickstart-cfn-tools.source',
+                'qs_update-os || qs_err',
+                'qs_bootstrap_pip || qs_err',
+                'qs_aws-cfn-bootstrap || qs_err',
+                'mkdir -p /opt/aws/bin',
+                'ln -s /usr/local/bin/cfn-* /opt/aws/bin/'
             )
         else:
             image = _ec2.MachineImage.latest_amazon_linux(
@@ -233,8 +247,8 @@ class DatabaseStack(Stack):
             instance_name=f"{id}-dbstack-database",
             instance_type=_ec2.InstanceType(instanceType),
             machine_image=image,
-            init=initElements,
-            init_options=initOptions,
+            #init=initElements,
+            #init_options=initOptions,
             vpc=vpc,
             security_group=sg,
             key_name=keyName,
