@@ -30,7 +30,7 @@ fi
 # instead of modifying the base config we will add any updates
 # to a different file which will be easier for us to track and update
 echo "include 'openaq_postgresql.conf'" >> $PGCONFIG
-echo "shared_preload_libraries = 'timescaledb, pg_cron'" >> $PGDATA/openaq_postgresql.conf
+echo "shared_preload_libraries = 'pg_cron'" >> $PGDATA/openaq_postgresql.conf
 # the next two lines make the database accessible to outside connections
 # this may or may not be what you want to do
 echo "listen_addresses='*'" >> $PGDATA/openaq_postgresql.conf
@@ -43,6 +43,8 @@ if [ -z "$SNAPSHOT_ID" ]; then
     # install the database
     cd /app/openaqdb
     sudo -u postgres ./init.sh > openaq_install.log 2>&1
+    # install pg_cron
+    sudo -u postgres psql -d postgres -c 'CREATE EXTENSION pg_cron' -f cron.sql
 else
     PROD_URL=postgres://$DATABASE_READ_USER:$DATABASE_READ_PASSWORD@$DATABASE_HOST:$DATABASE_PORT/$DATABASE_DB
     LOCAL_URL=postgres://$DATABASE_WRITE_USER:$DATABASE_WRITE_PASSWORD@localhost:5432/$DATABASE_DB

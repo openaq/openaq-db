@@ -9,15 +9,18 @@ class Settings(BaseSettings):
     DATABASE_READ_PASSWORD: str
     DATABASE_WRITE_USER: str
     DATABASE_WRITE_PASSWORD: str
+    DATABASE_POSTGRES_PASSWORD: str
     DATABASE_HOST: str
     DATABASE_PORT: int
     DATABASE_DB: str
     KEY_NAME: str
+    DATABASE_MONITOR_USER: str = None
+    DATABASE_MONITOR_PASSWORD: str = None
     IP_ADDRESS: str = None
     ELASTIC_IP_ALLOCTION_ID: str = None
     SNAPSHOT_ID: str = None
     VPC_ID: str = None
-    LINUX_VERSION: str = 'AMAZON_LINUX_2' # UBUNTU | AMAZON_LINUX_2022
+    LINUX_VERSION: str = 'AMAZON_LINUX_2'  # UBUNTU | AMAZON_LINUX_2022
     INSTANCE_TYPE: str = None
     MACHINE_IMAGE_NAME: str = None
 

@@ -1,5 +1,38 @@
+BEGIN;
+-- this is just a shim to fix the missing last function issue
+-- should explore not using it
+CREATE OR REPLACE FUNCTION public.last_time_agg (anyelement, anyelement, timestamptz )
+RETURNS anyelement LANGUAGE SQL IMMUTABLE STRICT AS $$
+        SELECT $2;
+$$;
 
-create table if not exists analyses_summary as SELECT sensors_id, min(datetime) as first_datetime, max(datetime) as last_datetime, last(value,datetime)as last_value, count(*) as value_count, sum(value) as value_sum, min(lon) as minx, min(lat) as miny, max(lon) as maxx, max(lat) as maxy, st_makepoint(last(lon, datetime), last(lat, datetime))::geography as last_point from analyses group by sensors_id;
+DROP AGGREGATE IF EXISTS public.last (anyelement, timestamptz) CASCADE;
+CREATE AGGREGATE public.last(anyelement, timestamptz) (
+        sfunc    = public.last_time_agg,
+        stype = anyelement
+);
+
+
+--CREATE OR REPLACE FUNCTION _timescaledb_internal.last_sfunc(internal, anyelement, "any")
+--RETURNS internal
+--AS '@MODULE_PATHNAME@', 'ts_last_sfunc'
+--LANGUAGE C IMMUTABLE PARALLEL SAFE;
+
+create table if not exists analyses_summary as
+SELECT sensors_id
+, min(datetime) as first_datetime
+, max(datetime) as last_datetime
+, last(value,datetime) as last_value
+, count(*) as value_count
+, sum(value) as value_sum
+, min(lon) as minx
+, min(lat) as miny
+, max(lon) as maxx
+, max(lat) as maxy
+, st_makepoint(last(lon, datetime)
+, last(lat, datetime))::geography as last_point
+FROM analyses
+GROUP BY sensors_id;
 
 DROP MATERIALIZED VIEW IF EXISTS sensors_first_last;
 CREATE MATERIALIZED VIEW sensors_first_last AS
@@ -390,8 +423,8 @@ WITH base AS (
             country,
             json->'sources' as sources,
             jsonb_build_object(
-                'longitude', st_x(coalesce((last(last_point, last_datetime))::geometry, geom)),
-                'latitude', st_y(coalesce((last(last_point, last_datetime))::geometry, geom))
+               -- 'longitude', st_x(coalesce((last(last_point, last_datetime))::geometry, geom)),
+               -- 'latitude', st_y(coalesce((last(last_point, last_datetime))::geometry, geom))
             ) as coordinates,
             jsonb_agg(DISTINCT mfr) FILTER (WHERE mfr is not Null) as manufacturers,
             sum(value_count) as measurements,
@@ -586,3 +619,4 @@ GROUP BY 1;
 CREATE INDEX ON mobile_gen_boxes (sensors_id);
 CREATE INDEX ON mobile_gen_boxes USING GIST (box, sensors_id);
 */
+COMMIT;

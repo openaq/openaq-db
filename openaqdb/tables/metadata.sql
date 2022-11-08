@@ -1,11 +1,12 @@
 -- sensors nodes updates
 -- pull
 
-
-
-
 -- Sensors table updates
 BEGIN;
+
+INSERT INTO users (users_id, email_address, ip_address) VALUES
+(1, 'admin@openaq.org', '127.0.0.1');
+
 
 DO $$
 BEGIN
@@ -249,6 +250,32 @@ INSERT INTO instruments (instruments_id
 , description
 , manufacturer_contacts_id) VALUES
 (1, 'N/A', 'Instrument is not available', 1);
+
+
+DO $$
+BEGIN
+  ALTER TABLE providers
+  ADD COLUMN owner_contacts_id int REFERENCES contacts DEFAULT 1;
+EXCEPTION WHEN OTHERS THEN
+   RAISE NOTICE 'providers alter error';
+END$$;
+
+INSERT INTO providers (providers_id
+, label
+, description
+, source_name
+, export_prefix
+, owner_contacts_id) VALUES
+(1, 'N/A', 'Provider is not available', 'na', 'na_', 1);
+
+DO $$
+BEGIN
+  ALTER TABLE sensor_nodes
+  ADD COLUMN providers_id int REFERENCES providers DEFAULT 1
+  , ADD COLUMN owner_contacts_id int REFERENCES contacts DEFAULT 1;
+EXCEPTION WHEN OTHERS THEN
+   RAISE NOTICE 'sensor nodes alter error';
+END$$;
 
 DO $$
 BEGIN

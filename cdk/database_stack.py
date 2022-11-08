@@ -38,6 +38,7 @@ class DatabaseStack(Stack):
         databaseWritePassword: str = 'postgres',
         databaseMonitorUser: str = 'postgres',
         databaseMonitorPassword: str = 'postgres',
+        databasePostgresPassword: str = 'postgres',
         databaseHost: str = 'localhost',
         databasePort: str = '5432',
         databaseDb: str = 'openaq',
@@ -112,6 +113,7 @@ class DatabaseStack(Stack):
             "DATABASE_WRITE_PASSWORD": databaseWritePassword,
             "DATABASE_MONITOR_USER": databaseMonitorUser,
             "DATABASE_MONITOR_PASSWORD": databaseMonitorPassword,
+            "DATABASE_POSTGRES_PASSWORD": databasePostgresPassword,
             "DATABASE_HOST": databaseHost,
             "DATABASE_PORT": databasePort,
             "DATABASE_DB": databaseDb,
@@ -175,8 +177,11 @@ class DatabaseStack(Stack):
 
         initElements = _ec2.CloudFormationInit.from_elements(
             _ec2.InitFile.from_asset("/app/db.zip", setup_dir),
+            _ec2.InitCommand.shell_command(
+                'cd /app && unzip -o db.zip -d openaqdb'
+            ),
             # _ec2.InitCommand.shell_command(
-            #    'cd /app && unzip -o db.zip -d openaqdb && /app/openaqdb/build_instance.sh'
+            #    '/app/openaqdb/install_database.sh'
             # ),
         )
 
@@ -247,8 +252,8 @@ class DatabaseStack(Stack):
             instance_name=f"{id}-dbstack-database",
             instance_type=_ec2.InstanceType(instanceType),
             machine_image=image,
-            #init=initElements,
-            #init_options=initOptions,
+            init=initElements,
+            init_options=initOptions,
             vpc=vpc,
             security_group=sg,
             key_name=keyName,

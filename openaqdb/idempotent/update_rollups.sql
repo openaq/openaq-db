@@ -10,7 +10,6 @@ CREATE OR REPLACE FUNCTION update_sources() RETURNS VOID AS $$
         origins o WHERE sn.origin is not null and NOT sn.metadata ? 'entity' AND sn.origin=o.origin;
 
     --AQDC
-    -- Not sure how type is used but its a required field and was not included here
     INSERT INTO sources (slug, name)
     SELECT DISTINCT
         source_name,
@@ -37,6 +36,7 @@ CREATE OR REPLACE FUNCTION update_sources() RETURNS VOID AS $$
     ON CONFLICT DO NOTHING
     ;
 
+
     -- OpenAQ
     WITH t AS (
         select distinct jsonb_array_elements(metadata->'attribution') as j
@@ -48,8 +48,8 @@ CREATE OR REPLACE FUNCTION update_sources() RETURNS VOID AS $$
     )
     INSERT INTO sources (name, metadata)
     SELECT
-        j->>'name'
-        , jsonb_merge_agg(j - '{name}'::text[])
+        j->>'name',
+        jsonb_merge_agg(j - '{name}'::text[])
     FROM t
     GROUP BY 1
     ON CONFLICT DO NOTHING
@@ -112,7 +112,9 @@ CREATE OR REPLACE FUNCTION update_groups() RETURNS VOID AS $$
 
     -- Each sensor_node
     INSERT INTO groups (type, name, subtitle)
-    SELECT 'node', sensor_nodes_id::text, site_name
+    SELECT 'node'
+    , sensor_nodes_id::text
+    , site_name
     FROM sensor_nodes
     ON CONFLICT (type, name) DO
     UPDATE
@@ -156,14 +158,15 @@ CREATE OR REPLACE FUNCTION update_groups() RETURNS VOID AS $$
 
     -- each aqdc organization
     INSERT INTO groups(type, name, subtitle)
-    SELECT DISTINCT 'organization', slugify(sources.metadata->>'organization'), sources.metadata->>'organization'
+    SELECT DISTINCT 'organization'
+    , slugify(sources.metadata->>'organization')
+    , sources.metadata->>'organization'
     FROM sources
     JOIN sensor_nodes_sources USING (sources_id)
     JOIN sensor_nodes USING (sensor_nodes_id)
     WHERE origin='AQDC' and sources.metadata ? 'organization'
     ON CONFLICT DO NOTHING
     ;
-
 
     --add country sensors
     INSERT INTO groups_sensors (groups_id, sensors_id)
@@ -227,7 +230,6 @@ CREATE OR REPLACE FUNCTION update_groups() RETURNS VOID AS $$
 $$ LANGUAGE SQL;
 
 
-
 CREATE OR REPLACE FUNCTION rollups_daily(
     _start timestamptz = now()
 )
@@ -240,15 +242,15 @@ _st timestamptz := date_trunc('day', _start);
 _et timestamptz := date_trunc('day', _start) + '1 day'::interval - '1 second'::interval;
 BEGIN
 RAISE NOTICE 'Updating daily Rollups  %  --- %', _start, clock_timestamp();
-RAISE NOTICE '% %', _st, _et;
-RAISE NOTICE 'Deleting %', clock_timestamp();
+--RAISE NOTICE '% %', _st, _et;
+--RAISE NOTICE 'Deleting %', clock_timestamp();
     DELETE FROM rollups
     WHERE
         rollup='day'
         AND
         st=_st
     ;
-RAISE NOTICE 'Creating temp table by sensor %', clock_timestamp();
+--RAISE NOTICE 'Creating temp table by sensor %', clock_timestamp();
 CREATE TEMP TABLE dailyrolluptemp_by_sensor AS
 SELECT
         sensors_id,
@@ -268,11 +270,13 @@ SELECT
     FROM measurements
     JOIN groups_sensors USING (sensors_id)
     JOIN sensors USING (sensors_id)
-    WHERE
-        datetime >= _st and datetime <= _et
+    WHERE datetime >= _st
+    AND datetime <= _et
     GROUP BY 1,2,3,4
         ;
-RAISE NOTICE 'Creating temp table by group %', clock_timestamp();
+
+--RAISE NOTICE 'Created temp table by sensor from % to % - %: %', _st, _et, clock_timestamp(), (SELECT COUNT(1) FROM dailyrolluptemp_by_sensor);
+--RAISE NOTICE 'Creating temp table by group %', clock_timestamp();
 
     CREATE TEMP TABLE dailyrolluptemp AS
     SELECT
@@ -299,7 +303,7 @@ RAISE NOTICE 'Creating temp table by group %', clock_timestamp();
         ;
 
 
-    RAISE NOTICE 'inserting %', clock_timestamp();
+    RAISE NOTICE 'inserting % records - %', (SELECT COUNT(1) FROM dailyrolluptemp), clock_timestamp();
 
     INSERT INTO rollups (
         groups_id,
@@ -326,6 +330,17 @@ RAISE NOTICE 'Creating temp table by group %', clock_timestamp();
 END;
 $$;
 
+-- Added just to make it easier to rebuild the daily rollups during dev
+DROP FUNCTION IF EXISTS rollups_daily_full();
+CREATE OR REPLACE FUNCTION rollups_daily_full() RETURNS VOID AS $$
+WITH days AS (
+  SELECT date_trunc('day', datetime - '1sec'::interval) as day
+  FROM measurements
+  GROUP BY date_trunc('day', datetime - '1sec'::interval)
+)
+SELECT rollups_daily(day)
+FROM days;
+$$ LANGUAGE SQL;
 
 
 CREATE OR REPLACE FUNCTION rollups_monthly(
@@ -515,12 +530,16 @@ DECLARE
 _st timestamptz;
 _et timestamptz;
 t timestamptz;
+st timestamptz;
 BEGIN
+
+    SELECT current_timestamp INTO st;
+
     SELECT (config->>'start')::timestamptz INTO STRICT _st;
     SELECT (config->>'end')::timestamptz INTO STRICT _et;
 
-    _st:=coalesce(_st, now() - '1 days'::interval);
-    _et:=coalesce(_et, now());
+    _st:=date_trunc('day',coalesce(_st, now() - '1 days'::interval));
+    _et:=date_trunc('day',coalesce(_et, now()));
 
     RAISE NOTICE 'updating timezones';
     update sensor_nodes
@@ -531,19 +550,25 @@ BEGIN
     set metadata = metadata || jsonb_build_object('timezone',timezone(sn_lastpoint(sensor_nodes_id)))
     where not metadata ? 'timezone' and geom is null and ismobile;
 
+    SELECT log_performance('update-timezone', st) INTO st;
+
     RAISE NOTICE 'updating countries';
-    update sensor_nodes set country = country(geom) where country is null and geom is not null;
+    update sensor_nodes set country = country(geom)
+    where (country is null OR country = '99') and geom is not null;
     update sensor_nodes set country = country(sn_lastpoint(sensor_nodes_id))
     where country is null and geom is null and ismobile;
     COMMIT;
+    SELECT log_performance('update-countries', st) INTO st;
 
     RAISE NOTICE 'Updating sources Tables';
     PERFORM update_sources();
     COMMIT;
+    SELECT log_performance('update-sources', st) INTO st;
 
     RAISE NOTICE 'Updating Groups Tables';
     PERFORM update_groups();
     COMMIT;
+    SELECT log_performance('update-groups', st) INTO st;
 
     FOR t IN
         (SELECT g FROM generate_series(_st, _et, '1 day'::interval) as g)
@@ -553,12 +578,16 @@ BEGIN
         COMMIT;
     END LOOP;
 
+    SELECT log_performance('update-daily-rollups', st) INTO st;
+
     FOR t IN
         (SELECT g FROM generate_series(_st, _et, '1 month'::interval) as g)
     LOOP
         PERFORM rollups_monthly(t);
         COMMIT;
     END LOOP;
+
+    SELECT log_performance('update-monthly-rollups', st) INTO st;
 
     FOR t IN
         (SELECT g FROM generate_series(_st, _et, '1 year'::interval) as g)
@@ -567,37 +596,56 @@ BEGIN
         COMMIT;
     END LOOP;
 
+    SELECT log_performance('update-yearly-rollups', st) INTO st;
+
     PERFORM rollups_total();
     COMMIT;
+    SELECT log_performance('update-total-rollups', st) INTO st;
 
     RAISE NOTICE 'REFRESHING sensors_first_last';
     REFRESH MATERIALIZED VIEW sensors_first_last;
     COMMIT;
+    SELECT log_performance('update-sensors-first-last', st) INTO st;
 
     RAISE NOTICE 'REFRESHING sensor_nodes_json';
     REFRESH MATERIALIZED VIEW sensor_nodes_json;
     COMMIT;
+    SELECT log_performance('update-sensor-nodes-json', st) INTO st;
 
     RAISE NOTICE 'REFRESHING groups_view';
     REFRESH MATERIALIZED VIEW groups_view;
     COMMIT;
+    SELECT log_performance('update-groups-view', st) INTO st;
 
     RAISE NOTICE 'REFRESHING sensor_stats';
     REFRESH MATERIALIZED VIEW sensor_stats;
     COMMIT;
+    SELECT log_performance('update-sensor-stats', st) INTO st;
+
+    RAISE NOTICE 'REFRESHING city_stats';
+    REFRESH MATERIALIZED VIEW city_stats;
+    COMMIT;
+    SELECT log_performance('update-city-stats', st) INTO st;
+
+    RAISE NOTICE 'REFRESHING country_stats';
+    REFRESH MATERIALIZED VIEW country_stats;
+    COMMIT;
+    SELECT log_performance('update-country-stats', st) INTO st;
 
     RAISE NOTICE 'REFRESHING locations_base_v2';
     REFRESH MATERIALIZED VIEW locations_base_v2;
     COMMIT;
+    SELECT log_performance('update-locations-base', st) INTO st;
 
     RAISE NOTICE 'REFRESHING locations';
     REFRESH MATERIALIZED VIEW locations;
     COMMIT;
+    SELECT log_performance('update-locations', st) INTO st;
 
     RAISE NOTICE 'REFRESHING measurements_fastapi_base';
     REFRESH MATERIALIZED VIEW measurements_fastapi_base;
     COMMIT;
-
+    SELECT log_performance('update-measurements-base', st) INTO st;
 
 END;
 $$;
