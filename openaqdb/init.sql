@@ -12,13 +12,13 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
 GRANT USAGE ON SEQUENCES to public;
 
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
-GRANT ALL ON TABLES to rwuser;
+GRANT ALL ON TABLES to :DATABASE_WRITE_USER;
 
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
-GRANT ALL ON SEQUENCES to rwuser;
+GRANT ALL ON SEQUENCES to :DATABASE_WRITE_USER;
 
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
-GRANT ALL ON FUNCTIONS to rwuser;
+GRANT ALL ON FUNCTIONS to :DATABASE_WRITE_USER;
 
 
 --BEGIN;
@@ -47,6 +47,9 @@ GRANT ALL ON FUNCTIONS to rwuser;
 \i tables/readmes.sql
 \i tables/exports.sql
 \i tables/rejects.sql
+\i tables/users.sql
+\i tables/metadata.sql
+\i locations/locations.sql
 COMMIT;
 
 -- Load immutable views/functions

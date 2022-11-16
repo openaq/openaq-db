@@ -16,7 +16,7 @@ CREATE INDEX IF NOT EXISTS sensor_nodes_site_name_source_name_idx ON sensor_node
 CREATE UNIQUE INDEX IF NOT EXISTS sensor_nodes_source_name_source_id_idx ON sensor_nodes USING btree (source_name, source_id);
 
 
-CREATE TABLE  IF NOT EXISTS sensor_nodes_history (
+CREATE TABLE IF NOT EXISTS sensor_nodes_history (
     sensor_nodes_id int,
     ismobile boolean,
     geom geometry,
@@ -30,8 +30,8 @@ CREATE TABLE  IF NOT EXISTS sensor_nodes_history (
     created timestamptz DEFAULT now()
 );
 
-CREATE INDEX ON sensor_nodes_history (sensor_nodes_id);
-CREATE INDEX ON sensor_nodes_history (site_name);
+CREATE INDEX IF NOT EXISTS sensor_nodes_history_sensor_nodes_id_idx ON sensor_nodes_history (sensor_nodes_id);
+CREATE INDEX IF NOT EXISTS sensor_nodes_history_site_name_idx ON sensor_nodes_history (site_name);
 
 CREATE TABLE IF NOT EXISTS sensor_nodes_harrays (
     sensor_nodes_id integer primary key,

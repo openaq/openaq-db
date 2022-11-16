@@ -2,10 +2,9 @@
 -- pull
 
 -- Sensors table updates
-BEGIN;
-
 INSERT INTO users (users_id, email_address, ip_address) VALUES
-(1, 'admin@openaq.org', '127.0.0.1');
+(1, 'admin@openaq.org', '127.0.0.1')
+ON CONFLICT DO NOTHING;
 
 
 DO $$
@@ -243,13 +242,15 @@ JOIN (SELECT manufacturer_contacts_id
 INSERT INTO contacts (contacts_id
 , full_name
 , contact_type) VALUES
-(1, 'OpenAQ admin', 'Person'::contact_type);
+(1, 'OpenAQ admin', 'Person'::contact_type)
+ON CONFLICT DO NOTHING;
 
 INSERT INTO instruments (instruments_id
 , label
 , description
 , manufacturer_contacts_id) VALUES
-(1, 'N/A', 'Instrument is not available', 1);
+(1, 'N/A', 'Instrument is not available', 1)
+ON CONFLICT DO NOTHING;
 
 
 DO $$
@@ -286,44 +287,3 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN
    RAISE NOTICE 'sensor systems alter error';
 END$$;
-
-
--- testing
--- try to add a flag with known measurand
-SELECT sensor_nodes_id FROM sensor_nodes LIMIT 1;
-\gset
-
-SELECT measurands_id FROM measurands LIMIT 1;
-\gset
-
--- test flag
-INSERT INTO flags (flags_id, label, flag_levels_id) VALUES
-(1, 'test flag', 1)
-ON CONFLICT DO NOTHING;
-
--- insert good data
-INSERT INTO flagged_measurements (flags_id, sensor_nodes_id, period, measurands_id) VALUES
-(1, :sensor_nodes_id, '[2022-01-01,2022-02-01]'::tstzrange, ARRAY[:measurands_id]);
-
--- insert bad data
-DO $$
-DECLARE
- snid int;
- mid int;
-BEGIN
-    SELECT sensor_nodes_id INTO snid FROM sensor_nodes LIMIT 1;
-    SELECT measurands_id INTO mid FROM measurands LIMIT 1;
-    INSERT INTO flagged_measurements (flags_id, sensor_nodes_id, period, measurands_id) VALUES
-    (1, snid, '[2022-01-01,2022-02-01]'::tstzrange, ARRAY[-1]);
-    INSERT INTO flagged_measurements (flags_id, sensor_nodes_id, period, measurands_id) VALUES
-    (1, snid, '[2022-01-01,2022-02-01]'::tstzrange, ARRAY[mid, -1]);
-    RAISE EXCEPTION 'Did not throw error';
-EXCEPTION WHEN OTHERS THEN
-    RAISE NOTICE 'Works as expected';
-END$$;
-
-SELECT * FROM flagged_measurements;
-DELETE FROM flagged_measurements;
-DELETE FROM flags;
-
-COMMIT;

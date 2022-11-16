@@ -107,6 +107,7 @@ class DatabaseStack(Stack):
         # add anything else as needed
         UserData = _ec2.UserData.for_linux()
         data = {
+            "DATABASE_INSTANCE_ID": id,
             "DATABASE_READ_USER": databaseReadUser,
             "DATABASE_READ_PASSWORD": databaseReadPassword,
             "DATABASE_WRITE_USER": databaseWriteUser,
@@ -127,6 +128,9 @@ class DatabaseStack(Stack):
         UserData.add_commands('> /etc/environment')
         for key in data:
             value = data[key]
+            # Do not export the word `None`
+            if value in [None]:
+                value = ''
             # this will make sure that they are accessible
             # to all users on the server
             cmd = f'export {key}={value} && echo "{key}=${{{key}}}" >> /etc/environment'
@@ -180,9 +184,9 @@ class DatabaseStack(Stack):
             _ec2.InitCommand.shell_command(
                 'cd /app && unzip -o db.zip -d openaqdb'
             ),
-            # _ec2.InitCommand.shell_command(
-            #    '/app/openaqdb/install_database.sh'
-            # ),
+            _ec2.InitCommand.shell_command(
+                '/app/openaqdb/install_database.sh > install_database.log 2>&1'
+            ),
         )
 
         initOptions = _ec2.ApplyCloudFormationInitOptions(

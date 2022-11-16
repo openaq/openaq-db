@@ -1,0 +1,14 @@
+pg_postmaster:
+  query: "SELECT pg_postmaster_start_time as start_time_seconds from pg_postmaster_start_time()"
+  master: true
+  metrics:
+    - start_time_seconds:
+        usage: "GAUGE"
+        description: "Time at which postmaster started"
+
+openaq:
+  query: "SELECT 10 as sensors_count"
+  metrics:
+    - sensors_count:
+      usage: "COUNTER"
+      description: "Number of sensors in the sensor table"

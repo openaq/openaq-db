@@ -108,13 +108,13 @@ SELECT l.sensor_nodes_id
 , day
 , records
 , measurands
-, modified_on
+, l.modified_on
 --, queued_on
 --, exported_on
 , age(day + '1day'::interval, (now() AT TIME ZONE (sn.metadata->>'timezone')::text)) as wait_interval
 FROM public.open_data_export_logs l
 JOIN public.sensor_nodes sn ON (l.sensor_nodes_id = sn.sensor_nodes_id)
-WHERE (queued_on IS NULL OR modified_on > queued_on);
+WHERE (l.queued_on IS NULL OR l.modified_on > queued_on);
 
 
 -- The view that is used in the pending function
@@ -124,14 +124,14 @@ SELECT l.sensor_nodes_id
 , day
 , records
 , measurands
-, modified_on
+, l.modified_on
 , queued_on
 , exported_on
 , utc_offset(sn.metadata->>'timezone') as utc_offset
 FROM public.open_data_export_logs l
 JOIN public.sensor_nodes sn ON (l.sensor_nodes_id = sn.sensor_nodes_id)
 WHERE (queued_on IS NULL -- has not been done yet
-OR modified_on > queued_on) -- has changed since being done
+OR l.modified_on > l.queued_on) -- has changed since being done
 -- wait until the day is done in that timezone to export data
 AND day < (now() AT TIME ZONE (sn.metadata->>'timezone')::text)::date;
 
@@ -140,7 +140,7 @@ AND day < (now() AT TIME ZONE (sn.metadata->>'timezone')::text)::date;
   , day
   , records
   , measurands
-  , modified_on
+  , l.modified_on
   , queued_on
   , exported_on
   , utc_offset(sn.metadata->>'timezone') as utc_offset
@@ -155,7 +155,7 @@ AND day < (now() AT TIME ZONE (sn.metadata->>'timezone')::text)::date;
     -- its never been exported
     exported_on IS NULL
     -- or its been re-queued
-    OR (queued_on > exported_on)
+    OR (l.queued_on > l.exported_on)
     -- or its an older version
     OR (l.metadata->>'version' IS NULL OR (l.metadata->>'version')::int < 1)
   ) LIMIT 10;
@@ -182,7 +182,7 @@ WITH pending AS (
   , day
   , records
   , measurands
-  , modified_on
+  , l.modified_on
   , queued_on
   , exported_on
   , utc_offset(sn.metadata->>'timezone') as utc_offset
@@ -194,9 +194,9 @@ WITH pending AS (
   -- now the optional
   AND (
     -- its never been exported
-    exported_on IS NULL
+    l.exported_on IS NULL
     -- or its been re-queued
-    OR (queued_on > exported_on)
+    OR (l.queued_on > l.exported_on)
     -- or its an older version
     OR (l.metadata->>'version' IS NULL OR (l.metadata->>'version')::int < vsn)
   ) ORDER BY day

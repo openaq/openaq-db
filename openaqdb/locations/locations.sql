@@ -29,16 +29,14 @@ CREATE TABLE IF NOT EXISTS sensors_rollup (
 
 -- Sensors latest will act as a cache for the most recent
 -- sensor value, managed by the ingester
-CREATE SEQUENCE IF NOT EXISTS sensors_latest_sq START 10;
 CREATE TABLE IF NOT EXISTS sensors_latest (
-  sensors_latest_id int PRIMARY KEY DEFAULT nextval('sensors_latest_sq')
-  , sensors_id int NOT NULL REFERENCES sensors
+    sensors_id int PRIMARY KEY NOT NULL REFERENCES sensors
+  , datetime timestamptz
   , value double precision NOT NULL
   , lat double precision -- so that nulls dont take up space
   , lon double precision
-  , modified_on timestamptz
+  , modified_on timestamptz DEFAULT now()
   , fetchlogs_id int -- for debugging issues, no reference constraint
-  , UNIQUE(sensors_id)
 );
 
 
@@ -102,3 +100,9 @@ JOIN contacts oc ON (oc.contacts_id = 1)
 JOIN providers p ON (p.providers_id = l.providers_id)
 JOIN nodes_instruments ni USING (sensor_nodes_id)
 JOIN nodes_parameters np USING (sensor_nodes_id);
+
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS locations_view_m AS
+SELECT *
+FROM locations_view;
+CREATE INDEX ON locations_view_m (id);

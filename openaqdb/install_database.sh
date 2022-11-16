@@ -64,3 +64,6 @@ else
          -c "COMMIT"
 
 fi
+
+# If a monitoring user exists the following script will install the monitoring
+./install_prometheus_postgresql_exporter.sh
