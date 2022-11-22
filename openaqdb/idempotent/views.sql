@@ -619,4 +619,148 @@ GROUP BY 1;
 CREATE INDEX ON mobile_gen_boxes (sensors_id);
 CREATE INDEX ON mobile_gen_boxes USING GIST (box, sensors_id);
 */
+
+
+CREATE OR REPLACE VIEW sensor_nodes_check AS
+SELECT sn.sensor_nodes_id
+, sn.site_name
+, sn.source_name
+, sn.source_id
+, sn.origin
+, (l.lat IS NOT NULL OR geom IS NOT NULL) as has_coordinates
+, sy.sensor_systems_id IS NOT NULL as has_system
+, sn.added_on
+, s.sensors_id
+, COALESCE(m.measurand, 'Not found') as parameter
+, l.datetime as last_datetime
+FROM sensor_nodes sn
+LEFT JOIN sensor_systems sy USING (sensor_nodes_id)
+LEFT JOIN sensors s USING (sensor_systems_id)
+LEFT JOIN measurands m USING (measurands_id)
+LEFT JOIN sensors_latest l USING (sensors_id)
+--WHERE sensor_nodes_id = 23642
+;
+
+
+DROP FUNCTION IF EXISTS split_ingest_id(text);
+DROP FUNCTION IF EXISTS split_ingest_id(text, int);
+DROP FUNCTION IF EXISTS check_ingest_id(text);
+
+CREATE OR REPLACE FUNCTION split_ingest_id(iid text) RETURNS text[] AS $$
+WITH arr AS (
+SELECT iid as ingest_id
+, string_to_array(iid,'-') as iid)
+  SELECT ARRAY[
+     iid[1]
+    -- deals with case where source_id (from client) has a dash in it
+    , array_to_string(iid[2:(array_length(iid, 1)-1)], '-')
+    , iid[array_length(iid, 1)]
+  ]
+  FROM arr;
+$$ LANGUAGE SQL;
+
+CREATE OR REPLACE FUNCTION split_ingest_id(iid text, pos int) RETURNS text AS $$
+SELECT (split_ingest_id(iid))[pos];
+$$ LANGUAGE SQL;
+
+CREATE OR REPLACE FUNCTION check_ingest_id(iid text) RETURNS TABLE(
+  ingest_id text
+, source_name text
+, source_id text
+, parameter text
+, measurands_id int
+, measurand text
+, units text
+) AS $$
+WITH arr AS (
+SELECT iid as ingest_id
+, split_ingest_id(iid) as iid
+), sen AS (
+  SELECT ingest_id
+  , iid[1] as source_name
+  , iid[2] as source_id
+  , iid[3] as parameter
+  FROM arr)
+SELECT s.*
+, m.measurands_id
+, m.measurand
+, m.units
+FROM sen s
+LEFT JOIN measurands_map_view mp ON (mp.key = s.parameter)
+LEFT JOIN measurands m ON (mp.measurands_id = m.measurands_id);
+$$ LANGUAGE SQL;
+
+CREATE OR REPLACE VIEW measurements_ingest_format_view AS
+SELECT sensor_nodes_id as id
+, source_name||'-'||s.source_id||'-'|| measurand as ingest_id
+, v.value
+, to_json(v.datetime)#>>'{}' as datetime
+, v.lon
+, v.lat
+FROM measurements v
+JOIN sensors s USING (sensors_id)
+JOIN measurands USING (measurands_id)
+JOIN sensor_systems USING (sensor_systems_id)
+JOIN sensor_nodes USING (sensor_nodes_id);
+
+
+CREATE OR REPLACE VIEW analyses_ingest_format_view AS
+SELECT sensor_nodes_id as id
+, source_name||'-'||s.source_id||'-'|| measurand as ingest_id
+, v.value
+, to_json(v.datetime)#>>'{}' as datetime
+, v.lon
+, v.lat
+FROM analyses v
+JOIN sensors s USING (sensors_id)
+JOIN measurands USING (measurands_id)
+JOIN sensor_systems USING (sensor_systems_id)
+JOIN sensor_nodes USING (sensor_nodes_id);
+
+DROP VIEW IF EXISTS public.active_locks;
+CREATE OR REPLACE VIEW public.active_locks AS
+ SELECT t.schemaname,
+    t.relname,
+    l.locktype,
+    l.page,
+    l.virtualtransaction,
+    l.pid,
+    l.mode,
+    l.granted,
+    substr(query, 0, 25) as query,
+    age(now(), a.query_start) as age
+   FROM pg_locks l
+   JOIN pg_stat_all_tables t ON l.relation = t.relid
+   JOIN pg_stat_activity a ON (l.pid = a.pid)
+  WHERE t.schemaname <> 'pg_toast'::name AND t.schemaname <> 'pg_catalog'::name
+  ORDER BY t.schemaname, t.relname;
+
+
+CREATE FUNCTION table_row_estimator(table_name text) RETURNS bigint
+   LANGUAGE plpgsql AS
+$$
+DECLARE
+   plan jsonb;
+BEGIN
+   EXECUTE 'EXPLAIN (FORMAT JSON) SELECT * FROM ' || table_name INTO plan;
+   RETURN (plan->0->'Plan'->>'Plan Rows')::bigint;
+END;
+$$;
+
+--SELECT * FROM parse_ingest_id('CMU-Technology Center-pm25');
+
+-- SELECT *
+-- FROM sensor_nodes_check
+-- WHERE sensor_nodes_id = 23642;
+
+-- SELECT *
+-- FROM sensor_nodes_check
+-- WHERE sensors_id = 1152;
+
+-- SELECT r->>'ingest_id' as key
+-- , COUNT(1) as n
+-- FROM rejects
+-- GROUP BY 1
+-- LIMIT 1000;
+
 COMMIT;

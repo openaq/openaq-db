@@ -1,4 +1,5 @@
 CREATE TABLE IF NOT EXISTS countries(
+    countries_id int generated always as identity primary key,
     iso text,
     name text,
     geom geometry

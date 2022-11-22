@@ -1,14 +1,11 @@
-pg_postmaster:
-  query: "SELECT pg_postmaster_start_time as start_time_seconds from pg_postmaster_start_time()"
+row_counts:
   master: true
+  cache_seconds: 60
+  query: "WITH tables AS (SELECT UNNEST(ARRAY['public.sensors','public.sensor_nodes','public.sensor_systems', 'public.measurements']) as table_name) SELECT table_name, public.table_row_estimator($
   metrics:
-    - start_time_seconds:
+    - table_name:
+        usage: "LABEL"
+        description: "Table name"
+    - row_count_estimate:
         usage: "GAUGE"
-        description: "Time at which postmaster started"
-
-openaq:
-  query: "SELECT 10 as sensors_count"
-  metrics:
-    - sensors_count:
-      usage: "COUNTER"
-      description: "Number of sensors in the sensor table"
+        description: "Estimate of row count from query plan"

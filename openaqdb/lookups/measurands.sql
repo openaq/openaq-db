@@ -51,12 +51,15 @@ COPY public.measurands (measurands_id, measurand, units, display, description, i
 19843	no	µg/m³	NO mass	Nitrogen Monoxide mass concentration	f	\N
 \.
 
+INSERT INTO measurands (measurands_id, measurand, units, description, is_core)
+OVERRIDING SYSTEM VALUE VALUES
+(19844, 'pm4', 'µg/m³', 'Particulate matter less than 4 micrometers in diameter mass concentration', 'f')
+ON CONFLICT DO NOTHING;
+
 -- need to fix the sequence now
 SELECT setval(pg_get_serial_sequence('measurands', 'measurands_id'), (SELECT max(measurands_id) FROM measurands));
 
-
--- now lets add some new ones and
-
+-- now lets add some new ones
 INSERT INTO measurands (measurand, units, display, description, is_core) VALUES
 ( 'wind_speed'
 , 'm/s'

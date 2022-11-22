@@ -637,6 +637,11 @@ BEGIN
     COMMIT;
     SELECT log_performance('update-locations-base', st) INTO st;
 
+    RAISE NOTICE 'REFRESHING locations_view_m';
+    REFRESH MATERIALIZED VIEW locations_view_m;
+    COMMIT;
+    SELECT log_performance('update-locations-view', st) INTO st;
+
     RAISE NOTICE 'REFRESHING locations';
     REFRESH MATERIALIZED VIEW locations;
     COMMIT;

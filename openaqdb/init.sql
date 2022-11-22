@@ -56,7 +56,30 @@ COMMIT;
 -- file contains begin/commit
 \i refresh_idempotent.sql
 
-INSERT INTO fetchlogs (key) VALUES
-  ('lcs-etl-pipeline/measures/purpleair/1664911958-z2atn.csv.gz')
-, ('realtime-gzipped/2022-10-04/1664912239.ndjson.gz')
+INSERT INTO fetchlogs (key, last_modified) VALUES
+  ('lcs-etl-pipeline/measures/purpleair/1664911958-z2atn.csv.gz', now())
+, ('uploaded/measures/houston/61509.csv.gz', now())
+, ('realtime-gzipped/2022-10-04/1664912239.ndjson.gz', now())
+ON CONFLICT DO NOTHING
 ;
+
+-- Add the houston mobile locations
+INSERT INTO fetchlogs (key, last_modified) VALUES
+ ('uploaded/measures/houston/61509.csv.gz', now())
+ON CONFLICT DO NOTHING
+;
+
+WITH keys as (
+  SELECT format('uploaded/measures/houston/61507_%s.csv.gz', to_char(generate_series(1,83) - 1, 'fm00'))
+)
+INSERT INTO fetchlogs (key, last_modified)
+SELECT *, now()
+FROM keys;
+
+
+WITH keys as (
+  SELECT format('uploaded/measures/houston/61508_%s.csv.gz', to_char(generate_series(1,239) - 1, 'fm000'))
+)
+INSERT INTO fetchlogs (key, last_modified)
+SELECT *, now()
+FROM keys;

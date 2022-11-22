@@ -17,7 +17,7 @@ class DatabaseStack(Stack):
         scope: Construct,
         id: str,
         codeDirectory: str,
-        rootVolumeSize: int = 25,
+        rootVolumeSize: int = 100,
         rootVolumeIops: int = 2000,
         dataVolumeSize: int = 1000,
         dataVolumeIops: int = 3000,

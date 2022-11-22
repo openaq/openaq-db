@@ -31,3 +31,19 @@ INSERT INTO measurands_map (source_name, key, units, measurands_id)
 SELECT source_name, key, units, measurands_id
 FROM map
 ON CONFLICT DO NOTHING;
+
+INSERT INTO measurands_map (key, measurands_id, units, source_name) VALUES
+  ('pm1', 19, '', 'clarity')
+, ('no2', 15, '', 'clarity')
+, ('pm10', 1, '', 'clarity')
+, ('pm25', 2, '', 'clarity')
+, ('o3', 3, '', 'cmu')
+, ('so2', 101, '', 'cmu')
+, ('co', 102, '', 'cmu')
+, ('no', 24, '', 'cmu')
+, ('pm4', 19844, '', 'senstate')
+, ('co2', 21, '', 'houston')
+, ('bc', 11, '', 'houston')
+, ('um025', 130, '', 'houston')
+ON CONFLICT DO NOTHING
+;

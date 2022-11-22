@@ -81,6 +81,10 @@ CREATE TABLE IF NOT EXISTS user_keys (
 CREATE TYPE contact_type AS ENUM (
   'Person'
 , 'Organization'
+, 'Governmental Organization'
+, 'Research Organization'
+, 'Community Organization'
+, 'Private Organization'
 );
 
 -- If we want to add other information to the types,
