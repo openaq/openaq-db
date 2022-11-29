@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS sensors_latest (
 );
 
 
+DROP VIEW IF EXISTS locations_view CASCADE;
 CREATE OR REPLACE VIEW locations_view AS
 -----------------------------
 WITH nodes_instruments AS (
@@ -76,8 +77,11 @@ WITH nodes_instruments AS (
 SELECT
   l.sensor_nodes_id as id
   , site_name as name
-  , 'UK' as sensor_type -- placeholder
   , l.ismobile
+-- the following is a placeholder that should
+-- be replaced with something at either the istrument
+-- or the provider level
+  , l.origin = 'OPENAQ' as ismonitor
   , l.city
   , jsonb_build_object(
       'id', null
