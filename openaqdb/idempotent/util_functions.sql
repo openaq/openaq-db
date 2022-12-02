@@ -275,6 +275,10 @@ CREATE OR REPLACE FUNCTION bounds(float, float, float, float) RETURNS geometry A
 SELECT st_setsrid(st_makebox2d(st_makepoint($1,$2),st_makepoint($3,$4)),4326);
 $$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
 
+CREATE OR REPLACE FUNCTION bbox(geom geometry) RETURNS int[] AS $$
+SELECT ARRAY[st_x(geom),st_y(geom),st_x(geom),st_y(geom)];
+$$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
+
 CREATE OR REPLACE FUNCTION pt3857(float, float) RETURNS geometry AS $$
 SELECT st_transform(st_setsrid(st_makepoint($1,$2),4326),3857);
 $$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;

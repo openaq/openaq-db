@@ -109,9 +109,9 @@ SELECT
    ) as coordinates
   , ni.instruments
   , ns.sensors
-  , ARRAY[1,1,1,1] as bounds
   , get_datetime_object(ns.datetime_first, t.tzid) as datetime_first
   , get_datetime_object(ns.datetime_last, t.tzid) as datetime_last
+  , l.geom -- exposed for use in spatial queries
 FROM sensor_nodes l
 JOIN timezones t ON (l.timezones_id = t.gid)
 JOIN countries c ON (c.iso = l.country)
@@ -125,3 +125,4 @@ CREATE MATERIALIZED VIEW IF NOT EXISTS locations_view_m AS
 SELECT *
 FROM locations_view;
 CREATE INDEX ON locations_view_m (id);
+CREATE INDEX ON locations_view_m USING GIST (geom);
