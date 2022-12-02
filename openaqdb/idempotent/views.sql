@@ -642,6 +642,30 @@ LEFT JOIN sensors_latest l USING (sensors_id)
 ;
 
 
+CREATE OR REPLACE VIEW sensor_nodes_summary AS
+SELECT sn.sensor_nodes_id
+, sn.site_name
+, sn.source_name
+, sn.source_id
+, sn.origin
+, sn.ismobile
+, geom IS NOT NULL as has_coordinates
+, COUNT(sy.sensor_systems_id) as systems_count
+, COUNT(s.sensors_id) as sensors_count
+, COUNT(DISTINCT s.measurands_id) as parameters_count
+, array_agg(s.sensors_id) as sensors_list
+FROM sensor_nodes sn
+LEFT JOIN sensor_systems sy USING (sensor_nodes_id)
+LEFT JOIN sensors s USING (sensor_systems_id)
+GROUP BY sn.sensor_nodes_id
+, sn.site_name
+, sn.source_name
+, sn.source_id
+, sn.origin
+, sn.ismobile;
+
+
+
 DROP FUNCTION IF EXISTS split_ingest_id(text);
 DROP FUNCTION IF EXISTS split_ingest_id(text, int);
 DROP FUNCTION IF EXISTS check_ingest_id(text);
