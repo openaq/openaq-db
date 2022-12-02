@@ -39,7 +39,6 @@ CREATE TABLE IF NOT EXISTS sensors_latest (
   , fetchlogs_id int -- for debugging issues, no reference constraint
 );
 
-
 DROP VIEW IF EXISTS locations_view CASCADE;
 CREATE OR REPLACE VIEW locations_view AS
 -----------------------------
@@ -60,17 +59,24 @@ WITH nodes_instruments AS (
   JOIN contacts mc ON (mc.contacts_id = i.manufacturer_contacts_id)
   GROUP BY sn.sensor_nodes_id
   -----------------------------
-), nodes_parameters AS (
+), nodes_sensors AS (
 -----------------------------
   SELECT sn.sensor_nodes_id
+  , MIN(sl.datetime) as datetime_first
+  , MAX(sl.datetime) as datetime_last -- need to change
   , array_agg(jsonb_build_object(
-    'id', m.measurands_id
-    , 'name', m.measurand
-    , 'units', m.units
-    )) as parameters
+    'id', s.sensors_id
+    , 'name', m.measurand||' '||m.units
+    , 'parameter', jsonb_build_object(
+        'id', m.measurands_id
+        , 'name', m.measurand
+        , 'units', m.units
+        )
+    )) as sensors
   FROM sensor_nodes sn
   JOIN sensor_systems ss USING (sensor_nodes_id)
   JOIN sensors s USING (sensor_systems_id)
+  JOIN sensors_latest sl USING (sensors_id)
   JOIN measurands m USING (measurands_id)
   GROUP BY sensor_nodes_id)
   -----------------------------
@@ -78,8 +84,9 @@ SELECT
   l.sensor_nodes_id as id
   , site_name as name
   , l.ismobile
+  , t.tzid as timezone
 -- the following is a placeholder that should
--- be replaced with something at either the istrument
+-- be replaced with something at either the instrument
 -- or the provider level
   , l.origin = 'OPENAQ' as ismonitor
   , l.city
@@ -93,17 +100,25 @@ SELECT
     , 'name', oc.full_name
     ) as owner
   , jsonb_build_object(
+      'id', p.providers_id
+    , 'name', p.label
+    ) as provider
+  , jsonb_build_object(
       'latitude', st_y(l.geom)
     , 'longitude', st_x(l.geom)
    ) as coordinates
   , ni.instruments
-  , np.parameters
+  , ns.sensors
+  , ARRAY[1,1,1,1] as bounds
+  , get_datetime_object(ns.datetime_first, t.tzid) as datetime_first
+  , get_datetime_object(ns.datetime_last, t.tzid) as datetime_last
 FROM sensor_nodes l
+JOIN timezones t ON (l.timezones_id = t.gid)
 JOIN countries c ON (c.iso = l.country)
 JOIN contacts oc ON (oc.contacts_id = 1)
 JOIN providers p ON (p.providers_id = l.providers_id)
 JOIN nodes_instruments ni USING (sensor_nodes_id)
-JOIN nodes_parameters np USING (sensor_nodes_id);
+JOIN nodes_sensors ns USING (sensor_nodes_id);
 
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS locations_view_m AS

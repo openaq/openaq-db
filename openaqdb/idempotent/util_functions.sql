@@ -77,6 +77,16 @@ CREATE AGGREGATE array_merge_agg(
     stype = anyarray
 );
 
+
+CREATE OR REPLACE FUNCTION get_providers_id(p text)
+RETURNS int LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
+SELECT providers_id
+FROM providers
+WHERE source_name = p
+LIMIT 1;
+$$;
+
+
 CREATE OR REPLACE FUNCTION timezone(g geography)
 RETURNS text LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
 SELECT tzid from timezones WHERE st_intersects(g, geog) LIMIT 1;
@@ -84,6 +94,10 @@ $$;
 CREATE OR REPLACE FUNCTION timezone(g geometry)
 RETURNS text LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
 SELECT tzid from timezones WHERE st_intersects(g::geography, geog) LIMIT 1;
+$$;
+CREATE OR REPLACE FUNCTION get_timezones_id(g geometry)
+RETURNS int LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
+SELECT gid from timezones WHERE st_intersects(g::geography, geog) LIMIT 1;
 $$;
 CREATE OR REPLACE FUNCTION country(g geography)
 RETURNS text LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
@@ -114,6 +128,14 @@ SELECT replace(format(
                 to_char(timezone(COALESCE(tz, 'UTC'), tstz) - timezone('UTC',tstz), 'HH24:MI')
             ),'+-','-')
 ;
+$$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION get_datetime_object(tstz timestamptz, tz text DEFAULT 'UTC')
+RETURNS json AS $$
+SELECT json_build_object(
+       'utc', format_timestamp(tstz, 'UTC')
+     , 'local', format_timestamp(tstz, tz)
+     );
 $$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
 
 CREATE EXTENSION IF NOT EXISTS "unaccent";

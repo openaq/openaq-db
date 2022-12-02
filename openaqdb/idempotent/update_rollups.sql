@@ -542,13 +542,17 @@ BEGIN
     _et:=date_trunc('day',coalesce(_et, now()));
 
     RAISE NOTICE 'updating timezones';
-    update sensor_nodes
-    set metadata = metadata || jsonb_build_object('timezone',timezone(geom))
-    where not metadata ? 'timezone' and geom is not null;
+    UPDATE  sensor_nodes
+    SET timezones_id = get_timezones_id(geom)
+    WHERE geom IS NOT NULL
+    AND timezones_id IS NULL;
 
-    update sensor_nodes
-    set metadata = metadata || jsonb_build_object('timezone',timezone(sn_lastpoint(sensor_nodes_id)))
-    where not metadata ? 'timezone' and geom is null and ismobile;
+    -- sn_lastpoint pulls directly from measurements at the moment
+    UPDATE  sensor_nodes
+    SET timezones_id = get_timezones_id(sn_lastpoint(geom))
+    WHERE geom IS NULL
+    AND is_mobile
+    AND timezones_id IS NULL;
 
     SELECT log_performance('update-timezone', st) INTO st;
 
