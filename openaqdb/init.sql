@@ -49,7 +49,10 @@ GRANT ALL ON FUNCTIONS to :DATABASE_WRITE_USER;
 \i tables/rejects.sql
 \i tables/users.sql
 \i tables/metadata.sql
+\i idempotent/util_functions.sql
 \i locations/locations.sql
+\i tables/countries_views.sql
+\i tables/providers_views.sql
 COMMIT;
 
 -- Load immutable views/functions

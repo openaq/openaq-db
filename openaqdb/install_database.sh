@@ -7,6 +7,9 @@ PGPATH=/usr/bin
 PGDATA=/db/data # mount point of snapshot
 PGCONFIG=$PGDATA/postgresql.conf
 
+# make sure things are updated
+yum update
+
 # make sure that postgres owns the $PGDATA directory
 # as long as you are building this from a snapshot they do
 # start postgres as postgres user

@@ -7,7 +7,8 @@ CREATE TABLE IF NOT EXISTS measurements (
     datetime timestamp with time zone,
     value double precision,
     lon double precision,
-    lat double precision
+    lat double precision,
+    added_on timestamp with time zone DEFAULT now()
 ) PARTITION BY RANGE (datetime);
 
 CREATE INDEX IF NOT EXISTS measurements_datetime_idx
@@ -18,6 +19,9 @@ ON measurements USING brin (lat);
 
 CREATE INDEX IF NOT EXISTS measurements_lon_idx
 ON measurements USING brin (lon);
+
+CREATE INDEX IF NOT EXISTS measurements_added_on_idx
+ON measurements USING btree (added_on);
 
 CREATE UNIQUE INDEX IF NOT EXISTS measurements_sensors_id_datetime_idx
 ON measurements USING btree (sensors_id, datetime);
@@ -66,7 +70,7 @@ $$ LANGUAGE plpgsql;
 
 -- create some tables
 WITH dates AS (
-SELECT generate_series('2016-01-01'::date, '2023-01-01'::date, '1month'::interval) as dt)
+SELECT generate_series('2016-01-01'::date, '2024-01-01'::date, '1month'::interval) as dt)
 SELECT create_partition(dt::date)
 FROM dates;
 

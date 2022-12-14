@@ -1,11 +1,115 @@
-row_counts:
+# metrics to add
+# count of pids running an ingest query (1min)
+# count of unfinished fetchlogs (5min)
+# count of failed fetchlogs (e.g. not completed, loaded > 15min) (5min)
+# count of nodes added (5min)
+# count of measurements added (5min)
+# count of stale nodes (last measure between 24h and 1h
+# rows ingested, average process time, average ingest time, average ingest rate (5min)
+
+fetchlog_stats:
   master: true
-  cache_seconds: 60
-  query: "WITH tables AS (SELECT UNNEST(ARRAY['public.sensors','public.sensor_nodes','public.sensor_systems', 'public.measurements']) as table_name) SELECT table_name, public.table_row_estimator($
+  cach_seconds: 60
+  query: "SELECT COUNT(1) as total_count
+         , SUM((loaded_datetime IS NOT NULL)::int) as loaded_count
+         , SUM((loaded_datetime > now() - '15min'::interval)::int) as pending_count
+         , SUM((loaded_datetime < now() - '30min'::interval)::int) as failed_count
+         , MAX(ROUND(EXTRACT(EPOCH FROM age(now(), init_datetime))/60)) as oldest_minutes
+         FROM public.fetchlogs
+         WHERE completed_datetime IS NULL;"
+  metrics
+
+
+ingest_stats:
+  master: true
+  cache_seconds: 300
+  query: "SELECT *
+          , latest_measurements_inserted/latest_insert_time_ms as latest_rows_per_ms
+          , total_measurements_inserted/total_insert_time_ms as total_rows_per_ms
+          , total_process_time_ms/ingest_count as average_process_time
+          , total_insert_time_ms/ingest_count as average_insert_time
+          , total_cache_time_ms/ingest_count as average_cache_time
+         FROM public.ingest_stats
+         WHERE ingested_on > now() - '300s'::interval"
   metrics:
-    - table_name:
+    - ingest_method:
         usage: "LABEL"
-        description: "Table name"
-    - row_count_estimate:
+        description: "Ingest method"
+    - total_measurements_processed:
+        usage: "COUNTER"
+        description: ""
+    - total_measurements_inserted:
+        usage: "COUNTER"
+        description: ""
+    - total_measurements_rejected:
+        usage: "COUNTER"
+        description: ""
+    - total_nodes_processed:
+        usage: "COUNTER"
+        description: ""
+    - total_nodes_inserted:
+        usage: "COUNTER"
+        description: ""
+    - total_nodes_updated:
+        usage: "COUNTER"
+        description: ""
+    - total_nodes_rejected:
+        usage: "COUNTER"
+        description: ""
+    - total_process_time_ms:
+        usage: "COUNTER"
+        description: ""
+    - total_insert_time_ms:
+        usage: "COUNTER"
+        description: ""
+    - total_cache_time_ms:
+        usage: "COUNTER"
+        description: ""
+    - latest_measurements_processed:
         usage: "GAUGE"
-        description: "Estimate of row count from query plan"
+        description: ""
+    - latest_measurements_inserted:
+        usage: "GAUGE"
+        description: ""
+    - latest_measurements_rejected:
+        usage: "GAUGE"
+        description: ""
+    - latest_nodes_processed:
+        usage: "GAUGE"
+        description: ""
+    - latest_nodes_inserted:
+        usage: "GAUGE"
+        description: ""
+    - latest_nodes_updated:
+        usage: "GAUGE"
+        description: ""
+    - latest_nodes_rejected:
+        usage: "GAUGE"
+        description: ""
+    - latest_process_time_ms:
+        usage: "GAUGE"
+        description: ""
+    - latest_insert_time_ms:
+        usage: "GAUGE"
+        description: ""
+    - latest_cache_time_ms:
+        usage: "GAUGE"
+        description: ""
+    - latest_rows_per_ms:
+        usage: "GAUGE"
+        description: ""
+    - total_rows_per_ms:
+        usage: "COUNTER"
+        description: ""
+    - average_process_time:
+        usage: "GAUGE"
+        description: ""
+    - average_insert_time:
+        usage: "GAUGE"
+        description: ""
+    - average_cache_time:
+        usage: "GAUGE"
+        description: ""
+    - ingest_count:
+        usage: "COUNTER"
+        description: ""

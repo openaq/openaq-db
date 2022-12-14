@@ -176,7 +176,7 @@ CREATE OR REPLACE FUNCTION update_groups() RETURNS VOID AS $$
     FROM sensor_nodes
     JOIN sensor_systems USING (sensor_nodes_id)
     JOIN sensors s USING (sensor_systems_id)
-    JOIN groups ON (country=name)
+    JOIN groups ON (country=name AND groups.type = 'country')
     ON CONFLICT DO NOTHING
     ;
 
@@ -548,10 +548,10 @@ BEGIN
     AND timezones_id IS NULL;
 
     -- sn_lastpoint pulls directly from measurements at the moment
-    UPDATE  sensor_nodes
-    SET timezones_id = get_timezones_id(sn_lastpoint(geom))
+    UPDATE sensor_nodes
+    SET timezones_id = get_timezones_id(sn_lastpoint(sensor_nodes_id))
     WHERE geom IS NULL
-    AND is_mobile
+    AND ismobile
     AND timezones_id IS NULL;
 
     SELECT log_performance('update-timezone', st) INTO st;
@@ -641,11 +641,6 @@ BEGIN
     COMMIT;
     SELECT log_performance('update-locations-base', st) INTO st;
 
-    RAISE NOTICE 'REFRESHING locations_view_m';
-    REFRESH MATERIALIZED VIEW locations_view_m;
-    COMMIT;
-    SELECT log_performance('update-locations-view', st) INTO st;
-
     RAISE NOTICE 'REFRESHING locations';
     REFRESH MATERIALIZED VIEW locations;
     COMMIT;
@@ -667,5 +662,26 @@ _start timestamptz;
 BEGIN
 SELECT MIN(datetime) INTO _start FROM measurements;
 CALL run_updates(NULL, jsonb_build_object('start', _start));
+END;
+$$ LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE PROCEDURE update_cached_tables() AS $$
+DECLARE
+BEGIN
+    RAISE NOTICE 'REFRESHING locations_view_cached';
+    REFRESH MATERIALIZED VIEW locations_view_cached;
+    COMMIT;
+    PERFORM log_performance('update-locations-view', CURRENT_TIMESTAMP);
+    ----------------------------------------
+    RAISE NOTICE 'REFRESHING countries_view_cached';
+    REFRESH MATERIALIZED VIEW countries_view_cached;
+    COMMIT;
+    PERFORM log_performance('update-countries-view', CURRENT_TIMESTAMP);
+    ----------------------------------------
+    RAISE NOTICE 'REFRESHING providers_view_cached';
+    REFRESH MATERIALIZED VIEW providers_view_cached;
+    COMMIT;
+    PERFORM log_performance('update-providers-view', CURRENT_TIMESTAMP);
 END;
 $$ LANGUAGE plpgsql;

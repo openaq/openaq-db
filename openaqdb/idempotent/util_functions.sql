@@ -18,7 +18,7 @@ SELECT array_agg(
 ) FROM j;
 $$ LANGUAGE SQL STRICT IMMUTABLE;
 
-CREATE FUNCTION array_distinct(
+CREATE OR REPLACE FUNCTION array_distinct(
       anyarray, -- input array
       boolean DEFAULT false -- flag to ignore nulls
 ) RETURNS anyarray AS $$
@@ -71,6 +71,7 @@ RETURNS anyarray LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
             END;
 $$;
 
+DROP AGGREGATE IF EXISTS public.array_merge_agg (anyarray);
 CREATE AGGREGATE array_merge_agg(
     sfunc = array_merge,
     basetype = anyarray,
@@ -99,6 +100,15 @@ CREATE OR REPLACE FUNCTION get_timezones_id(g geometry)
 RETURNS int LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
 SELECT gid from timezones WHERE st_intersects(g::geography, geog) LIMIT 1;
 $$;
+CREATE OR REPLACE FUNCTION get_countries_id(g geography)
+RETURNS int LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
+SELECT countries_id from countries WHERE st_intersects(g::geometry, geom) LIMIT 1;
+$$;
+CREATE OR REPLACE FUNCTION get_countries_id(g geometry)
+RETURNS int LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
+SELECT countries_id from countries WHERE st_intersects(g, geom) LIMIT 1;
+$$;
+
 CREATE OR REPLACE FUNCTION country(g geography)
 RETURNS text LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
 SELECT iso from countries WHERE st_intersects(g::geometry, geom) LIMIT 1;

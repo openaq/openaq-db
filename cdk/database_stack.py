@@ -101,7 +101,6 @@ class DatabaseStack(Stack):
         if snapshotId == 'LATEST':
             snapshotId = get_latest_snapshot('Scalegrid-LCSDatabase-41094-')
 
-
         # Transfer some key data on to the instance
         # must be done in UserData and not as initElements
         # add anything else as needed
@@ -197,52 +196,10 @@ class DatabaseStack(Stack):
             timeout=Duration.minutes(60),
         )
 
-        # Would be nice to add support for a docker method back
-        # just would need to add some logic here
-        # docker_dir = os.path.join(codeDirectory, 'docker')
-        # initElements = _ec2.CloudFormationInit.from_elements(
-        #     # Add some files and then build and run the docker image
-        #     _ec2.InitFile.from_asset(
-        #         "/app/Dockerfile",
-        #         os.path.join(docker_dir, 'Dockerfile')
-        #     ),
-        #     # env data to use for the docker container
-        #     _ec2.InitFile.from_asset("/app/env", envPath),
-        #     # Because of all the subdirectories its easier just
-        #     # to copy everything and unzip it later
-        #     _ec2.InitFile.from_asset("/app/db.zip", setup_dir),
-        #     # Once we copy the files over we need to
-        #     # build and start the instance
-        #     # the initfile method does not copy over
-        #     # the permissions by default so
-        #     # we need to make the init file executable
-        #     _ec2.InitCommand.shell_command(
-        #         'cd /app && unzip db.zip -d openaqdb && docker build -t db-instance . && docker run --name db-openaq --env-file env --publish 5432:5432 -idt db-instance'
-        #     ),
-        # )
-
         # create the instance
         if machineImageName not in [None, '']:
             image = _ec2.MachineImage.lookup(
                 name=machineImageName,
-            )
-        elif linuxVersion == 'ubuntu':
-            image = _ec2.MachineImage.from_ssm_parameter(
-                '/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id',
-            )
-            # ubuntu does not come with some needed things
-            # so we can add them here
-            UserData.add_commands(
-                'apt-get update -y',
-                'apt-get install -y git awscli ec2-instance-connect',
-                'until git clone https://github.com/aws-quickstart/quickstart-linux-utilities.git; do echo "Retrying"; done',
-                'cd /quickstart-linux-utilities',
-                'source quickstart-cfn-tools.source',
-                'qs_update-os || qs_err',
-                'qs_bootstrap_pip || qs_err',
-                'qs_aws-cfn-bootstrap || qs_err',
-                'mkdir -p /opt/aws/bin',
-                'ln -s /usr/local/bin/cfn-* /opt/aws/bin/'
             )
         else:
             image = _ec2.MachineImage.latest_amazon_linux(

@@ -641,7 +641,7 @@ LEFT JOIN sensors_latest l USING (sensors_id)
 --WHERE sensor_nodes_id = 23642
 ;
 
-
+DROP VIEW IF EXISTS sensor_nodes_summary;
 CREATE OR REPLACE VIEW sensor_nodes_summary AS
 SELECT sn.sensor_nodes_id
 , sn.site_name
@@ -653,10 +653,14 @@ SELECT sn.sensor_nodes_id
 , COUNT(sy.sensor_systems_id) as systems_count
 , COUNT(s.sensors_id) as sensors_count
 , COUNT(DISTINCT s.measurands_id) as parameters_count
-, array_agg(s.sensors_id) as sensors_list
+, array_agg(json_build_object(
+    'sensors_id', s.sensors_id
+    , 'measurand', m.measurand
+)) as sensors_list
 FROM sensor_nodes sn
 LEFT JOIN sensor_systems sy USING (sensor_nodes_id)
 LEFT JOIN sensors s USING (sensor_systems_id)
+LEFT JOIN measurands m USING (measurands_id)
 GROUP BY sn.sensor_nodes_id
 , sn.site_name
 , sn.source_name
@@ -677,7 +681,9 @@ SELECT iid as ingest_id
   SELECT ARRAY[
      iid[1]
     -- deals with case where source_id (from client) has a dash in it
-    , array_to_string(iid[2:(array_length(iid, 1)-1)], '-')
+    , CASE WHEN array_length(iid, 1) < 3 THEN 'N/A'
+           ELSE array_to_string(iid[2:(array_length(iid, 1)-1)], '-')
+           END
     , iid[array_length(iid, 1)]
   ]
   FROM arr;
@@ -770,6 +776,65 @@ BEGIN
    RETURN (plan->0->'Plan'->>'Plan Rows')::bigint;
 END;
 $$;
+
+SELECT pid
+, COUNT(1)
+, MAX(age(now()
+, query_start)) as age
+FROM pg_stat_activity
+WHERE query~*'ingest'
+GROUP BY 1;
+
+CREATE OR REPLACE VIEW fetchlogs_pending AS
+SELECT date_trunc('hour', init_datetime) as added_on
+, MIN(loaded_datetime) as loaded_min
+, MAX(loaded_datetime) as loaded_max
+, MAX(age(now(), init_datetime)) as oldest
+, SUM(jobs) as jobs
+, COUNT(1) as n
+, array_agg(fetchlogs_id) as fetchlogs
+, array_agg(DISTINCT batch_uuid) as batches
+FROM fetchlogs
+WHERE completed_datetime IS NULL
+AND NOT has_error
+GROUP BY 1
+ORDER BY 1 DESC;
+
+CREATE OR REPLACE VIEW fetchlogs_recent_summary AS
+SELECT date_trunc('hour', completed_datetime) as completed_on
+, MIN(age(completed_datetime, init_datetime)) as ingest_time_min
+, MAX(age(completed_datetime, init_datetime)) as ingest_time_max
+, AVG(age(completed_datetime, init_datetime)) as ingest_time_avg
+, MIN(age(completed_datetime, loaded_datetime)) as load_time_min
+, MAX(age(completed_datetime, loaded_datetime)) as load_time_max
+, AVG(age(completed_datetime, loaded_datetime)) as load_time_avg
+, ROUND(AVG(jobs)) as jobs_avg
+, SUM((has_error)::int) as errors
+, COUNT(1) as n
+, SUM(records) as records
+, SUM(inserted) as inserted
+FROM fetchlogs
+WHERE completed_datetime IS NOT NULL
+AND completed_datetime > now() - '24h'::interval
+AND NOT has_error
+GROUP BY 1
+ORDER BY 1 DESC;
+
+DROP VIEW IF EXISTS fetchlogs_recent_issues;
+CREATE OR REPLACE VIEW fetchlogs_recent_issues AS
+SELECT fetchlogs_id
+, init_datetime
+, key
+, jobs
+, age(last_modified, init_datetime) as modified_time
+, age(completed_datetime, init_datetime) as ingeset_time
+, age(completed_datetime, loaded_datetime) as loaded_time
+, has_error
+, EXTRACT(EPOCH FROM age(completed_datetime, init_datetime))/3600 as hours_ago
+FROM fetchlogs
+WHERE completed_datetime > now() - '24h'::interval
+AND key !~* 'station'
+AND (has_error OR jobs > 1 OR age(completed_datetime, init_datetime) > '1h'::interval);
 
 --SELECT * FROM parse_ingest_id('CMU-Technology Center-pm25');
 

@@ -104,3 +104,70 @@ FROM sensors
 WHERE metadata->>'sampling_duration' IS NOT NULL
 GROUP BY 1
 LIMIT 10;
+
+-- move the timezone data from the metadata to the timezones_id field
+UPDATE sensor_nodes
+SET timezones_id = t.gid
+FROM timezones t
+WHERE sensor_nodes.metadata->>'timezone' IS NOT NULL
+AND sensor_nodes.metadata->>'timezone' = t.tzid
+--AND timezones_id IS NULL
+;
+
+
+
+UPDATE sensor_nodes
+SET timezones_id = get_timezones_id(geom)
+WHERE geom IS NOT NULL
+AND timezones_id IS NULL
+AND added_on > current_date - 3;
+
+
+UPDATE sensor_nodes
+SET providers_id = p.providers_id
+FROM providers p
+WHERE sensor_nodes.source_name = p.source_name
+AND sensor_nodes.providers_id IS NULL
+OR sensor_nodes.providers_id = 1;
+
+INSERT INTO providers (label, source_name, description, export_prefix)
+SELECT source_name
+, source_name
+, 'added from ingest process'
+, lower(source_name)
+FROM sensor_nodes
+GROUP BY 1,2,3,4
+ON CONFLICT(source_name) DO NOTHING;
+
+
+UPDATE sensor_nodes
+SET countries_id = c.countries_id
+FROM countries c
+WHERE sensor_nodes.country = c.iso
+AND sensor_nodes.countries_id IS NULL;
+
+
+
+
+SELECT sensor_nodes_id
+, source_name
+, geom
+, st_x(geom)
+, st_y(geom)
+, added_on
+, ismobile
+FROM sensor_nodes
+WHERE origin = 'HABITATMAP'
+AND geom IS NOT NULL
+AND added_on > current_date - 30;
+
+SELECT *
+FROM sensor_nodes_check
+WHERE origin = 'HABITATMAP'
+AND has_coordinates;
+
+SELECT *
+FROM measurements
+WHERE lat IS NOT NULL
+AND lat = 200
+LIMIT 10;

@@ -2,7 +2,7 @@
 -- Adding a gate keeper to api usage
 -- Allowing users to have more more than one key if needed
 -- Storing information about the api users
--- we will be using ltree for the contact relationships
+-- we will be using ltree for the entity relationships
 CREATE EXTENSION IF NOT EXISTS ltree;
 
 -- A user is someone that uses the api and/or
@@ -69,16 +69,16 @@ CREATE TABLE IF NOT EXISTS user_keys (
 
 -- If we are going to be using a reference to a person/organization
 -- anywhere else in the platform we will likely want to separate users
--- from contacts.
--- For example, if we want to include contacts in the metadata for instruments
--- (e.g. owner, contact person)
+-- from entities.
+-- For example, if we want to include entities in the metadata for instruments
+-- (e.g. owner, entity person)
 -- And if we are expecting that either a person OR an organization can be
--- the owner/contact person we are likely going to want to use the following
--- pattern where we have a contacts list and each contact is of a type
+-- the owner/entity person we are likely going to want to use the following
+-- pattern where we have a entities list and each entity is of a type
 --
 
 -- One way to create the type is via an enumerated type
-CREATE TYPE contact_type AS ENUM (
+CREATE TYPE entity_type AS ENUM (
   'Person'
 , 'Organization'
 , 'Governmental Organization'
@@ -92,12 +92,12 @@ CREATE TYPE contact_type AS ENUM (
 -- we would either hard code that in or we could create
 -- a lookup table instead of the enum
 
--- A contact is typically a person that we want to collect
+-- A entity is typically a person that we want to collect
 -- information on and reference in the system somewhere
-CREATE SEQUENCE IF NOT EXISTS contacts_sq START 10;
-CREATE TABLE IF NOT EXISTS contacts (
-  contacts_id int PRIMARY KEY DEFAULT nextval('contacts_sq')
-  , contact_type contact_type NOT NULL
+CREATE SEQUENCE IF NOT EXISTS entities_sq START 10;
+CREATE TABLE IF NOT EXISTS entities (
+  entities_id int PRIMARY KEY DEFAULT nextval('entities_sq')
+  , entity_type entity_type NOT NULL
   , full_name text NOT NULL
   -- add any details that we want to track about a person
   -- some tracking tables that we may want to include
@@ -108,13 +108,13 @@ CREATE TABLE IF NOT EXISTS contacts (
 );
 
 
--- And then we link the contact to a specific user
-CREATE SEQUENCE IF NOT EXISTS users_contacts_sq START 10;
-CREATE TABLE IF NOT EXISTS users_contacts (
-  users_contacts_id int PRIMARY KEY DEFAULT nextval('users_contacts_sq')
+-- And then we link the entity to a specific user
+CREATE SEQUENCE IF NOT EXISTS users_entities_sq START 10;
+CREATE TABLE IF NOT EXISTS users_entities (
+  users_entities_id int PRIMARY KEY DEFAULT nextval('users_entities_sq')
   , users_id int NOT NULL REFERENCES users ON DELETE CASCADE
-  , contacts_id int NOT NULL REFERENCES contacts ON DELETE CASCADE
-  , UNIQUE(users_id, contacts_id)
+  , entities_id int NOT NULL REFERENCES entities ON DELETE CASCADE
+  , UNIQUE(users_id, entities_id)
 );
 
 -- There are a few ways that we could model the relationships
@@ -123,37 +123,37 @@ CREATE TABLE IF NOT EXISTS users_contacts (
 -- https://www.postgresql.org/docs/current/ltree.html
 
 -- Tree method
-CREATE SEQUENCE IF NOT EXISTS contact_paths_sq START 10;
-CREATE TABLE IF NOT EXISTS contact_paths (
-  contact_paths_id int PRIMARY KEY DEFAULT nextval('contact_paths_sq')
-  , contacts_id int NOT NULL REFERENCES contacts
-  , contacts_path ltree NOT NULL
+CREATE SEQUENCE IF NOT EXISTS entity_paths_sq START 10;
+CREATE TABLE IF NOT EXISTS entity_paths (
+  entity_paths_id int PRIMARY KEY DEFAULT nextval('entity_paths_sq')
+  , entities_id int NOT NULL REFERENCES entities
+  , entities_path ltree NOT NULL
   -- add other details here
 );
 
 -- add a trigger to make sure that things are done as needed
 -- when adding a new relationship we need to make sure that
--- the current contacts_id is included in the path
-CREATE OR REPLACE FUNCTION check_contacts_path() RETURNS TRIGGER AS $$
+-- the current entities_id is included in the path
+CREATE OR REPLACE FUNCTION check_entities_path() RETURNS TRIGGER AS $$
 BEGIN
-  IF NEW.contacts_path IS NOT NULL THEN
-    IF index(NEW.contacts_path, NEW.contacts_id::text::ltree, 0)<0 THEN
-      NEW.contacts_path = NEW.contacts_path||NEW.contacts_id::text::ltree;
+  IF NEW.entities_path IS NOT NULL THEN
+    IF index(NEW.entities_path, NEW.entities_id::text::ltree, 0)<0 THEN
+      NEW.entities_path = NEW.entities_path||NEW.entities_id::text::ltree;
     END IF;
   ELSE
-      NEW.contacts_path = NEW.contacts_id::text::ltree;
+      NEW.entities_path = NEW.entities_id::text::ltree;
   END IF;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS contacts_path_tgr ON contact_path;
-CREATE TRIGGER contacts_path_tgr
-BEFORE INSERT OR UPDATE ON contact_paths
-FOR EACH ROW EXECUTE PROCEDURE check_contacts_path();
+DROP TRIGGER IF EXISTS entities_path_tgr ON entity_path;
+CREATE TRIGGER entities_path_tgr
+BEFORE INSERT OR UPDATE ON entity_paths
+FOR EACH ROW EXECUTE PROCEDURE check_entities_path();
 
 -- Grant access to the api user
 GRANT SELECT ON public.users TO apiuser;
-GRANT SELECT ON public.contacts TO apiuser;
+GRANT SELECT ON public.entities TO apiuser;
 GRANT SELECT ON public.user_keys TO apiuser;
-GRANT SELECT ON public.users_contacts TO apiuser;
+GRANT SELECT ON public.users_entities TO apiuser;

@@ -10,3 +10,7 @@ A saved view used to get location information for the locations endpoint
 A materialized view used as a cache for the `locations_view`
 ## update_locations_rollups
 A function used by the ingest process to update the rollups. The updates will be done using the staging tables. Function should lock down and compare rows before updating to prevent race conditions.
+
+
+## sensor_node_spatial_rollup
+For each node we will record

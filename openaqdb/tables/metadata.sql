@@ -117,7 +117,7 @@ CREATE TABLE IF NOT EXISTS unit_conversions (
 CREATE SEQUENCE IF NOT EXISTS instruments_sq START 10;
 CREATE TABLE IF NOT EXISTS instruments (
   instruments_id int PRIMARY KEY DEFAULT nextval('instruments_sq')
-  , manufacturer_contacts_id int NOT NULL REFERENCES contacts
+  , manufacturer_entities_id int NOT NULL REFERENCES entities
   , label text NOT NULL UNIQUE
   , description text
 );
@@ -226,21 +226,21 @@ FOR EACH ROW EXECUTE PROCEDURE check_flagged_measurements();
 -- a list of all possible manufactures of instruments
 -- a view that pulls from instruments
 CREATE OR REPLACE VIEW manufacturers AS
-SELECT contacts_id
+SELECT entities_id
 , full_name
 , m.instruments_count
-FROM contacts c
-JOIN (SELECT manufacturer_contacts_id
+FROM entities c
+JOIN (SELECT manufacturer_entities_id
      , COUNT(1) as instruments_count
      -- could add instrument list here
      FROM instruments
-     GROUP BY manufacturer_contacts_id) as m
-     ON (m.manufacturer_contacts_id = c.contacts_id);
+     GROUP BY manufacturer_entities_id) as m
+     ON (m.manufacturer_entities_id = c.entities_id);
 
 -- use the instrument model sensors to get a list
 -- of all possible sensor units
 
-INSERT INTO contacts (contacts_id
+INSERT INTO entities (entities_id
 , full_name
 , contact_type) VALUES
 (1, 'OpenAQ admin', 'Person'::contact_type)
@@ -249,7 +249,7 @@ ON CONFLICT DO NOTHING;
 INSERT INTO instruments (instruments_id
 , label
 , description
-, manufacturer_contacts_id) VALUES
+, manufacturer_entities_id) VALUES
 (1, 'N/A', 'Instrument is not available', 1)
 ON CONFLICT DO NOTHING;
 
@@ -257,7 +257,7 @@ ON CONFLICT DO NOTHING;
 DO $$
 BEGIN
   ALTER TABLE providers
-  ADD COLUMN owner_contacts_id int REFERENCES contacts DEFAULT 1;
+  ADD COLUMN owner_entities_id int REFERENCES entities DEFAULT 1;
 EXCEPTION WHEN OTHERS THEN
    RAISE NOTICE 'providers alter error';
 END$$;
@@ -267,14 +267,15 @@ INSERT INTO providers (providers_id
 , description
 , source_name
 , export_prefix
-, owner_contacts_id) VALUES
+, owner_entities_id) VALUES
 (1, 'N/A', 'Provider is not available', 'na', 'na_', 1);
 
 DO $$
 BEGIN
   ALTER TABLE sensor_nodes
   ADD COLUMN providers_id int REFERENCES providers DEFAULT 1
-  , ADD COLUMN owner_contacts_id int REFERENCES contacts DEFAULT 1;
+  ADD COLUMN countries_id int REFERENCES countries DEFAULT 1
+  , ADD COLUMN owner_entities_id int REFERENCES entities DEFAULT 1;
 EXCEPTION WHEN OTHERS THEN
    RAISE NOTICE 'sensor nodes alter error';
 END$$;
@@ -283,7 +284,7 @@ DO $$
 BEGIN
   ALTER TABLE sensor_systems
   ADD COLUMN instruments_id int REFERENCES instruments DEFAULT 1
-  , ADD COLUMN deployed_by int REFERENCES contacts DEFAULT 1
+  , ADD COLUMN deployed_by int REFERENCES entities DEFAULT 1
   , ADD COLUMN deployed_on date NOT NULL DEFAULT current_date;
 EXCEPTION WHEN OTHERS THEN
    RAISE NOTICE 'sensor systems alter error';

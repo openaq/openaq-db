@@ -46,13 +46,17 @@ CREATE TABLE IF NOT EXISTS hourly_rollups (
 , UNIQUE(sensors_id, measurands_id, datetime)
 );
 
-CREATE INDEX hourly_rollups_sensors_id_idx
+CREATE INDEX IF NOT EXISTS hourly_rollups_sensors_id_idx
 ON hourly_rollups
 USING btree (sensors_id);
 
-CREATE INDEX hourly_rollups_datetime_idx
+CREATE INDEX IF NOT EXISTS hourly_rollups_datetime_idx
 ON hourly_rollups
 USING btree (datetime);
+
+CREATE UNIQUE INDEX IF NOT EXISTS hourly_rollups_sensors_id_datetime_idx
+ON hourly_rollups
+USING btree (sensors_id, datetime);
 
 
 -- create a table to help us keep track of what days have been updated
@@ -69,18 +73,55 @@ CREATE TABLE IF NOT EXISTS daily_stats (
 , metadata jsonb
 );
 
+-- use this to keep track of what hours are stale
+-- should be updated on EVERY ingestion
+CREATE TABLE IF NOT EXISTS hourly_stats (
+ datetime timestamptz PRIMARY KEY
+ , added_on timestamptz NOT NULL DEFAULT now()
+ , modified_on timestamptz
+ , calculated_count int NOT NULL DEFAULT 0
+ , calculated_on timestamptz
+ , measurements_count int
+ , sensors_count int
+ );
+
+
+
+-- method to update all the hourly stats
+-- based on the measurements table
+CREATE OR REPLACE FUNCTION reset_hourly_stats(
+  st timestamptz DEFAULT '-infinity'
+  , et timestamptz DEFAULT 'infinity'
+  )
+RETURNS bigint AS $$
+WITH inserts AS (
+     INSERT INTO hourly_stats (datetime, modified_on)
+     SELECT date_trunc('hour', datetime) as datetime
+     , MAX(added_on) as modified_on
+     FROM measurements
+     WHERE datetime >= st
+     AND datetime <= et
+     GROUP BY 1
+     ON CONFLICT (datetime) DO UPDATE
+     SET modified_on = GREATEST(EXCLUDED.modified_on, hourly_stats.modified_on)
+     RETURNING 1
+   ) SELECT COUNT(1) FROM inserts;
+$$ LANGUAGE SQL;
+
+
+
 -- this is the basic function used to rollup an entire day
 CREATE OR REPLACE FUNCTION calculate_rollup_daily_stats(day date) RETURNS bigint AS $$
 WITH data AS (
-SELECT (datetime - '1sec'::interval)::date as day
-, h.sensors_id
-, sensor_nodes_id
-, value_count
-FROM hourly_rollups h
-JOIN sensors s ON (h.sensors_id = s.sensors_id)
-JOIN sensor_systems ss ON (s.sensor_systems_id = ss.sensor_systems_id)
-WHERE datetime > day::timestamp
-AND  datetime <= day + '1day'::interval
+   SELECT (datetime - '1sec'::interval)::date as day
+   , h.sensors_id
+   , sensor_nodes_id
+   , value_count
+   FROM hourly_rollups h
+   JOIN sensors s ON (h.sensors_id = s.sensors_id)
+   JOIN sensor_systems ss ON (s.sensor_systems_id = ss.sensor_systems_id)
+   WHERE datetime > day::timestamp
+   AND  datetime <= day + '1day'::interval
 ), inserts AS (
 INSERT INTO daily_stats (
   day
@@ -115,7 +156,14 @@ $$ LANGUAGE SQL;
 -- we add the hour to the datetime so that its saved as time ending
 -- we subtract the second so that a value that is recorded as 2022-01-01 10:00:00
 -- and is time ending becomes 2022-01-01 09:59:59, and then trucated to the 9am hour
-CREATE OR REPLACE FUNCTION calculate_hourly_rollup(st timestamptz, et timestamptz) RETURNS bigint AS $$
+
+--\set et '''2022-10-04 16:00:00+00'''::timestamptz
+--\set st '''2022-10-04 15:00:00+00'''::timestamptz
+
+CREATE OR REPLACE FUNCTION calculate_hourly_rollup(st timestamptz, et timestamptz) RETURNS TABLE (
+  sensors_count bigint
+, measurements_count bigint
+) AS $$
 WITH inserted AS (
 INSERT INTO hourly_rollups (
   sensors_id
@@ -164,29 +212,72 @@ SET first_datetime = EXCLUDED.first_datetime
 , value_p50 = EXCLUDED.value_p50
 , value_p95 = EXCLUDED.value_p95
 , calculated_on = EXCLUDED.calculated_on
-RETURNING 1)
-SELECT COUNT(1)
+RETURNING value_count)
+SELECT COUNT(1) as sensors_count
+, SUM(value_count) as measurements_count
 FROM inserted;
 $$ LANGUAGE SQL;
 
 
 -- Some helper functions to make things easier
 -- Pass the time ending timestamp to calculate one hour
-CREATE OR REPLACE FUNCTION calculate_hourly_rollup(et timestamptz) RETURNS bigint AS $$
+CREATE OR REPLACE FUNCTION calculate_hourly_rollup(et timestamptz DEFAULT now() - '1hour'::interval) RETURNS TABLE (
+  sensors_count bigint
+, measurements_count bigint
+) AS $$
 SELECT calculate_hourly_rollup(et - '1hour'::interval, et);
 $$ LANGUAGE SQL;
 
 -- Helper function to record a how day
-CREATE OR REPLACE FUNCTION calculate_hourly_rollup(dt date) RETURNS bigint AS $$
+CREATE OR REPLACE FUNCTION calculate_hourly_rollup(dt date) RETURNS TABLE (
+  sensors_count bigint
+, measurements_count bigint
+) AS $$
 SELECT calculate_hourly_rollup(dt::timestamptz, dt + '1day'::interval);
 $$ LANGUAGE SQL;
+
+
+CREATE OR REPLACE FUNCTION update_hourly_rollup(hr timestamptz DEFAULT now() - '1hour'::interval) RETURNS bigint AS $$
+INSERT INTO hourly_stats (
+  datetime
+, calculated_on
+, measurements_count
+, sensors_count
+, calculated_count
+)
+SELECT date_trunc('hour', hr)
+, now()
+, measurements_count
+, sensors_count
+, 1
+FROM calculate_hourly_rollup(hr)
+ON CONFLICT (datetime) DO UPDATE
+SET calculated_on = EXCLUDED.calculated_on
+, calculated_count = hourly_stats.calculated_count + 1
+, measurements_count = EXCLUDED.measurements_count
+RETURNING measurements_count;
+$$ LANGUAGE SQL;
+
+
+
+SELECT date_trunc('hour', hr)
+, now()
+, measurements_count
+, sensors_count
+, 1
+FROM calculate_hourly_rollup(hr)
+
+
 
 -- A method that includes specifying the sensors_id
 CREATE OR REPLACE FUNCTION calculate_hourly_rollup(
   id int
 , st timestamptz
 , et timestamptz
-) RETURNS bigint AS $$
+) RETURNS TABLE (
+  sensors_count bigint
+, measurements_count bigint
+) AS $$
 WITH inserted AS (
 INSERT INTO hourly_rollups (
   sensors_id
@@ -236,18 +327,25 @@ SET first_datetime = EXCLUDED.first_datetime
 , value_p50 = EXCLUDED.value_p50
 , value_p95 = EXCLUDED.value_p95
 , calculated_on = EXCLUDED.calculated_on
-RETURNING 1)
-SELECT COUNT(1)
+RETURNING value_count)
+SELECT COUNT(1) as sensors_count
+, SUM(value_count) as measurements_count
 FROM inserted;
 $$ LANGUAGE SQL;
 
 -- helpers for measurand_id
-CREATE OR REPLACE FUNCTION calculate_hourly_rollup(id int, et timestamptz) RETURNS bigint AS $$
+CREATE OR REPLACE FUNCTION calculate_hourly_rollup(id int, et timestamptz) RETURNS TABLE (
+  sensors_count bigint
+, measurements_count bigint
+) AS $$
 SELECT calculate_hourly_rollup(id, et - '1hour'::interval, et);
 $$ LANGUAGE SQL;
 
 -- Helper function to record a how day
-CREATE OR REPLACE FUNCTION calculate_hourly_rollup(id int, dt date) RETURNS bigint AS $$
+CREATE OR REPLACE FUNCTION calculate_hourly_rollup(id int, dt date) RETURNS TABLE (
+  sensors_count bigint
+, measurements_count bigint
+) AS $$
 SELECT calculate_hourly_rollup(id, dt::timestamptz, dt + '1day'::interval);
 $$ LANGUAGE SQL;
 
@@ -286,18 +384,22 @@ CREATE OR REPLACE FUNCTION log_performance(text, timestamptz) RETURNS timestampt
 $$ LANGUAGE SQL;
 
 
--- For adding existing days to the stats table
--- INSERT INTO daily_stats (
---   day
--- , sensor_nodes_count
--- , sensors_count
--- , hours_count
--- , measurements_count
--- )
--- SELECT generate_series(MIN(datetime)::date, MAX(datetime)::date, '1day'::interval)::date
--- , -1 as sensor_nodes_count
--- , -1 as sensors_count
--- , -1 as hours_count
--- , -1 as measurements_count
--- FROM measurements
--- ON CONFLICT DO NOTHING;
+
+CREATE OR REPLACE PROCEDURE update_rollups(lmt int DEFAULT 1000) AS $$
+DECLARE
+dt timestamptz;
+BEGIN
+FOR dt IN (
+    SELECT datetime
+    FROM hourly_stats
+    WHERE calculated_on IS NULL
+    OR calculated_on < COALESCE(modified_on, added_on)
+    ORDER BY datetime DESC
+    LIMIT lmt)
+LOOP
+  RAISE NOTICE 'updating hour: %', dt;
+  PERFORM update_hourly_rollup(dt);
+  COMMIT;
+END LOOP;
+END;
+$$ LANGUAGE plpgsql;
