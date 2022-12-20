@@ -627,17 +627,18 @@ SELECT sn.sensor_nodes_id
 , sn.source_name
 , sn.source_id
 , sn.origin
-, (l.lat IS NOT NULL OR geom IS NOT NULL) as has_coordinates
+, (l.geom_latest IS NOT NULL OR sn.geom IS NOT NULL) as has_coordinates
 , sy.sensor_systems_id IS NOT NULL as has_system
 , sn.added_on
 , s.sensors_id
 , COALESCE(m.measurand, 'Not found') as parameter
-, l.datetime as last_datetime
+, l.datetime_first as datetime_first
+, l.datetime_last as datetime_last
 FROM sensor_nodes sn
 LEFT JOIN sensor_systems sy USING (sensor_nodes_id)
 LEFT JOIN sensors s USING (sensor_systems_id)
 LEFT JOIN measurands m USING (measurands_id)
-LEFT JOIN sensors_latest l USING (sensors_id)
+LEFT JOIN sensors_rollup l USING (sensors_id)
 --WHERE sensor_nodes_id = 23642
 ;
 
@@ -835,6 +836,25 @@ FROM fetchlogs
 WHERE completed_datetime > now() - '24h'::interval
 AND key !~* 'station'
 AND (has_error OR jobs > 1 OR age(completed_datetime, init_datetime) > '1h'::interval);
+
+
+CREATE OR REPLACE FUNCTION clean_sensor_nodes() RETURNS VOID AS $$
+BEGIN
+DELETE
+FROM sensors
+WHERE sensors_id IN (SELECT sensors_id FROM sensor_nodes_check WHERE datetime_first IS NULL);
+DELETE
+FROM sensor_systems
+WHERE sensor_systems_id NOT IN (SELECT sensor_systems_id FROM sensors);
+DELETE
+FROM sensor_nodes_sources
+WHERE sensor_nodes_id NOT IN (SELECT sensor_nodes_id FROM sensor_systems);
+DELETE
+FROM sensor_nodes
+WHERE sensor_nodes_id NOT IN (SELECT sensor_nodes_id FROM sensor_systems);
+END;
+$$ LANGUAGE plpgsql;
+
 
 --SELECT * FROM parse_ingest_id('CMU-Technology Center-pm25');
 

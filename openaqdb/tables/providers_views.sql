@@ -57,6 +57,7 @@ WITH providers_locations AS (
     'id', p.owner_entities_id
     , 'name', e.full_name
    ) as owner_entity
+  , license
   , extent
   FROM providers p
   JOIN providers_rollup USING (providers_id)

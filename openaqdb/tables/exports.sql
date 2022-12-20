@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS providers (
   , source_name text NOT NULL --REFERENCES sensor_nodes(source_name)
   -- the text to use as the root folder in the export method
   , export_prefix text NOT NULL
+  , license text
   , metadata jsonb
 );
 
