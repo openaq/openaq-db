@@ -23,16 +23,16 @@ WITH locations_measurands AS (
     JOIN sensors_rollup sl USING (sensors_id)
     GROUP BY s.measurands_id)
 -----------------------------------
-SELECT measurands.measurands_id AS id
-, measurands.measurand AS name
-, measurands.display AS display_name
-, measurands.units
-, measurands.description
+SELECT m.measurands_id AS id
+, m.measurand AS name
+, m.display AS display_name
+, m.units
+, m.description
 , lm.locations_count
 , mm.measurements_count
-, datetime_first
-, datetime_last
-FROM measurands
+, mm.datetime_first
+, mm.datetime_last
+FROM measurands m
 JOIN locations_measurands lm USING (measurands_id)
 JOIN measurements_measurands mm USING (measurands_id);
 
