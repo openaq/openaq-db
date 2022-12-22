@@ -22,3 +22,19 @@ sudo docker run --name openaq-testing -e POSTGRES_PASSWORD=postgres -t openaq-de
 ## to determine the IP address of the container use
 sudo docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' openaq-testing
 ```
+
+# Install DB
+```shell
+HOST=xxxx
+PORT=xxxx
+USER=xxxx
+psql -h $HOST -U $USER -p $PORT -d postgres \
+    -v ON_ERROR_STOP=1 \
+    -c 'DROP DATABASE IF EXISTS openaq' \
+    -c 'CREATE DATABASE openaq'
+
+psql -h $HOST -U $USER -p $PORT -d openaq \
+    -v ON_ERROR_STOP=1 \
+    -v DATABASE_WRITE_USER=rwuser \
+    -f init.sql
+```

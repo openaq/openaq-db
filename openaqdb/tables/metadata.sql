@@ -242,8 +242,8 @@ JOIN (SELECT manufacturer_entities_id
 
 INSERT INTO entities (entities_id
 , full_name
-, contact_type) VALUES
-(1, 'OpenAQ admin', 'Person'::contact_type)
+, entity_type) VALUES
+(1, 'OpenAQ admin', 'Person'::entity_type)
 ON CONFLICT DO NOTHING;
 
 INSERT INTO instruments (instruments_id
@@ -274,7 +274,7 @@ DO $$
 BEGIN
   ALTER TABLE sensor_nodes
   ADD COLUMN providers_id int REFERENCES providers DEFAULT 1
-  ADD COLUMN countries_id int REFERENCES countries DEFAULT 1
+  , ADD COLUMN countries_id int REFERENCES countries DEFAULT 1
   , ADD COLUMN owner_entities_id int REFERENCES entities DEFAULT 1;
 EXCEPTION WHEN OTHERS THEN
    RAISE NOTICE 'sensor nodes alter error';

@@ -53,7 +53,7 @@ GRANT ALL ON FUNCTIONS to :DATABASE_WRITE_USER;
 \i locations/locations.sql
 \i tables/countries_views.sql
 \i tables/providers_views.sql
-\i tables/parameters_view.sql
+\i tables/parameters_views.sql
 COMMIT;
 
 -- Load immutable views/functions

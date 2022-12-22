@@ -260,15 +260,6 @@ $$ LANGUAGE SQL;
 
 
 
-SELECT date_trunc('hour', hr)
-, now()
-, measurements_count
-, sensors_count
-, 1
-FROM calculate_hourly_rollup(hr)
-
-
-
 -- A method that includes specifying the sensors_id
 CREATE OR REPLACE FUNCTION calculate_hourly_rollup(
   id int

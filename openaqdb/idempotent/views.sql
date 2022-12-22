@@ -758,7 +758,7 @@ CREATE OR REPLACE VIEW public.active_locks AS
     l.pid,
     l.mode,
     l.granted,
-    substr(query, 0, 25) as query,
+    substr(query, 0, 40) as query,
     age(now(), a.query_start) as age
    FROM pg_locks l
    JOIN pg_stat_all_tables t ON l.relation = t.relid
@@ -778,13 +778,49 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE VIEW active_ingestions AS
 SELECT pid
-, COUNT(1)
-, MAX(age(now()
-, query_start)) as age
+, COUNT(1) as n
+, MAX(age(now(), query_start)) as age
 FROM pg_stat_activity
 WHERE query~*'ingest'
+AND pg_backend_pid() != pid
 GROUP BY 1;
+
+CREATE OR REPLACE FUNCTION cancel_ingestions(age interval DEFAULT '4h') RETURNS TABLE(
+ pid int
+ , locks bigint
+ , age interval
+ , canceled bigint
+) AS $$
+ SELECT pid
+, COUNT(1) as locks
+, MAX(age(now(), query_start)) as process_age
+, COUNT(pg_cancel_backend(pid)) as canceled
+FROM pg_stat_activity
+WHERE query~*'ingest'
+AND pg_backend_pid() != pid
+AND age(now(), query_start) > age
+GROUP BY 1;
+$$ LANGUAGE SQL;
+
+CREATE OR REPLACE FUNCTION cancel_processes(pattern text, age interval DEFAULT '4h') RETURNS TABLE(
+ pid int
+ , locks bigint
+ , age interval
+ , canceled bigint
+) AS $$
+ SELECT pid
+, COUNT(1) as locks
+, MAX(age(now(), query_start)) as process_age
+, COUNT(pg_cancel_backend(pid)) as canceled
+FROM pg_stat_activity
+WHERE query~*pattern
+AND pg_backend_pid() != pid
+AND age(now(), query_start) > age
+GROUP BY 1;
+$$ LANGUAGE SQL;
+
 
 CREATE OR REPLACE VIEW fetchlogs_pending AS
 SELECT date_trunc('hour', init_datetime) as added_on

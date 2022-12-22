@@ -207,6 +207,9 @@ class DatabaseStack(Stack):
                 cpu_type=_ec2.AmazonLinuxCpuType.X86_64,
             )
 
+        # user data results are logged to
+        # /var/log/cloud-init.log
+        # /var/log/cloud-init-output.log
         ec2 = _ec2.Instance(
             self,
             f"{id}-dbstack-database",
