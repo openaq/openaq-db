@@ -683,5 +683,10 @@ BEGIN
     REFRESH MATERIALIZED VIEW providers_view_cached;
     COMMIT;
     PERFORM log_performance('update-providers-view', CURRENT_TIMESTAMP);
+    ----------------------------------------
+    RAISE NOTICE 'REFRESHING parameters_view_cached';
+    REFRESH MATERIALIZED VIEW parameters_view_cached;
+    COMMIT;
+    PERFORM log_performance('update-parameters-view', CURRENT_TIMESTAMP);
 END;
 $$ LANGUAGE plpgsql;
