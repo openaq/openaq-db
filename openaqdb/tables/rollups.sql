@@ -1,3 +1,46 @@
+-- Table to hold the list of thresholds that we will
+-- need to calculate for each rollup
+CREATE SEQUENCE IF NOT EXISTS thresholds_sq START 10;
+CREATE TABLE IF NOT EXISTS thresholds (
+  thresholds_id int PRIMARY KEY DEFAULT nextval('thresholds_sq')
+  , measurands_id int NOT NULL REFERENCES measurands
+  , value double precision NOT NULL
+  , UNIQUE (measurands_id, value)
+);
+
+DELETE FROM thresholds;
+INSERT INTO thresholds (measurands_id, value) VALUES
+  (2, 5)
+, (2, 10)
+, (2, 250)
+ON CONFLICT DO NOTHING;
+
+DROP TABLE IF EXISTS sensor_exceedances;
+CREATE TABLE IF NOT EXISTS sensor_exceedances (
+  sensors_id int NOT NULL REFERENCES sensors ON DELETE CASCADE
+  , threshold_value double precision
+  , datetime_latest timestamptz
+  , updated_on timestamptz NOT NULL DEFAULT now()
+  , UNIQUE(sensors_id, threshold_value)
+);
+-- add index
+CREATE INDEX sensor_exceedances_sensors_id_idx ON rollups USING btree (sensors_id);
+CREATE INDEX sensor_exceedances_threshold_value ON rollups USING btree (st);
+
+
+
+-- a table to track the entities specific sets of thresholds
+-- this will allow us to define groups of thresholds for display purposes
+-- e.g. epa, who, other orgs
+CREATE SEQUENCE IF NOT EXISTS entities_thresholds_sq START 10;
+CREATE TABLE IF NOT EXISTS entities_thresholds (
+  entities_thresholds_id int PRIMARY KEY DEFAULT nextval('entities_thresholds_sq')
+  , entities_id int NOT NULL REFERENCES entities ON DELETE CASCADE
+  , thresholds_id int NOT NULL REFERENCES thresholds ON DELETE CASCADE
+  , UNIQUE(entities_id, thresholds_id)
+);
+
+
 CREATE TABLE IF NOT EXISTS rollups (
     groups_id int REFERENCES groups (groups_id),
     measurands_id int,
@@ -41,6 +84,7 @@ CREATE TABLE IF NOT EXISTS hourly_rollups (
 , value_p05 double precision
 , value_p50 double precision
 , value_p95 double precision
+, threshold_values jsonb
 , updated_on timestamptz -- last time the sensor was updated
 , calculated_on timestamptz-- last time the row rollup was calculated
 , UNIQUE(sensors_id, measurands_id, datetime)
@@ -159,6 +203,9 @@ $$ LANGUAGE SQL;
 
 --\set et '''2022-10-04 16:00:00+00'''::timestamptz
 --\set st '''2022-10-04 15:00:00+00'''::timestamptz
+
+
+
 
 CREATE OR REPLACE FUNCTION calculate_hourly_rollup(st timestamptz, et timestamptz) RETURNS TABLE (
   sensors_count bigint

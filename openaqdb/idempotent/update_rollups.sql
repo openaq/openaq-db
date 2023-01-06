@@ -542,7 +542,7 @@ BEGIN
     _et:=date_trunc('day',coalesce(_et, now()));
 
     RAISE NOTICE 'updating timezones';
-    UPDATE  sensor_nodes
+    UPDATE sensor_nodes
     SET timezones_id = get_timezones_id(geom)
     WHERE geom IS NOT NULL
     AND timezones_id IS NULL;
@@ -683,5 +683,10 @@ BEGIN
     REFRESH MATERIALIZED VIEW providers_view_cached;
     COMMIT;
     PERFORM log_performance('update-providers-view', CURRENT_TIMESTAMP);
+    ----------------------------------------
+    RAISE NOTICE 'REFRESHING parameters_view_cached';
+    REFRESH MATERIALIZED VIEW parameters_view_cached;
+    COMMIT;
+    PERFORM log_performance('update-parameters-view', CURRENT_TIMESTAMP);
 END;
 $$ LANGUAGE plpgsql;

@@ -257,7 +257,7 @@ ON CONFLICT DO NOTHING;
 DO $$
 BEGIN
   ALTER TABLE providers
-  ADD COLUMN owner_entities_id int REFERENCES entities DEFAULT 1;
+  ADD COLUMN owner_entities_id int NOT NULL REFERENCES entities DEFAULT 1;
 EXCEPTION WHEN OTHERS THEN
    RAISE NOTICE 'providers alter error';
 END$$;
