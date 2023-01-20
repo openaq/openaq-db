@@ -50,7 +50,7 @@ ExecStart=/usr/bin/postgres_exporter --web.listen-address=:9187 --web.telemetry-
 Restart=always
 
 [Install]
-ls WantedBy=multi-user.target
+WantedBy=multi-user.target
 EOF
        )
     echo $SRV | tee /etc/systemd/system/postgres-exporter.service  > /dev/null

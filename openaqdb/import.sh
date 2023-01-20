@@ -210,9 +210,8 @@ aws s3 cp "${BUCKET}/sensors_v1.csv.gz" - \
 
 
 
-day=$(date -d "2022-10-01" +%Y%m%d)
-d2=$(date -d "2022-10-01" +%Y%m%d)
-ends=$(date -d "2022-10-02" +%Y%m%d)
+day=$(date -d "2022-10-03" +%Y%m%d)
+ends=$(date -d "2023-01-15" +%Y%m%d)
 
 while [[ $day -le $ends ]]; do
     PREFIX="${BUCKET}/measurements_v1_${day}00"
