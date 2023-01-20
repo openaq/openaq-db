@@ -37,10 +37,11 @@ psql --single-transaction \
 
 psql --single-transaction -v ON_ERROR_STOP=1 -f lookups/measurands.sql
 psql --single-transaction -v ON_ERROR_STOP=1 -f lookups/measurands_map.sql
+psql --single-transaction -v ON_ERROR_STOP=1 -f lookups/thresholds.sql
 gunzip -c lookups/countries.tsv.gz | psql --single-transaction -v ON_ERROR_STOP=1 -c "copy countries from stdin"
 gunzip -c lookups/timezones.tsv.gz | psql --single-transaction -v ON_ERROR_STOP=1 -c "copy timezones from stdin"
-gunzip -c lookups/sources_from_openaq.tsv.gz | psql --single-transaction -v ON_ERROR_STOP=1 -c "copy sources_from_openaq from stdin"
 gunzip -c lookups/providers_data.csv.gz | psql --single-transaction -v ON_ERROR_STOP=1 -c "COPY providers FROM stdin DELIMITER ',' CSV HEADER"
+gunzip -c lookups/sources_from_openaq.tsv.gz | psql --single-transaction -v ON_ERROR_STOP=1 -c "copy sources_from_openaq from stdin"
 
 
 echo 'installed'

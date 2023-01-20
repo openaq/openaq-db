@@ -1,5 +1,6 @@
 from aws_cdk import (
     aws_ec2 as _ec2,
+    aws_s3 as _s3,
     Stack,
     CfnOutput,
     Duration,
@@ -17,6 +18,11 @@ class DatabaseStack(Stack):
         scope: Construct,
         id: str,
         codeDirectory: str,
+        pgSharedBuffers: str,
+        pgWalBuffers: str,
+        pgEffectiveCacheSize: str,
+        pgWorkMem: str,
+        pgMaintenanceWorkMem: str,
         rootVolumeSize: int = 100,
         rootVolumeIops: int = 2000,
         dataVolumeSize: int = 1000,
@@ -117,6 +123,11 @@ class DatabaseStack(Stack):
             "DATABASE_HOST": databaseHost,
             "DATABASE_PORT": databasePort,
             "DATABASE_DB": databaseDb,
+            "PG_SHARED_BUFFERS": pgSharedBuffers,
+            "PG_WAL_BUFFERS": pgWalBuffers,
+            "PG_EFFECTIVE_CACHE_SIZE": pgEffectiveCacheSize,
+            "PG_WORK_MEM": pgWorkMem,
+            "PG_MAINTENANCE_WORK_MEM": pgMaintenanceWorkMem,
             "SNAPSHOT_ID": snapshotId,
             "PGPATH": "/usr/bin",
             "PGDATA": "/db/data",
@@ -163,7 +174,7 @@ class DatabaseStack(Stack):
                 )
             )
             blockDevices.append(snapshotVolume)
-            UserData.add_commands('mkdir /db && mount /dev/sdb /db')
+            UserData.add_commands('mkdir -p /db && mount /dev/sdb /db')
         else:
             dataVolume = _ec2.BlockDevice(
                 device_name="/dev/sdb",
@@ -176,7 +187,7 @@ class DatabaseStack(Stack):
                 )
             )
             blockDevices.append(dataVolume)
-            UserData.add_commands('mkfs -t xfs /dev/sdb && mkdir /db && mount /dev/sdb /db')
+            UserData.add_commands('mkfs -t xfs /dev/sdb && mkdir -p /db && mount /dev/sdb /db')
 
         initElements = _ec2.CloudFormationInit.from_elements(
             _ec2.InitFile.from_asset("/app/db.zip", setup_dir),
@@ -227,6 +238,12 @@ class DatabaseStack(Stack):
             block_devices=blockDevices,
             user_data=UserData
         )
+
+        backup_bucket = 'openaq-db-backups'
+        openaq_backup_bucket = _s3.Bucket.from_bucket_name(
+            self, "{env_name}-BACKUP-BUCKET", backup_bucket
+        )
+        openaq_backup_bucket.grant_read_write(ec2)
 
         # if we want to assign a specific ip address
         # this can be handy for staging where you

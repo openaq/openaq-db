@@ -8,13 +8,6 @@ CREATE TABLE IF NOT EXISTS thresholds (
   , UNIQUE (measurands_id, value)
 );
 
-DELETE FROM thresholds;
-INSERT INTO thresholds (measurands_id, value) VALUES
-  (2, 5)
-, (2, 10)
-, (2, 250)
-ON CONFLICT DO NOTHING;
-
 DROP TABLE IF EXISTS sensor_exceedances;
 CREATE TABLE IF NOT EXISTS sensor_exceedances (
   sensors_id int NOT NULL REFERENCES sensors ON DELETE CASCADE
@@ -24,9 +17,8 @@ CREATE TABLE IF NOT EXISTS sensor_exceedances (
   , UNIQUE(sensors_id, threshold_value)
 );
 -- add index
-CREATE INDEX sensor_exceedances_sensors_id_idx ON rollups USING btree (sensors_id);
-CREATE INDEX sensor_exceedances_threshold_value ON rollups USING btree (st);
-
+CREATE INDEX sensor_exceedances_sensors_id_idx ON sensor_exceedances USING btree (sensors_id);
+CREATE INDEX sensor_exceedances_threshold_value ON sensor_exceedances USING btree (threshold_value);
 
 
 -- a table to track the entities specific sets of thresholds
@@ -125,6 +117,7 @@ CREATE TABLE IF NOT EXISTS hourly_stats (
  , modified_on timestamptz
  , calculated_count int NOT NULL DEFAULT 0
  , calculated_on timestamptz
+ , calculated_seconds double precision
  , measurements_count int
  , sensors_count int
  );
@@ -201,10 +194,8 @@ $$ LANGUAGE SQL;
 -- we subtract the second so that a value that is recorded as 2022-01-01 10:00:00
 -- and is time ending becomes 2022-01-01 09:59:59, and then trucated to the 9am hour
 
---\set et '''2022-10-04 16:00:00+00'''::timestamptz
---\set st '''2022-10-04 15:00:00+00'''::timestamptz
-
-
+--\set et '''2023-01-19 16:00:00+00'''::timestamptz
+--\set st '''2023-01-19 15:00:00+00'''::timestamptz
 
 
 CREATE OR REPLACE FUNCTION calculate_hourly_rollup(st timestamptz, et timestamptz) RETURNS TABLE (
@@ -266,13 +257,40 @@ FROM inserted;
 $$ LANGUAGE SQL;
 
 
+
+EXPLAIN ANALYZE
+SELECT
+  m.sensors_id
+, measurands_id
+, date_trunc('hour', datetime - '1sec'::interval) + '1hour'::interval as datetime
+, MIN(datetime) as first_datetime
+, MAX(datetime) as last_datetime
+, COUNT(1) as value_count
+, AVG(value) as value_avg
+, STDDEV(value) as value_sd
+, MIN(value) as value_min
+, MAX(value) as value_max
+, PERCENTILE_CONT(0.05) WITHIN GROUP(ORDER BY value) as value_p05
+, PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY value) as value_p50
+, PERCENTILE_CONT(0.95) WITHIN GROUP(ORDER BY value) as value_p95
+, current_timestamp as calculated_on
+FROM measurements m
+JOIN sensors s ON (m.sensors_id = s.sensors_id)
+WHERE datetime > '2023-01-13 16:00:00+00'::timestamptz
+AND datetime <= '2023-01-13 17:00:00+00'::timestamptz
+GROUP BY 1,2,3
+HAVING COUNT(1) > 0;
+
+
+
+
 -- Some helper functions to make things easier
 -- Pass the time ending timestamp to calculate one hour
 CREATE OR REPLACE FUNCTION calculate_hourly_rollup(et timestamptz DEFAULT now() - '1hour'::interval) RETURNS TABLE (
   sensors_count bigint
 , measurements_count bigint
 ) AS $$
-SELECT calculate_hourly_rollup(et - '1hour'::interval, et);
+SELECT * FROM calculate_hourly_rollup(et - '1hour'::interval, et);
 $$ LANGUAGE SQL;
 
 -- Helper function to record a how day
@@ -280,31 +298,44 @@ CREATE OR REPLACE FUNCTION calculate_hourly_rollup(dt date) RETURNS TABLE (
   sensors_count bigint
 , measurements_count bigint
 ) AS $$
-SELECT calculate_hourly_rollup(dt::timestamptz, dt + '1day'::interval);
+SELECT * FROM calculate_hourly_rollup(dt::timestamptz, dt + '1day'::interval);
 $$ LANGUAGE SQL;
 
 
+--DROP FUNCTION IF EXISTS update_hourly_rollup(timestamptz);
 CREATE OR REPLACE FUNCTION update_hourly_rollup(hr timestamptz DEFAULT now() - '1hour'::interval) RETURNS bigint AS $$
+DECLARE
+nw timestamptz := clock_timestamp();
+mc bigint;
+BEGIN
+WITH inserted AS (
+  SELECT COALESCE(measurements_count, 0) as measurements_count
+  , COALESCE(sensors_count, 0) as sensors_count
+  FROM calculate_hourly_rollup(hr))
 INSERT INTO hourly_stats (
   datetime
 , calculated_on
 , measurements_count
 , sensors_count
 , calculated_count
-)
+, calculated_seconds)
 SELECT date_trunc('hour', hr)
 , now()
 , measurements_count
 , sensors_count
 , 1
-FROM calculate_hourly_rollup(hr)
+, EXTRACT(EPOCH FROM clock_timestamp() - nw)
+FROM inserted
 ON CONFLICT (datetime) DO UPDATE
 SET calculated_on = EXCLUDED.calculated_on
 , calculated_count = hourly_stats.calculated_count + 1
 , measurements_count = EXCLUDED.measurements_count
-RETURNING measurements_count;
-$$ LANGUAGE SQL;
-
+, sensors_count = EXCLUDED.sensors_count
+, calculated_seconds = EXCLUDED.calculated_seconds
+RETURNING measurements_count INTO mc;
+RETURN mc;
+END;
+$$ LANGUAGE plpgsql;
 
 
 -- A method that includes specifying the sensors_id
@@ -430,8 +461,9 @@ BEGIN
 FOR dt IN (
     SELECT datetime
     FROM hourly_stats
-    WHERE calculated_on IS NULL
-    OR calculated_on < COALESCE(modified_on, added_on)
+    WHERE datetime < now() - '1hour'::interval
+    AND (calculated_on IS NULL
+    OR calculated_on < COALESCE(modified_on, added_on))
     ORDER BY datetime DESC
     LIMIT lmt)
 LOOP

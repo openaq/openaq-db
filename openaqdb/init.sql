@@ -1,7 +1,7 @@
 BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS postgis;
---CREATE EXTENSION IF NOT EXISTS timescaledb;
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 CREATE EXTENSION IF NOT EXISTS btree_gist;
 --END;
 
@@ -43,11 +43,11 @@ GRANT ALL ON FUNCTIONS to :DATABASE_WRITE_USER;
 \i tables/sources.sql
 \i tables/origins.sql
 \i tables/groups.sql
-\i tables/rollups.sql
 \i tables/readmes.sql
 \i tables/exports.sql
 \i tables/rejects.sql
 \i tables/users.sql
+\i tables/rollups.sql
 \i tables/metadata.sql
 \i idempotent/util_functions.sql
 \i locations/locations.sql

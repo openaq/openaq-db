@@ -20,12 +20,12 @@ CREATE TABLE IF NOT EXISTS sensors_rollup (
   , value_sd double precision -- sd of all measurements (@ingest, @rollup)
   , value_min double precision -- lowest measurement value (@ingest, @rollup)
   , value_max double precision -- highest value measured (@ingest, @rollup)
-  , value_p05 double precision -- 5th percentile (@rollup)
-  , value_p50 double precision -- median (@rollup)
-  , value_p95 double precision -- 95th percentile (@rollup)
+  --, value_p05 double precision -- 5th percentile (@rollup)
+  --, value_p50 double precision -- median (@rollup)
+  --, value_p95 double precision -- 95th percentile (@rollup)
   , added_on timestamptz NOT NULL DEFAULT now() -- first time measurements were added (@ingest)
   , modified_on timestamptz NOT NULL DEFAULT now() -- last time we measurements were added (@ingest)
-  , calculated_on timestamptz -- last time data was rolled up (@rollup)
+  --, calculated_on timestamptz -- last time data was rolled up (@rollup)
 );
 
 -- Sensors latest will act as a cache for the most recent

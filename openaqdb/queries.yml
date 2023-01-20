@@ -17,7 +17,10 @@ fetchlog_stats:
          , MAX(ROUND(EXTRACT(EPOCH FROM age(now(), init_datetime))/60)) as oldest_minutes
          FROM public.fetchlogs
          WHERE completed_datetime IS NULL;"
-  metrics
+  metrics:
+    - oldest_minutes:
+        usage: "GAUGE"
+        description: "The oldest file that has not been ingested"
 
 
 ingest_stats:

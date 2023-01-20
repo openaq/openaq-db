@@ -1,44 +1,97 @@
 #!/bin/bash
 # create a db connection url
+while getopts ":e:s:d:" opt
+do
+   case "$opt" in
+       e ) ED="$OPTARG" ;;
+       s ) SD="$OPTARG" ;;
+       d ) DUR="$OPTARG" ;;
+   esac
+done
+
+if [ -z ${SD} ]; then
+    SD=2023-01-01
+fi;
+
+if [ -z ${ED} ]; then
+    ED=2023-01-01
+fi;
+
+if [ -z ${DUR} ]; then
+    DUR=8h
+fi;
+
 URL=postgres://$DATABASE_WRITE_USER:$DATABASE_WRITE_PASSWORD@localhost:5432/$DATABASE_DB
+exists=True
+# s3 bucket and base location to use
+BUCKET=s3://openaq-db-backups/measurements
+# dump the sensor nodes
+
+psql $URL -XAwtq -c "SELECT * FROM public.sensor_nodes_migrate" \
+    | gzip -f -c \
+    | aws s3 cp - "${BUCKET}/sensor_nodes_v1.csv.gz"
+
+psql $URL -XAwtq -c "SELECT * FROM public.sensor_systems_migrate" \
+    | gzip -f -c \
+    | aws s3 cp - "${BUCKET}/sensor_systems_v1.csv.gz"
+
+psql $URL -XAwtq -c "SELECT * FROM public.sensors_migrate" \
+    | gzip -f -c \
+    | aws s3 cp - "${BUCKET}/sensors_v1.csv.gz"
+
+
 
 SQL=$(cat <<-EOF
-  SELECT chunk_name
-  , chunk_schema
-  , to_char(range_start,'YYYYMMDD') as starts
-  , to_char(range_end,'YYYYMMDD') as ends
-  FROM timescaledb_information.chunks
-  WHERE hypertable_name = 'measurements'
-  ORDER BY range_start
-  OFFSET 0
-  LIMIT 200
+  WITH days AS (
+  SELECT generate_series('${SD}'::date, '${ED}'::date, '${DUR}'::interval) as start_ts)
+  SELECT start_ts
+  , start_ts + '${DUR}'::interval as end_ts
+  , chunk_schema||'.'||chunk_name as table_name
+  , to_char(start_ts,'YYYYMMDDHH24') as formatted_start_ts
+  , to_char(start_ts + '${DUR}'::interval,'YYYYMMDDHH24') as formatted_end_ts
+  FROM days d
+  JOIN timescaledb_information.chunks c ON (d.start_ts >= c.range_start AND d.start_ts + '${DUR}'::interval < c.range_end)
+  WHERE hypertable_name = 'measurements';
 EOF
    )
 
+EXPORT_SQL=
 psql $URL -At -F ' ' -c "$SQL" \
     | while read -a Record; do
     # ------------------------------
-    chunk_schema=${Record[1]}
-    chunk_name=${Record[0]}
-    starts=${Record[2]}
-    ends=${Record[3]}
+    STARTS="${Record[0]} ${Record[1]}"
+    ENDS="${Record[2]} ${Record[3]}"
+    TABLE=${Record[4]}
+    FORMATTED_START=${Record[5]}
+    FORMATTED_END=${Record[6]}
     # -------------------------------
     TIMEOUT="SET statement_timeout TO '1h'"
-    TABLE="${chunk_schema}.${chunk_name}"
-    LIMIT=100000000
-    OFFSET=
-    CMD="SELECT * FROM ${TABLE} LIMIT $LIMIT"
-    FILE="s3://openaq-db-backups/measurements/measurements_${starts}_${ends}.csv"
+
+    CMD=$(cat <<-EOF
+SELECT m.sensors_id
+, i.datetime
+, MAX(i.value) as value
+, i.lat
+, i.lon
+FROM public.measurements i
+JOIN public.sensors_map m ON (i.sensors_id = m.old_sensors_id)
+WHERE datetime > '${STARTS}'::timestamptz AND datetime <= '${ENDS}'::timestamptz
+GROUP BY 1,2,4,5;
+EOF
+   )
+    #CMD="SELECT * FROM ${TABLE} WHERE datetime > '${STARTS}'::timestamptz AND datetime <= '${ENDS}'::timestamptz"
+    FILE="${BUCKET}/measurements_v1_${FORMATTED_START}_${FORMATTED_END}.csv.gz"
     # -------------------------------
-    #TOTAL=$(psql $URL -qtAXc "SELECT COUNT(1) FROM ${TABLE}")
     exists=$(aws s3 ls $FILE)
     if [ -z "$exists" ]; then
-        FILE="s3://openaq-db-backups/measurements/measurements_${starts}_${ends}_${LIMIT}.csv"
-        echo "Exporting -> $chunk_name to $FILE";
-        psql $URL -XAwt \
+        start=`date +%s`
+        echo "Exporting ${STARTS} -> ${ENDS} to $FILE";
+        psql $URL -XAwtq \
              -c "$TIMEOUT" \
              -c "$CMD" \
+            | gzip -f -c \
             | aws s3 cp - "$FILE"
+        echo 'TIME:' $((`date +%s`-start))
     else
         echo "$FILE exists"
     fi

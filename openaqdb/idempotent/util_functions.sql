@@ -100,6 +100,15 @@ CREATE OR REPLACE FUNCTION get_timezones_id(g geometry)
 RETURNS int LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
 SELECT gid from timezones WHERE st_intersects(g::geography, geog) LIMIT 1;
 $$;
+
+CREATE OR REPLACE FUNCTION get_timezones_id(tz text)
+RETURNS int LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
+SELECT gid
+FROM timezones
+WHERE lower(tzid) = lower(tz)
+LIMIT 1;
+$$;
+
 CREATE OR REPLACE FUNCTION get_countries_id(g geography)
 RETURNS int LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
 SELECT countries_id from countries WHERE st_intersects(g::geometry, geom) LIMIT 1;
@@ -285,7 +294,7 @@ CREATE OR REPLACE FUNCTION bounds(float, float, float, float) RETURNS geometry A
 SELECT st_setsrid(st_makebox2d(st_makepoint($1,$2),st_makepoint($3,$4)),4326);
 $$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
 
-CREATE OR REPLACE FUNCTION bbox(geom geometry) RETURNS int[] AS $$
+CREATE OR REPLACE FUNCTION bbox(geom geometry) RETURNS double precision[] AS $$
 SELECT ARRAY[st_x(geom),st_y(geom),st_x(geom),st_y(geom)];
 $$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
 
@@ -356,4 +365,21 @@ FROM measurements WHERE sensors_id=(
 )
 ORDER BY datetime DESC LIMIT 1
 ;
+$$ LANGUAGE SQL PARALLEL SAFE;
+
+-- need to add the timestamps
+CREATE OR REPLACE FUNCTION calculate_coverage(
+  obs int
+, averaging numeric DEFAULT 3600
+, logging numeric DEFAULT 3600
+, dur numeric DEFAULT 3600
+) RETURNS jsonb AS $$
+SELECT jsonb_build_object(
+       'observed_count', obs
+       , 'observed_interval', make_interval(secs => averaging * obs)
+       , 'expected_count', ROUND(dur/logging)
+       , 'expected_interval', make_interval(secs => (dur/logging) * averaging)
+       , 'percent_complete', ROUND((obs/(dur/logging))*100.0)
+       , 'percent_coverage', ROUND((obs/(dur/averaging))*100.0)
+       );
 $$ LANGUAGE SQL PARALLEL SAFE;

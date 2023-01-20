@@ -14,8 +14,14 @@ class Settings(BaseSettings):
     DATABASE_PORT: int
     DATABASE_DB: str
     KEY_NAME: str
+    DATA_VOLUME_SIZE: int = 3000
     DATABASE_MONITOR_USER: str = None
     DATABASE_MONITOR_PASSWORD: str = None
+    PG_SHARED_BUFFERS: str = ''
+    PG_WAL_BUFFERS: str = ''
+    PG_EFFECTIVE_CACHE_SIZE: str = ''
+    PG_WORK_MEM: str = ''
+    PG_MAINTENANCE_WORK_MEM: str = ''
     IP_ADDRESS: str = None
     ELASTIC_IP_ALLOCTION_ID: str = None
     SNAPSHOT_ID: str = None

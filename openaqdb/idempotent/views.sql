@@ -620,15 +620,15 @@ CREATE INDEX ON mobile_gen_boxes (sensors_id);
 CREATE INDEX ON mobile_gen_boxes USING GIST (box, sensors_id);
 */
 
-
+DROP VIEW IF EXISTS sensor_nodes_check;
 CREATE OR REPLACE VIEW sensor_nodes_check AS
 SELECT sn.sensor_nodes_id
 , sn.site_name
 , sn.source_name
 , sn.source_id
 , sn.origin
-, (l.geom_latest IS NOT NULL OR sn.geom IS NOT NULL) as has_coordinates
-, sy.sensor_systems_id IS NOT NULL as has_system
+, st_astext(COALESCE(l.geom_latest, sn.geom)) as location
+, sy.sensor_systems_id
 , sn.added_on
 , s.sensors_id
 , COALESCE(m.measurand, 'Not found') as parameter
@@ -735,6 +735,23 @@ JOIN sensor_systems USING (sensor_systems_id)
 JOIN sensor_nodes USING (sensor_nodes_id);
 
 
+SELECT sensor_nodes_id as id
+, source_name||'/'||s.sensors_id||'/'|| measurand as ingest_id
+, v.value
+, to_json(v.datetime)#>>'{}' as datetime
+, COALESCE(v.lon, st_x(geom))
+, COALESCE(v.lat, st_y(geom))
+, sn.metadata->>'timezone'
+FROM measurements v
+JOIN sensors s USING (sensors_id)
+JOIN measurands m USING (measurands_id)
+JOIN sensor_systems ss USING (sensor_systems_id)
+JOIN sensor_nodes sn USING (sensor_nodes_id)
+LIMIT 10;
+
+
+
+
 CREATE OR REPLACE VIEW analyses_ingest_format_view AS
 SELECT sensor_nodes_id as id
 , source_name||'-'||s.source_id||'-'|| measurand as ingest_id
@@ -765,6 +782,7 @@ CREATE OR REPLACE VIEW public.active_locks AS
    JOIN pg_stat_activity a ON (l.pid = a.pid)
   WHERE t.schemaname <> 'pg_toast'::name AND t.schemaname <> 'pg_catalog'::name
   ORDER BY t.schemaname, t.relname;
+
 
 
 CREATE FUNCTION table_row_estimator(table_name text) RETURNS bigint
@@ -837,25 +855,47 @@ AND NOT has_error
 GROUP BY 1
 ORDER BY 1 DESC;
 
+DROP VIEW IF EXISTS fetchlogs_recent_summary;
 CREATE OR REPLACE VIEW fetchlogs_recent_summary AS
-SELECT date_trunc('hour', completed_datetime) as completed_on
+SELECT date_trunc('hour', init_datetime) as added_on
 , MIN(age(completed_datetime, init_datetime)) as ingest_time_min
 , MAX(age(completed_datetime, init_datetime)) as ingest_time_max
 , AVG(age(completed_datetime, init_datetime)) as ingest_time_avg
 , MIN(age(completed_datetime, loaded_datetime)) as load_time_min
 , MAX(age(completed_datetime, loaded_datetime)) as load_time_max
 , AVG(age(completed_datetime, loaded_datetime)) as load_time_avg
+, COUNT(1) as files_added
+, SUM((completed_datetime IS NULL)::int) as files_pending
 , ROUND(AVG(jobs)) as jobs_avg
 , SUM((has_error)::int) as errors
-, COUNT(1) as n
 , SUM(records) as records
 , SUM(inserted) as inserted
 FROM fetchlogs
-WHERE completed_datetime IS NOT NULL
-AND completed_datetime > now() - '24h'::interval
-AND NOT has_error
+WHERE init_datetime > now() - '24h'::interval
 GROUP BY 1
 ORDER BY 1 DESC;
+
+
+CREATE OR REPLACE VIEW fetchlogs_daily_summary AS
+SELECT init_datetime::date as added_on
+, MIN(age(completed_datetime, init_datetime)) as ingest_time_min
+, MAX(age(completed_datetime, init_datetime)) as ingest_time_max
+, AVG(age(completed_datetime, init_datetime)) as ingest_time_avg
+, MIN(age(completed_datetime, loaded_datetime)) as load_time_min
+, MAX(age(completed_datetime, loaded_datetime)) as load_time_max
+, AVG(age(completed_datetime, loaded_datetime)) as load_time_avg
+, COUNT(1) as files_added
+, SUM((completed_datetime IS NULL)::int) as files_pending
+, ROUND(AVG(jobs)) as jobs_avg
+, SUM((has_error)::int) as errors
+, SUM(records) as records
+, SUM(inserted) as inserted
+FROM fetchlogs
+WHERE init_datetime::date >= current_date - 14
+GROUP BY 1
+ORDER BY 1 DESC;
+
+
 
 DROP VIEW IF EXISTS fetchlogs_recent_issues;
 CREATE OR REPLACE VIEW fetchlogs_recent_issues AS
@@ -892,6 +932,58 @@ END;
 $$ LANGUAGE plpgsql;
 
 
+DROP FUNCTION IF EXISTS records_inserted(text, timestamptz, text);
+CREATE OR REPLACE FUNCTION records_inserted(
+   text DEFAULT 'hour'
+ , timestamptz DEFAULT current_date - 1
+ , text DEFAULT 'realtime'
+ ) RETURNS TABLE(
+   datetime timestamptz
+ , period text
+ , pattern text
+ , inserted bigint
+ , records bigint
+ , percentage numeric
+ , files bigint
+ , min int
+ , max int
+) AS $$
+WITH inserted AS (
+ SELECT date_trunc($1, init_datetime) as datetime
+ , SUM(inserted) as inserted
+ , SUM(records) as records
+ , COUNT(1) as files
+ , MIN(inserted) as min
+ , MAX(inserted) as max
+ FROM fetchlogs
+ WHERE init_datetime>$2
+ AND key~* $3
+ GROUP BY 1
+ ORDER BY 1)
+ SELECT datetime
+ , $1 as period
+ , $3 as pattern
+ , inserted
+ , records
+ , CASE WHEN records>0 THEN ROUND((inserted::numeric/records::numeric) * 100.0) ELSE 0 END as percentage
+ , files
+ , min
+ , max
+ FROM inserted;
+$$ LANGUAGE SQL;
+
+
+
+
+SELECT * FROM records_inserted('day', current_date - 8, 'realtime')
+UNION ALL
+SELECT * FROM records_inserted('day', current_date - 8, 'purple')
+UNION ALL
+SELECT * FROM records_inserted('day', current_date - 8, 'clarity')
+UNION ALL
+SELECT * FROM records_inserted('day', current_date - 8, 'senstate');
+
+
 --SELECT * FROM parse_ingest_id('CMU-Technology Center-pm25');
 
 -- SELECT *
@@ -907,5 +999,6 @@ $$ LANGUAGE plpgsql;
 -- FROM rejects
 -- GROUP BY 1
 -- LIMIT 1000;
+
 
 COMMIT;

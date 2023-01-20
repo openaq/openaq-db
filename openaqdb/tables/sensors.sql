@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS sensors (
     measurands_id int not null,
     source_id text,
     metadata jsonb
+    , UNIQUE(sensor_systems_id, measurands_id)
 );
 
 ALTER TABLE sensors ADD CONSTRAINT ss_s_fkey
