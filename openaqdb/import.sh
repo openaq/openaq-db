@@ -36,6 +36,7 @@ INSERT INTO sensor_nodes (
 , site_name
 , source_id
 , source_name
+, providers_id
 , origin
 , metadata
 , added_on
@@ -48,13 +49,15 @@ SELECT
 , geom
 , site_name
 , source_id
-, source_name
+, m.source_name
+, p.providers_id
 , origin
 , metadata
 , added_on
 , modified_on
 , get_countries_id(geom)
-FROM sensor_nodes_migrate;
+FROM sensor_nodes_migrate m
+LEFT JOIN providers p ON (m.source_name = p.source_name);
 
 SELECT setval(
  pg_get_serial_sequence('sensor_nodes', 'sensor_nodes_id'),
