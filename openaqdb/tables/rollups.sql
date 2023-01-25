@@ -32,6 +32,47 @@ CREATE TABLE IF NOT EXISTS entities_thresholds (
   , UNIQUE(entities_id, thresholds_id)
 );
 
+-- this should be made into a normal table that we manage
+-- because this is a lot of overhead for things that dont
+-- need to be updated all the time
+DROP MATERIALIZED VIEW sensor_node_daily_exceedances CASCADE;
+
+CREATE MATERIALIZED VIEW sensor_node_daily_exceedances AS 
+SELECT sy.sensor_nodes_id
+, h.measurands_id
+, date_trunc('day', datetime - '1sec'::interval) as day
+, t.value as threshold_value
+, SUM((h.value_avg >= t.value)::int) as exceedance_count
+, SUM(value_count) as total_count
+, COUNT(*) AS hourly_count
+FROM hourly_rollups h
+JOIN sensors s ON (h.sensors_id = s.sensors_id)
+JOIN sensor_systems sy ON (sy.sensor_systems_id = s.sensor_systems_id)
+JOIN thresholds t ON (t.measurands_id = h.measurands_id)
+GROUP BY 1,2,3,4;
+
+CREATE INDEX ON sensor_node_daily_exceedances (sensor_nodes_id, measurands_id, threshold_value, day);
+
+-- This could stay a materialized view
+-- because we will need to refresh the whole thing all the time
+-- we could move the intervals to a table
+CREATE MATERIALIZED VIEW sensor_node_range_exceedances AS
+WITH intervals AS (
+   SELECT UNNEST(ARRAY[1,14,30,90]) as days
+)
+SELECT sensor_nodes_id
+, days
+, measurands_id
+, threshold_value
+, SUM(exceedance_count) as exceedance_count
+, SUM(total_count) as total_count
+FROM sensor_node_daily_exceedances
+, intervals
+WHERE day > current_date - days
+GROUP BY 1, 2, 3, 4;
+
+CREATE INDEX ON sensor_node_range_exceedances (sensor_nodes_id, measurands_id, threshold_value, days);
+
 
 CREATE TABLE IF NOT EXISTS rollups (
     groups_id int REFERENCES groups (groups_id),
