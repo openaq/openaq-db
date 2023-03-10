@@ -149,6 +149,28 @@ SELECT replace(format(
 ;
 $$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
 
+CREATE OR REPLACE FUNCTION truncate_timestamp(tstz timestamptz, period text)
+RETURNS timestamptz AS $$
+SELECT date_trunc(period, tstz + '11sec'::interval);
+$$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
+
+--DROP FUNCTION IF EXISTS truncate_timestamp(timestamptz, text, text);
+CREATE OR REPLACE FUNCTION truncate_timestamp(tstz timestamptz, period text, tz text)
+RETURNS timestamptz AS $$
+SELECT timezone(tz, date_trunc(period, timezone(tz, tstz + '-1sec'::interval)));
+$$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
+
+--DROP FUNCTION IF EXISTS truncate_timestamp(timestamptz, text, text, interval);
+CREATE OR REPLACE FUNCTION truncate_timestamp(tstz timestamptz, period text, tz text, _offset interval)
+RETURNS timestamptz AS $$
+SELECT timezone(tz, date_trunc(period, timezone(tz, tstz + ('-1sec'::interval + _offset))));
+$$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION truncate_timestamp(tstz timestamptz, period text, _offset interval)
+RETURNS timestamptz AS $$
+SELECT date_trunc(period, tstz + ('-1sec'::interval + _offset));
+$$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
+
 CREATE OR REPLACE FUNCTION get_datetime_object(tstz timestamptz, tz text DEFAULT 'UTC')
 RETURNS json AS $$
 SELECT json_build_object(
@@ -156,6 +178,18 @@ SELECT json_build_object(
      , 'local', format_timestamp(tstz, tz)
      );
 $$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
+
+-- assume that its in the right timezone but not timestamptz
+-- this would happen if we used timezone(tz, timestamptz) to convert something
+CREATE OR REPLACE FUNCTION get_datetime_object(tstz timestamp, tz text DEFAULT 'UTC')
+RETURNS json AS $$
+SELECT json_build_object(
+       'utc', format_timestamp(tstz AT TIME ZONE tz, 'UTC')
+     , 'local', format_timestamp(tstz AT TIME ZONE tz, tz)
+     , 'timezone', tz
+     );
+$$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
+
 
 CREATE EXTENSION IF NOT EXISTS "unaccent";
 
@@ -367,6 +401,18 @@ ORDER BY datetime DESC LIMIT 1
 ;
 $$ LANGUAGE SQL PARALLEL SAFE;
 
+
+-- From
+-- https://stackoverflow.com/questions/48900936/postgresql-rounding-to-significant-figures
+CREATE OR REPLACE FUNCTION sig_digits(n anyelement, digits int)
+RETURNS numeric
+AS $$
+    SELECT CASE
+        WHEN n=0 THEN 0
+        ELSE round(n::numeric, digits - 1 - floor(log(abs(n)))::int)
+    END
+$$ LANGUAGE sql IMMUTABLE STRICT;
+
 -- need to add the timestamps
 CREATE OR REPLACE FUNCTION calculate_coverage(
   obs int
@@ -383,3 +429,47 @@ SELECT jsonb_build_object(
        , 'percent_coverage', ROUND((obs/(dur/averaging))*100.0)
        );
 $$ LANGUAGE SQL PARALLEL SAFE;
+
+-- A function that will calculate the expected number of hours
+-- for a given period, grouping and factor
+-- this is used when calculating the coverage for the trends
+-- so for two years of data we should expect
+-- 2 years * 31 days * 24 hours for january (MM=01)
+CREATE OR REPLACE FUNCTION expected_hours(
+  sd timestamptz -- start date + hour
+  , ed timestamptz -- end date + hour
+  , tp text -- type interval (e.g. month, day, hour)
+  , gp text -- group/factor value to use in filter
+) RETURNS int AS $$
+DECLARE
+  wf text; -- format to use for filtering
+  sp interval; -- the expected step interval
+  n int;
+  dt text; -- how to truncate sd/ed
+BEGIN
+  IF tp = 'hour' THEN
+    wf := 'HH24';
+    sp := '1day -1sec'::interval;
+    dt := 'day';
+  ELSIF tp = 'day' THEN
+    wf := 'ID';
+    sp := '1day -1sec'::interval;
+    dt := 'day';
+  ELSIF tp = 'month' THEN
+    wf := 'MM';
+    sp := '1month -1sec'::interval;
+    dt := 'month';
+  END IF;
+  SELECT COUNT(1) INTO n
+  FROM generate_series(date_trunc(dt, sd), date_trunc(dt, ed - '1sec'::interval) + sp, '1hour'::interval) d
+  WHERE to_char(d, wf) = gp;
+  RETURN n;
+END
+$$ LANGUAGE plpgsql;
+
+SELECT expected_hours('2021-01-01 00:00:00', '2023-01-01 00:00:00', 'month', '01'); -- 1488
+SELECT expected_hours('2022-01-01 00:00:00', '2023-01-01 00:00:00', 'month', '01'); -- 744
+SELECT expected_hours('2022-01-01 00:00:00', '2023-01-01 00:00:00', 'hour', '01'); -- 365
+SELECT expected_hours('2022-01-01 00:00:00', '2023-01-01 00:00:00', 'day', '1'); -- 1248
+
+SELECT expected_hours('2021-01-01 00:00:00', '2023-01-01 00:00:00', 'month', '01') * 3600;

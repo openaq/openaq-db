@@ -627,6 +627,7 @@ SELECT sn.sensor_nodes_id
 , sn.source_name
 , sn.source_id
 , sn.origin
+, COALESCE(p.label, 'Not found') as provider
 , st_astext(COALESCE(l.geom_latest, sn.geom)) as location
 , sy.sensor_systems_id
 , sn.added_on
@@ -634,13 +635,17 @@ SELECT sn.sensor_nodes_id
 , COALESCE(m.measurand, 'Not found') as parameter
 , l.datetime_first as datetime_first
 , l.datetime_last as datetime_last
+, CASE WHEN l.datetime_first < l.datetime_last THEN
+    ROUND(l.value_count::numeric/(EXTRACT(EPOCH FROM l.datetime_last - l.datetime_first)/s.data_logging_period_seconds)::numeric * 100)
+  ELSE NULL END as percent_complete
+, s.added_on as sensor_added_on
+, sn.added_on as node_added_on
 FROM sensor_nodes sn
+LEFT JOIN providers p ON (sn.providers_id = p.providers_id)
 LEFT JOIN sensor_systems sy USING (sensor_nodes_id)
 LEFT JOIN sensors s USING (sensor_systems_id)
 LEFT JOIN measurands m USING (measurands_id)
-LEFT JOIN sensors_rollup l USING (sensors_id)
---WHERE sensor_nodes_id = 23642
-;
+LEFT JOIN sensors_rollup l USING (sensors_id);
 
 DROP VIEW IF EXISTS sensor_nodes_summary;
 CREATE OR REPLACE VIEW sensor_nodes_summary AS
@@ -972,6 +977,29 @@ WITH inserted AS (
  FROM inserted;
 $$ LANGUAGE SQL;
 
+
+CREATE OR REPLACE VIEW providers_check AS
+WITH nodes AS (
+  SELECT sensor_nodes_id
+  , MIN(sl.datetime_first) as datetime_first
+  , MAX(sl.datetime_last) as datetime_last -- need to change
+  , COUNT(1) as sensors_count
+  FROM sensor_systems ss
+  JOIN sensors s USING (sensor_systems_id)
+  JOIN sensors_rollup sl USING (sensors_id)
+  JOIN measurands m USING (measurands_id)
+  GROUP BY sensor_nodes_id)
+SELECT p.label
+, MIN(datetime_first) as datetime_first
+, MIN(datetime_last) as datetime_last
+, COUNT(1) as sensor_nodes_count
+, ROUND(AVG(sensors_count)::numeric, 1) as sensors_avg
+, SUM(sensors_count) as sensors_count
+FROM nodes n
+JOIN sensor_nodes sn ON (sn.sensor_nodes_id = n.sensor_nodes_id)
+JOIN providers p ON (sn.providers_id = p.providers_id)
+GROUP BY 1
+ORDER BY lower(p.label);
 
 
 

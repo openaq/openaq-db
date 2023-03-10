@@ -130,10 +130,11 @@ SELECT l.sensor_nodes_id
 , utc_offset(sn.metadata->>'timezone') as utc_offset
 FROM public.open_data_export_logs l
 JOIN public.sensor_nodes sn ON (l.sensor_nodes_id = sn.sensor_nodes_id)
+JOIN public.timezones tz ON (sn.timezones_id = tz.gid)
 WHERE (queued_on IS NULL -- has not been done yet
 OR l.modified_on > l.queued_on) -- has changed since being done
 -- wait until the day is done in that timezone to export data
-AND day < (now() AT TIME ZONE (sn.metadata->>'timezone')::text)::date;
+AND day < (now() AT TIME ZONE tz.tzid - '72hours'::interval)::date;
 
 
   SELECT l.sensor_nodes_id

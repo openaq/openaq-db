@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS entities_thresholds (
 -- need to be updated all the time
 DROP MATERIALIZED VIEW sensor_node_daily_exceedances CASCADE;
 
-CREATE MATERIALIZED VIEW sensor_node_daily_exceedances AS 
+CREATE MATERIALIZED VIEW sensor_node_daily_exceedances AS
 SELECT sy.sensor_nodes_id
 , h.measurands_id
 , date_trunc('day', datetime - '1sec'::interval) as day
@@ -51,7 +51,8 @@ JOIN sensor_systems sy ON (sy.sensor_systems_id = s.sensor_systems_id)
 JOIN thresholds t ON (t.measurands_id = h.measurands_id)
 GROUP BY 1,2,3,4;
 
-CREATE INDEX ON sensor_node_daily_exceedances (sensor_nodes_id, measurands_id, threshold_value, day);
+CREATE UNIQUE INDEX ON sensor_node_daily_exceedances (sensor_nodes_id, measurands_id, threshold_value, day);
+
 
 -- This could stay a materialized view
 -- because we will need to refresh the whole thing all the time
@@ -71,7 +72,7 @@ FROM sensor_node_daily_exceedances
 WHERE day > current_date - days
 GROUP BY 1, 2, 3, 4;
 
-CREATE INDEX ON sensor_node_range_exceedances (sensor_nodes_id, measurands_id, threshold_value, days);
+CREATE UNIQUE INDEX ON sensor_node_range_exceedances (sensor_nodes_id, measurands_id, threshold_value, days);
 
 
 CREATE TABLE IF NOT EXISTS rollups (
@@ -114,14 +115,17 @@ CREATE TABLE IF NOT EXISTS hourly_rollups (
 , value_sd double precision
 , value_min double precision
 , value_max double precision
-, value_p05 double precision
+, value_p02 double precision
+, value_p25 double precision
 , value_p50 double precision
-, value_p95 double precision
+, value_p75 double precision
+, value_p98 double precision
 , threshold_values jsonb
 , updated_on timestamptz -- last time the sensor was updated
 , calculated_on timestamptz-- last time the row rollup was calculated
 , UNIQUE(sensors_id, measurands_id, datetime)
 );
+
 
 CREATE INDEX IF NOT EXISTS hourly_rollups_sensors_id_idx
 ON hourly_rollups
@@ -255,9 +259,11 @@ INSERT INTO hourly_rollups (
 , value_sd
 , value_min
 , value_max
-, value_p05
+, value_p02
+, value_p25
 , value_p50
-, value_p95
+, value_p75
+, value_p98
 , calculated_on)
 SELECT
   m.sensors_id
@@ -270,9 +276,11 @@ SELECT
 , STDDEV(value) as value_sd
 , MIN(value) as value_min
 , MAX(value) as value_max
-, PERCENTILE_CONT(0.05) WITHIN GROUP(ORDER BY value) as value_p05
+, PERCENTILE_CONT(0.02) WITHIN GROUP(ORDER BY value) as value_p02
+, PERCENTILE_CONT(0.25) WITHIN GROUP(ORDER BY value) as value_p25
 , PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY value) as value_p50
-, PERCENTILE_CONT(0.95) WITHIN GROUP(ORDER BY value) as value_p95
+, PERCENTILE_CONT(0.75) WITHIN GROUP(ORDER BY value) as value_p75
+, PERCENTILE_CONT(0.98) WITHIN GROUP(ORDER BY value) as value_p98
 , current_timestamp as calculated_on
 FROM measurements m
 JOIN sensors s ON (m.sensors_id = s.sensors_id)
@@ -287,9 +295,11 @@ SET first_datetime = EXCLUDED.first_datetime
 , value_min = EXCLUDED.value_min
 , value_max = EXCLUDED.value_max
 , value_count = EXCLUDED.value_count
-, value_p05 = EXCLUDED.value_p05
+, value_p02 = EXCLUDED.value_p02
+, value_p25 = EXCLUDED.value_p25
 , value_p50 = EXCLUDED.value_p50
-, value_p95 = EXCLUDED.value_p95
+, value_p75 = EXCLUDED.value_p75
+, value_p98 = EXCLUDED.value_p98
 , calculated_on = EXCLUDED.calculated_on
 RETURNING value_count)
 SELECT COUNT(1) as sensors_count
@@ -298,8 +308,33 @@ FROM inserted;
 $$ LANGUAGE SQL;
 
 
-
-EXPLAIN ANALYZE
+-- A method that includes specifying the sensors_id
+CREATE OR REPLACE FUNCTION calculate_hourly_rollup(
+  id int
+, st timestamptz
+, et timestamptz
+) RETURNS TABLE (
+  sensors_count bigint
+, measurements_count bigint
+) AS $$
+WITH inserted AS (
+INSERT INTO hourly_rollups (
+  sensors_id
+, measurands_id
+, datetime
+, first_datetime
+, last_datetime
+, value_count
+, value_avg
+, value_sd
+, value_min
+, value_max
+, value_p02
+, value_p25
+, value_p50
+, value_p75
+, value_p98
+, calculated_on)
 SELECT
   m.sensors_id
 , measurands_id
@@ -311,19 +346,37 @@ SELECT
 , STDDEV(value) as value_sd
 , MIN(value) as value_min
 , MAX(value) as value_max
-, PERCENTILE_CONT(0.05) WITHIN GROUP(ORDER BY value) as value_p05
+, PERCENTILE_CONT(0.02) WITHIN GROUP(ORDER BY value) as value_p02
+, PERCENTILE_CONT(0.25) WITHIN GROUP(ORDER BY value) as value_p25
 , PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY value) as value_p50
-, PERCENTILE_CONT(0.95) WITHIN GROUP(ORDER BY value) as value_p95
+, PERCENTILE_CONT(0.75) WITHIN GROUP(ORDER BY value) as value_p75
+, PERCENTILE_CONT(0.98) WITHIN GROUP(ORDER BY value) as value_p98
 , current_timestamp as calculated_on
 FROM measurements m
 JOIN sensors s ON (m.sensors_id = s.sensors_id)
-WHERE datetime > '2023-01-13 16:00:00+00'::timestamptz
-AND datetime <= '2023-01-13 17:00:00+00'::timestamptz
+WHERE m.sensors_id = id
+AND datetime > date_trunc('hour', st)
+AND datetime <= date_trunc('hour', et)
 GROUP BY 1,2,3
-HAVING COUNT(1) > 0;
-
-
-
+HAVING COUNT(1) > 0
+ON CONFLICT (sensors_id, measurands_id, datetime) DO UPDATE
+SET first_datetime = EXCLUDED.first_datetime
+, last_datetime = EXCLUDED.last_datetime
+, value_avg = EXCLUDED.value_avg
+, value_min = EXCLUDED.value_min
+, value_max = EXCLUDED.value_max
+, value_count = EXCLUDED.value_count
+, value_p02 = EXCLUDED.value_p02
+, value_p25 = EXCLUDED.value_p25
+, value_p50 = EXCLUDED.value_p50
+, value_p75 = EXCLUDED.value_p75
+, value_p98 = EXCLUDED.value_p98
+, calculated_on = EXCLUDED.calculated_on
+RETURNING value_count)
+SELECT COUNT(1) as sensors_count
+, SUM(value_count) as measurements_count
+FROM inserted;
+$$ LANGUAGE SQL;
 
 -- Some helper functions to make things easier
 -- Pass the time ending timestamp to calculate one hour
@@ -379,69 +432,6 @@ END;
 $$ LANGUAGE plpgsql;
 
 
--- A method that includes specifying the sensors_id
-CREATE OR REPLACE FUNCTION calculate_hourly_rollup(
-  id int
-, st timestamptz
-, et timestamptz
-) RETURNS TABLE (
-  sensors_count bigint
-, measurements_count bigint
-) AS $$
-WITH inserted AS (
-INSERT INTO hourly_rollups (
-  sensors_id
-, measurands_id
-, datetime
-, first_datetime
-, last_datetime
-, value_count
-, value_avg
-, value_sd
-, value_min
-, value_max
-, value_p05
-, value_p50
-, value_p95
-, calculated_on)
-SELECT
-  m.sensors_id
-, measurands_id
-, date_trunc('hour', datetime - '1sec'::interval) + '1hour'::interval as datetime
-, MIN(datetime) as first_datetime
-, MAX(datetime) as last_datetime
-, COUNT(1) as value_count
-, AVG(value) as value_avg
-, STDDEV(value) as value_sd
-, MIN(value) as value_min
-, MAX(value) as value_max
-, PERCENTILE_CONT(0.05) WITHIN GROUP(ORDER BY value) as value_p05
-, PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY value) as value_p50
-, PERCENTILE_CONT(0.95) WITHIN GROUP(ORDER BY value) as value_p95
-, current_timestamp as calculated_on
-FROM measurements m
-JOIN sensors s ON (m.sensors_id = s.sensors_id)
-WHERE m.sensors_id = id
-AND datetime > date_trunc('hour', st)
-AND datetime <= date_trunc('hour', et)
-GROUP BY 1,2,3
-HAVING COUNT(1) > 0
-ON CONFLICT (sensors_id, measurands_id, datetime) DO UPDATE
-SET first_datetime = EXCLUDED.first_datetime
-, last_datetime = EXCLUDED.last_datetime
-, value_avg = EXCLUDED.value_avg
-, value_min = EXCLUDED.value_min
-, value_max = EXCLUDED.value_max
-, value_count = EXCLUDED.value_count
-, value_p05 = EXCLUDED.value_p05
-, value_p50 = EXCLUDED.value_p50
-, value_p95 = EXCLUDED.value_p95
-, calculated_on = EXCLUDED.calculated_on
-RETURNING value_count)
-SELECT COUNT(1) as sensors_count
-, SUM(value_count) as measurements_count
-FROM inserted;
-$$ LANGUAGE SQL;
 
 -- helpers for measurand_id
 CREATE OR REPLACE FUNCTION calculate_hourly_rollup(id int, et timestamptz) RETURNS TABLE (

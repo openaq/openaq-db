@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS sensors_rollup (
   --, calculated_on timestamptz -- last time data was rolled up (@rollup)
 );
 
+
+
 -- Sensors latest will act as a cache for the most recent
 -- sensor value, managed by the ingester
 CREATE TABLE IF NOT EXISTS sensors_latest (
@@ -46,7 +48,7 @@ CREATE OR REPLACE VIEW locations_view AS
 WITH nodes_instruments AS (
 -----------------------------
   SELECT sn.sensor_nodes_id
-  , array_agg(json_build_object(
+  , json_agg(json_build_object(
     'id', i.instruments_id
     , 'name', i.label
     , 'manufacturer', jsonb_build_object(
@@ -65,13 +67,14 @@ WITH nodes_instruments AS (
   SELECT sn.sensor_nodes_id
   , MIN(sl.datetime_first) as datetime_first
   , MAX(sl.datetime_last) as datetime_last -- need to change
-  , array_agg(jsonb_build_object(
+  , json_agg(jsonb_build_object(
     'id', s.sensors_id
     , 'name', m.measurand||' '||m.units
     , 'parameter', jsonb_build_object(
         'id', m.measurands_id
         , 'name', m.measurand
         , 'units', m.units
+        , 'display_name', m.display
         )
     )) as sensors
   FROM sensor_nodes sn

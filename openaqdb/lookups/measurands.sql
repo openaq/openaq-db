@@ -23,7 +23,6 @@ COPY public.measurands (measurands_id, measurand, units, display, description, i
 676	ozone	ppb	\N	\N	\N	\N
 36	pm	µg/m³	PM	\N	\N	\N
 131	pm100	µg/m³	PM100	\N	\N	\N
-97	pm25	μg/m³	\N	\N	\N	\N
 95	pressure	hpa	\N	\N	\N	\N
 132	pressure	mb	\N	\N	\N	\N
 98	relativehumidity	%	\N	\N	\N	\N
@@ -51,91 +50,76 @@ COPY public.measurands (measurands_id, measurand, units, display, description, i
 19843	no	µg/m³	NO mass	Nitrogen Monoxide mass concentration	f	\N
 \.
 
-INSERT INTO measurands (measurands_id, measurand, units, description, is_core)
+INSERT INTO measurands (measurands_id, measurand, units, description)
 OVERRIDING SYSTEM VALUE VALUES
-(19844, 'pm4', 'µg/m³', 'Particulate matter less than 4 micrometers in diameter mass concentration', 'f')
+(19844, 'pm4', 'µg/m³', 'Particulate matter less than 4 micrometers in diameter mass concentration')
 ON CONFLICT DO NOTHING;
 
 -- need to fix the sequence now
 SELECT setval(pg_get_serial_sequence('measurands', 'measurands_id'), (SELECT max(measurands_id) FROM measurands));
 
 -- now lets add some new ones
-INSERT INTO measurands (measurand, units, display, description, is_core) VALUES
+INSERT INTO measurands (measurand, units, display, description) VALUES
 ( 'wind_speed'
 , 'm/s'
 , 'ws'
-, 'Average wind speed in meters per second'
-, true)
+, 'Average wind speed in meters per second')
 , ( 'pressure'
 , 'hpa'
 , 'atm'
-, 'Atmospheric or barometric pressure'
-, true)
+, 'Atmospheric or barometric pressure')
 , ( 'wind_direction'
 , 'deg'
 , 'wd'
-, 'Direction that the wind originates from'
-, true)
+, 'Direction that the wind originates from')
 , ( 'so4'
 , 'ppb'
 , 'SO4'
-, 'Sulfate'
-, true)
+, 'Sulfate')
 , ( 'ec'
 , 'ppb'
 , 'EC'
-, 'Elemental Carbon'
-, true)
+, 'Elemental Carbon')
 , ( 'oc'
 , 'ppb'
 , 'OC'
-, 'Organic Carbon'
-, true)
+, 'Organic Carbon')
 , ( 'cl'
 , 'ppb'
 , 'Cl'
-, 'Chloride'
-, true)
+, 'Chloride')
 , ( 'k'
 , 'ppb'
 , 'K'
-, 'Potassium'
-, true)
+, 'Potassium')
 , ( 'no3'
 , 'ppb'
 , 'NO3'
-, 'Nitrite'
-, true)
+, 'Nitrite')
 , ( 'pb'
 , 'ppb'
 , 'Pb'
-, 'Lead'
-, true)
+, 'Lead')
 , ( 'as'
 , 'ppb'
 , 'As'
-, 'Arsenic'
-, true)
+, 'Arsenic')
 , ( 'ca'
 , 'ppb'
 , 'Ca'
-, 'Calcium'
-, true)
+, 'Calcium')
 , ( 'fe'
 , 'ppb'
 , 'Fe'
-, 'Iron'
-, true)
+, 'Iron')
 , ( 'ni'
 , 'ppb'
 , 'Ni'
-, 'Nickle'
-, true)
+, 'Nickle')
 , ( 'v'
 , 'ppb'
 , 'V'
-, 'Vanadium'
-, true)
+, 'Vanadium')
 ON CONFLICT (measurand, units) DO UPDATE
 SET description = EXCLUDED.description
 , is_core = EXCLUDED.is_core

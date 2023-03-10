@@ -690,3 +690,81 @@ BEGIN
     PERFORM log_performance('update-parameters-view', CURRENT_TIMESTAMP);
 END;
 $$ LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE PROCEDURE update_daily_cached_tables() AS $$
+DECLARE
+BEGIN
+    RAISE NOTICE 'REFRESHING sensor_node_daily_exceedances';
+    REFRESH MATERIALIZED VIEW CONCURRENTLY sensor_node_daily_exceedances;
+    COMMIT;
+    PERFORM log_performance('update-daily-exceedances', CURRENT_TIMESTAMP);
+    ----------------------------------------
+    RAISE NOTICE 'REFRESHING sensor_node_range_exceedances';
+    REFRESH MATERIALIZED VIEW CONCURRENTLY sensor_node_range_exceedances;
+    COMMIT;
+    PERFORM log_performance('update-range-exceedances', CURRENT_TIMESTAMP);
+END;
+$$ LANGUAGE plpgsql;
+
+-- run after you have just imported data outside of the fetcher
+CREATE OR REPLACE PROCEDURE intialize_sensors_rollup() AS $$
+DECLARE
+BEGIN
+  CREATE TEMP TABLE sensors_missing_from_rollup AS
+  -- Get a list of all sensors missing data
+  WITH missing AS (
+    SELECT sensors_id
+    FROM sensors
+    LEFT JOIN sensors_rollup s USING (sensors_id)
+    WHERE s.sensors_id IS NULL
+  ), data AS (
+  -- use that list to aggregate based on the measurements
+    SELECT m.sensors_id
+    , MIN(datetime) as datetime_first
+    , MAX(datetime) as datetime_last
+    , COUNT(1) as value_count
+    , AVG(value) as value_avg
+    , STDDEV(value) as value_sd
+    , MIN(value) as value_min
+    , MAX(value) as value_max
+    FROM missing m
+    JOIN measurements USING (sensors_id)
+    GROUP BY 1)
+  -- now get the latest value
+  SELECT d.sensors_id
+  , d.datetime_first
+  , d.datetime_last
+  , d.value_count
+  , d.value_avg
+  , d.value_sd
+  , d.value_min
+  , d.value_max
+  , m.value as value_latest
+  FROM data d
+  JOIN measurements m ON (d.datetime_last = m.datetime AND d.sensors_id = m.sensors_id);
+  -- Now add those to the rollups
+  INSERT INTO sensors_rollup (
+  sensors_id
+  , datetime_first
+  , datetime_last
+  , value_count
+  , value_avg
+  , value_sd
+  , value_min
+  , value_max
+  , value_latest)
+  SELECT
+  sensors_id
+  , datetime_first
+  , datetime_last
+  , value_count
+  , value_avg
+  , value_sd
+  , value_min
+  , value_max
+  , value_latest
+  FROM sensors_missing_from_rollup
+  ON CONFLICT DO NOTHING;
+END;
+$$ LANGUAGE plpgsql;

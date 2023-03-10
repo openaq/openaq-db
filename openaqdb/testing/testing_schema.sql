@@ -105,7 +105,7 @@ SELECT s.sensor_systems_id
 , n.source_id||'-'||m.measurand
 FROM sensor_systems s
 JOIN sensor_nodes n ON (s.sensor_nodes_id = n.sensor_nodes_id)
-JOIN measurands m ON (TRUE AND m.is_core)
+JOIN measurands m ON (TRUE)
 WHERE n.origin = $2
 ON CONFLICT DO NOTHING;
 -- Add some test data
@@ -140,8 +140,8 @@ n int;
 BEGIN
 -- now for this one we want to use the `date canary` sensor
 -- create a new measurand
-INSERT INTO measurands (measurand, units, display, description, is_core) VALUES
-('DOM', 'Day', 'Day of month', 'Local day of month for measurement to use for testing', false)
+INSERT INTO measurands (measurand, units, display, description) VALUES
+('DOM', 'Day', 'Day of month', 'Local day of month for measurement to use for testing')
 ON CONFLICT (measurand, units) DO UPDATE
 SET description = EXCLUDED.description
 RETURNING measurands_id INTO mid;

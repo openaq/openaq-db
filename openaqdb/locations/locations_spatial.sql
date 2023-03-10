@@ -9,13 +9,14 @@ CREATE TABLE IF NOT EXISTS sensor_nodes_spatial_rollup (
   , added_on timestamptz DEFAULT now()
   , modified_on timestamptz
   , UNIQUE(sensor_nodes_id, geom)
-)
-
+);
 CREATE INDEX ON sensor_nodes_spatial_rollup (sensor_nodes_id);
 CREATE INDEX ON sensor_nodes_spatial_rollup USING GIST (geom, sensor_nodes_id);
 
 
-CREATE OR REPLACE FUNCTION upsert_sensor_nodes_spatial_rollups_by_sensor(int) RETURNS int AS $$
+
+
+CREATE OR REPLACE FUNCTION upsert_sensor_nodes_spatial_rollups_by_sensor(int, double precision DEFAULT 30.0) RETURNS int AS $$
 INSERT INTO sensor_nodes_spatial_rollup (
 sensor_nodes_id
 , geom
@@ -25,7 +26,8 @@ sensor_nodes_id
 , measurements_count
 , added_on)
 SELECT sensor_nodes_id
-, st_snaptogrid(pt3857(lon, lat), 30.0)
+, st_snaptogrid(pt3857(lon, lat), $2)
+, $2
 , MIN(datetime) as start_datetime
 , MAX(datetime) as end_datetime
 , COUNT(DISTINCT datetime) as measurements
@@ -40,7 +42,8 @@ ON CONFLICT (sensor_nodes_id, geom) DO UPDATE SET
 , end_datetime = GREATEST(sensor_nodes_spatial_rollup.end_datetime, EXCLUDED.end_datetime)
 , measurements_count = sensor_nodes_spatial_rollup.measurements_count + EXCLUDED.measurements_count
 , modified_on = now()
-;
+RETURNING 1
+$$ LANGUAGE SQL;
 
 
 CREATE OR REPLACE FUNCTION upsert_sensor_nodes_spatial_rollups_by_sensor(int, double precision) RETURNS int AS $$
@@ -172,13 +175,52 @@ FROM updates;
 $$ LANGUAGE SQL;
 
 
+SELECT upsert_sensor_nodes_spatial_rollups_by_sensor(126656, 35.0);
 
-
-SELECT upsert_sensor_nodes_spatial_rollups_by_sensor(126656, 30.0);
 SELECT upsert_sensor_nodes_spatial_rollups_by_node(24867, 30.0);
-SELECT upsert_sensor_nodes_spatial_rollups_latest(30.0);
 
-SELECT DISTINCT sensors_id
+--SELECT upsert_sensor_nodes_spatial_rollups_latest(30.0);
+
+
+-- sandbox
+\set sensors_id 2957942
+
+CREATE TEMP TABLE IF NOT EXISTS temp_inserted_measurements (
+  sensors_id int
+  , datetime timestamptz
+  , value double precision
+  , lat double precision
+  , lon double precision
+  , fetchlogs_id int
+);
+
+
+INSERT INTO temp_inserted_measurements (sensors_id, datetime, value, lat, lon)
+SELECT sensors_id
+, datetime
+, value
+, lat
+, lon
 FROM measurements
-WHERE lat IS NOT NULL
-LIMIT 10;
+WHERE sensors_id = :sensors_id;
+
+
+
+\set sensors_id 41234
+
+
+
+
+
+
+SELECT upsert_sensor_nodes_spatial_rollups_by_sensor(:sensors_id, 250.0);
+
+SELECT COUNT(1)
+, MIN(start_datetime)
+, MAX(start_datetime)
+, MAX(measurements_count)
+, AVG(measurements_count)
+FROM sensor_nodes_spatial_rollup;
+
+
+TRUNCATE sensor_nodes_spatial_rollup;

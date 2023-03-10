@@ -28,6 +28,13 @@ SELECT cron.schedule_in_database(
   , 'openaq'
   );
 
+SELECT cron.schedule_in_database(
+  'update-daily-cached-tables'
+  , '0 1 * * *'
+  , $$CALL update_daily_cached_tables()$$
+  , 'openaq'
+  );
+
 -- just in case we start having failed ingestions
 -- we dont want to keep them open
 SELECT cron.schedule_in_database(
