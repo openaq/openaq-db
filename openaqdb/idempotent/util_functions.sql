@@ -467,9 +467,79 @@ BEGIN
 END
 $$ LANGUAGE plpgsql;
 
+
+-- generates 256 bit UUID v4 based token for api key and validation tokens
+CREATE OR REPLACE FUNCTION generate_token()
+RETURNS text AS $$
+SELECT encode(digest(uuid_generate_v4():: text, 'sha256'), 'hex');
+$$ LANGUAGE SQL;
+
+
+-- a function to create a new user account adding a record into the 
+-- users table, entities table and user_entities table
+CREATE OR REPLACE FUNCTION create_user(
+  full_name text
+  , email_address text 
+  , password_hash text
+  , ip_address text
+  , entity_type text
+) RETURNS int AS $$
+DECLARE 
+  users_id integer;
+  entities_id integer;
+BEGIN
+  INSERT INTO 
+    users (email_address, password_hash, added_on, verification_code, ip_address, is_active)
+  VALUES 
+    (email_address, password_hash, NOW(), generate_token(), ip_address::cidr, FALSE)
+  RETURNING users.users_id INTO users_id;
+
+  INSERT INTO
+    entities (full_name, entity_type, added_on)
+  VALUES
+    (full_name, entity_type::entity_type, NOW())
+  RETURNING entities.entities_id INTO entities_id;
+
+  INSERT INTO
+    users_entities (users_id, entities_id)
+  VALUES
+    (users_id, entities_id);
+  RETURN users_id;
+END
+$$ LANGUAGE plpgsql;
+
+-- a function to verify a user based on users_id and generates
+-- an API key in the user_keys table
+CREATE OR REPLACE FUNCTION verify_user(
+  _users_id integer
+) RETURNS text AS $$
+DECLARE
+  _token integer;
+BEGIN
+  UPDATE 
+      users
+  SET 
+      verified_on = NOW(), 
+      is_active = TRUE
+  WHERE 
+      users_id = _users_id;
+  INSERT INTO
+    user_keys (users_id, token, added_on)
+  VALUES
+    (_users_id, generate_token(), NOW())
+  RETURNING token AS _token;
+  RETURN _token; 
+END
+$$ LANGUAGE plpgsql;
+
+
+
 SELECT expected_hours('2021-01-01 00:00:00', '2023-01-01 00:00:00', 'month', '01'); -- 1488
 SELECT expected_hours('2022-01-01 00:00:00', '2023-01-01 00:00:00', 'month', '01'); -- 744
 SELECT expected_hours('2022-01-01 00:00:00', '2023-01-01 00:00:00', 'hour', '01'); -- 365
 SELECT expected_hours('2022-01-01 00:00:00', '2023-01-01 00:00:00', 'day', '1'); -- 1248
 
 SELECT expected_hours('2021-01-01 00:00:00', '2023-01-01 00:00:00', 'month', '01') * 3600;
+
+
+
