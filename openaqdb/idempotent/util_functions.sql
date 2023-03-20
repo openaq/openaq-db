@@ -483,16 +483,17 @@ CREATE OR REPLACE FUNCTION create_user(
   , password_hash text
   , ip_address text
   , entity_type text
-) RETURNS int AS $$
+) RETURNS text AS $$
 DECLARE 
   users_id integer;
   entities_id integer;
+  verification_token text;
 BEGIN
   INSERT INTO 
-    users (email_address, password_hash, added_on, verification_code, ip_address, is_active)
+    users (email_address, password_hash, added_on, verification_code, expires_on, ip_address, is_active)
   VALUES 
-    (email_address, password_hash, NOW(), generate_token(), ip_address::cidr, FALSE)
-  RETURNING users.users_id INTO users_id;
+    (email_address, password_hash, NOW(), generate_token(), (timestamptz (NOW() + INTERVAL '30min') AT TIME ZONE 'UTC') AT TIME ZONE 'UTC', ip_address::cidr, FALSE)
+  RETURNING users.users_id, verification_code INTO users_id, verification_token;
 
   INSERT INTO
     entities (full_name, entity_type, added_on)
@@ -504,17 +505,17 @@ BEGIN
     users_entities (users_id, entities_id)
   VALUES
     (users_id, entities_id);
-  RETURN users_id;
+  RETURN verification_token;
 END
 $$ LANGUAGE plpgsql;
 
--- a function to verify a user based on users_id and generates
+-- a function to verify a user based on users_id and generate
 -- an API key in the user_keys table
-CREATE OR REPLACE FUNCTION verify_user(
+CREATE OR REPLACE FUNCTION get_user_token(
   _users_id integer
 ) RETURNS text AS $$
 DECLARE
-  _token integer;
+  _token text;
 BEGIN
   UPDATE 
       users
