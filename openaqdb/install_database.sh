@@ -37,11 +37,11 @@ if [ -z "$SNAPSHOT_ID" ]; then
 
     echo "include 'openaq_postgresql.conf'" >> $PGCONFIG
     echo "shared_preload_libraries = 'pg_cron,pg_stat_statements'" >> $PGDATA/openaq_postgresql.conf
-    echo "shared_buffers = $PG_SHARED_BUFFERS" >> $PGDATA/openaq_postgresql.conf
-    echo "wal_buffers = $PG_WAL_BUFFERS" >> $PGDATA/openaq_postgresql.conf
-    echo "effective_cache_size = $PG_EFFECTIVE_CACHE_SIZE" >> $PGDATA/openaq_postgresql.conf
-    echo "work_mem = $PG_WORK_MEM" >> $PGDATA/openaq_postgresql.conf
-    echo "maintenance_work_mem = $PG_MAINTENANCE_WORK_MEM" >> $PGDATA/openaq_postgresql.conf
+    if [ ! -z "$PG_SHARED_BUFFERS" ]; then echo "shared_buffers = $PG_SHARED_BUFFERS" >> $PGDATA/openaq_postgresql.conf; fi
+    if [ ! -z "$PG_WAL_BUFFERS" ]; then echo "wal_buffers = $PG_WAL_BUFFERS" >> $PGDATA/openaq_postgresql.conf; fi
+    if [ ! -z "$PG_EFFECTIVE_CACHE_SIZE" ]; then echo "effective_cache_size = $PG_EFFECTIVE_CACHE_SIZE" >> $PGDATA/openaq_postgresql.conf; fi
+    if [ ! -z "$PG_WORM_MEM" ]; then echo "work_mem = $PG_WORK_MEM" >> $PGDATA/openaq_postgresql.conf; fi
+    if [ ! -z "$PG_MAINTENANCE_WORK_MEM" ]; then echo "maintenance_work_mem = $PG_MAINTENANCE_WORK_MEM" >> $PGDATA/openaq_postgresql.conf; fi
 
     # the next two lines make the database accessible to outside connections
     # this may or may not be what you want to do

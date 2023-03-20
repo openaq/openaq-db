@@ -125,3 +125,8 @@ SET description = EXCLUDED.description
 , is_core = EXCLUDED.is_core
 , display = EXCLUDED.display
 ;
+
+
+UPDATE measurands
+SET parameter_type = 'meteorological'
+WHERE measurand ~* 'temp|rh|relative|pressure|humid|wind';

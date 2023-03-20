@@ -1,9 +1,15 @@
+CREATE TYPE parameter_type AS ENUM (
+  'pollutant'
+, 'meteorological'
+);
+
 CREATE TABLE IF NOT EXISTS measurands (
     measurands_id int generated always as identity primary key,
     measurand text not null,
     units text not null,
     display text,
     description text,
+    parameter_type parameter_type NOT NULL DEFAULT 'pollutant',
     unique (measurand, units)
 );
 

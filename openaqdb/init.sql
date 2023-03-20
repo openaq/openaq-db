@@ -49,6 +49,7 @@ GRANT ALL ON FUNCTIONS to :DATABASE_WRITE_USER;
 \i tables/users.sql
 \i tables/rollups.sql
 \i tables/metadata.sql
+\i tables/deployments.sql
 \i idempotent/util_functions.sql
 \i locations/locations.sql
 \i tables/countries_views.sql

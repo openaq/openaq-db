@@ -82,13 +82,13 @@ COMMENT ON COLUMN sensor_types.is_reference IS
 'Is the sensor considered to be a reference or regulatory grade sensor';
 
 
-CREATE SEQUENCE IF NOT EXISTS entities_sq START 10;
-CREATE TABLE IF NOT EXISTS entities (
-  entities_id int PRIMARY KEY DEFAULT nextval('entities_sq')
-  , label text NOT NULL UNIQUE
-);
-COMMENT ON TABLE entities IS
-'';
+-- CREATE SEQUENCE IF NOT EXISTS entities_sq START 10;
+-- CREATE TABLE IF NOT EXISTS entities (
+--   entities_id int PRIMARY KEY DEFAULT nextval('entities_sq')
+--   , label text NOT NULL UNIQUE
+-- );
+-- COMMENT ON TABLE entities IS
+-- '';
 
 
 -- units
@@ -257,7 +257,8 @@ ON CONFLICT DO NOTHING;
 DO $$
 BEGIN
   ALTER TABLE providers
-  ADD COLUMN owner_entities_id int NOT NULL REFERENCES entities DEFAULT 1;
+  ADD COLUMN owner_entities_id int NOT NULL REFERENCES entities DEFAULT 1
+  , ADD COLUMN is_active boolean NOT NULL DEFAULT 't';
 EXCEPTION WHEN OTHERS THEN
    RAISE NOTICE 'providers alter error';
 END$$;
