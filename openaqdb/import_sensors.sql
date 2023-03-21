@@ -1,3 +1,5 @@
+BEGIN;
+
 DROP TABLE IF EXISTS sensors_migrate
 , sensor_systems_migrate
 , sensor_nodes_migrate
@@ -7,23 +9,23 @@ DROP TABLE IF EXISTS sensors_migrate
 
 \timing on
 
--- SET statement_timeout TO '1h';
+SET statement_timeout TO '8h';
 
--- SELECT sensor_nodes_id
--- , COUNT(*) as n
--- , MIN(created) as added_on
--- , MAX(created) as modified_on
--- INTO sensor_nodes_tracking
--- FROM sensor_nodes_history
--- GROUP BY 1;
+SELECT sensor_nodes_id
+, COUNT(*) as n
+, MIN(created) as added_on
+, MAX(created) as modified_on
+INTO sensor_nodes_tracking
+FROM sensor_nodes_history
+GROUP BY 1;
 
--- SELECT sensors_id
--- , COUNT(*) as n
--- , MIN(created) as added_on
--- , MAX(created) as modified_on
--- INTO sensors_tracking
--- FROM sensors_history
--- GROUP BY 1;
+SELECT sensors_id
+, COUNT(*) as n
+, MIN(created) as added_on
+, MAX(created) as modified_on
+INTO sensors_tracking
+FROM sensors_history
+GROUP BY 1;
 
 CREATE TABLE IF NOT EXISTS sensor_nodes_migrate (
     sensor_nodes_id int primary key,
@@ -404,3 +406,6 @@ SELECT setval(
  pg_get_serial_sequence('sensors', 'sensors_id'),
  (SELECT MAX(sensors_id) FROM public.sensors)
 );
+
+
+COMMIT;

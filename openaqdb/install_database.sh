@@ -25,7 +25,7 @@ if [ -z "$SNAPSHOT_ID" ]; then
 else
     # now create the log file. This needs to be done because
     # this is where the snapshot expects the log file to be
-    mkdir /var/log/postgresql
+    mkdir -p /var/log/postgresql
     chown postgres:postgres /var/log/postgresql
     sudo -i -u postgres touch /var/log/postgresql/postgresql.log
 fi
