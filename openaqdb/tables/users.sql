@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS user_keys (
   , users_id int NOT NULL REFERENCES users
   -- uncomment if using the key_types method
   --, key_types_id int NOT NULL REFERENCES key_types
-  , label varchar(100)
+  , label varchar(100) NOT NULL
   , token text NOT NULL UNIQUE
   -- if we want to allow a key by key rate
   -- another option would be to have a key type and

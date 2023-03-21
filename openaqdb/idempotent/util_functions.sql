@@ -475,23 +475,23 @@ SELECT encode(digest(uuid_generate_v4():: text, 'sha256'), 'hex');
 $$ LANGUAGE SQL;
 
 
--- a function to create a new user account adding a record into the 
+-- a function to create a new user account adding a record into the
 -- users table, entities table and user_entities table
 CREATE OR REPLACE FUNCTION create_user(
   full_name text
-  , email_address text 
+  , email_address text
   , password_hash text
   , ip_address text
   , entity_type text
 ) RETURNS text AS $$
-DECLARE 
+DECLARE
   users_id integer;
   entities_id integer;
   verification_token text;
 BEGIN
-  INSERT INTO 
+  INSERT INTO
     users (email_address, password_hash, added_on, verification_code, expires_on, ip_address, is_active)
-  VALUES 
+  VALUES
     (email_address, password_hash, NOW(), generate_token(), (timestamptz (NOW() + INTERVAL '30min') AT TIME ZONE 'UTC') AT TIME ZONE 'UTC', ip_address::cidr, FALSE)
   RETURNING users.users_id, verification_code INTO users_id, verification_token;
 
@@ -509,29 +509,59 @@ BEGIN
 END
 $$ LANGUAGE plpgsql;
 
--- a function to verify a user based on users_id and generate
--- an API key in the user_keys table
+-- a function to generate a user token
 CREATE OR REPLACE FUNCTION get_user_token(
   _users_id integer
+  , _label text DEFAULT 'general'
 ) RETURNS text AS $$
 DECLARE
   _token text;
 BEGIN
-  UPDATE 
+  UPDATE
       users
-  SET 
-      verified_on = NOW(), 
+  SET
+      verified_on = NOW(),
       is_active = TRUE
-  WHERE 
+  WHERE
       users_id = _users_id;
+
   INSERT INTO
-    user_keys (users_id, token, added_on)
+    user_keys (users_id, token, label, added_on)
   VALUES
-    (_users_id, generate_token(), NOW())
-  RETURNING token AS _token;
-  RETURN _token; 
+    (_users_id, generate_token(), _label, NOW())
+  ON CONFLICT (users_id, label) DO UPDATE
+  SET token = EXCLUDED.token
+  RETURNING token INTO _token;
+  RETURN _token;
 END
 $$ LANGUAGE plpgsql;
+
+-- a function to verify a user based on email and verification code
+-- and generate an API key in the user_keys table
+CREATE OR REPLACE FUNCTION verify_email(
+  _email_address text
+  , _verification_code text
+) RETURNS text AS $$
+DECLARE
+  _users_id int;
+  _token text;
+BEGIN
+
+  UPDATE users
+  SET verified_on = NOW()
+  WHERE email_address = _email_address
+  AND verification_code = _verification_code
+  RETURNING users_id INTO _users_id;
+
+  IF _users_id IS NULL THEN
+     RAISE EXCEPTION 'Verification code could not be matched for %', _email_address;
+  END IF;
+  SELECT get_user_token(_users_id) INTO _token;
+  RETURN _token;
+END
+$$ LANGUAGE plpgsql;
+
+
 
 
 
@@ -541,6 +571,3 @@ SELECT expected_hours('2022-01-01 00:00:00', '2023-01-01 00:00:00', 'hour', '01'
 SELECT expected_hours('2022-01-01 00:00:00', '2023-01-01 00:00:00', 'day', '1'); -- 1248
 
 SELECT expected_hours('2021-01-01 00:00:00', '2023-01-01 00:00:00', 'month', '01') * 3600;
-
-
-
