@@ -1,4 +1,4 @@
-BEGIN;
+--BEGIN;
 
 DROP TABLE IF EXISTS sensors_migrate
 , sensor_systems_migrate
@@ -11,21 +11,29 @@ DROP TABLE IF EXISTS sensors_migrate
 
 SET statement_timeout TO '8h';
 
-SELECT sensor_nodes_id
-, COUNT(*) as n
-, MIN(created) as added_on
-, MAX(created) as modified_on
-INTO sensor_nodes_tracking
-FROM sensor_nodes_history
-GROUP BY 1;
 
-SELECT sensors_id
-, COUNT(*) as n
-, MIN(created) as added_on
-, MAX(created) as modified_on
-INTO sensors_tracking
-FROM sensors_history
-GROUP BY 1;
+DROP TABLE IF EXISTS sensor_nodes_tracking;
+WITH history AS (
+ SELECT sensor_nodes_id
+ , created
+ FROM sensor_nodes_history
+ --LIMIT 10000
+)
+SELECT sensor_nodes_id
+ , COUNT(*) as n
+ , MIN(created) as added_on
+ , MAX(created) as modified_on
+ INTO sensor_nodes_tracking
+ FROM history
+ GROUP BY 1;
+
+-- SELECT sensors_id
+-- , COUNT(*) as n
+-- , MIN(created) as added_on
+-- , MAX(created) as modified_on
+-- INTO sensors_tracking
+-- FROM sensors_history
+-- GROUP BY 1;
 
 CREATE TABLE IF NOT EXISTS sensor_nodes_migrate (
     sensor_nodes_id int primary key,
@@ -365,47 +373,76 @@ GROUP BY 1,2
 HAVING COUNT(1) > 1
 LIMIT 10;
 
+
+\echo 'sensor_nodes_import'
+SELECT COUNT(1) FROM sensor_nodes_import;
+\echo 'sensor_nodes_migrate'
+SELECT COUNT(1) FROM sensor_nodes_migrate;
+\echo 'sensor_systems_migrate'
+SELECT COUNT(1) FROM sensor_systems_migrate;
+\echo 'sensors_migrate'
+SELECT COUNT(1) FROM sensors_migrate;
+\echo 'sensor_nodes_map'
+SELECT COUNT(1) FROM sensor_nodes_map;
+\echo 'sensors_map'
+SELECT COUNT(1) FROM sensors_map;
+\echo 'sensors_import'
+SELECT COUNT(1) FROM sensors_import;
+
+
+WITH reduced AS (
+  SELECT sy.sensor_systems_id
+  , m.measurands_id
+  , MAX(s.sensors_id) as sensors_id
+  FROM sensors_import s
+  JOIN sensor_systems_migrate sy ON (sy.sensor_nodes_id = s.sensor_nodes_id)
+  JOIN measurands m ON (s.measurand = m.measurand AND s.units = m.units)
+  GROUP BY 1,2
+)
+SELECT COUNT(1)
+FROM reduced;
+
 -- these data should be able to be imported directly
 
-CREATE OR REPLACE VIEW measurements_migrate
-SELECT m.sensors_id
-, i.datetime
-, MAX(i.value) as value
-, i.lat
-, i.lon
-FROM public.measurements i
-JOIN public.sensors_map m ON (i.sensors_id = m.old_sensors_id)
-GROUP BY 1,2,4,5;
+-- CREATE OR REPLACE VIEW measurements_migrate AS
+-- SELECT m.sensors_id
+-- , i.datetime
+-- , MAX(i.value) as value
+-- , i.lat
+-- , i.lon
+-- FROM public.measurements i
+-- JOIN public.sensors_map m ON (i.sensors_id = m.old_sensors_id)
+-- GROUP BY 1,2,4,5;
 
 
-INSERT INTO measurements (sensors_id, datetime, value, lat, lon)
-SELECT m.sensors_id
-, i.datetime
-, i.value
-, i.lat
-, i.lon
-FROM public.measurements_import i
-JOIN public.sensors_map m ON (i.sensors_id = m.old_sensors_id)
-ON CONFLICT DO NOTHING;
+-- INSERT INTO measurements (sensors_id, datetime, value, lat, lon)
+-- SELECT m.sensors_id
+-- , i.datetime
+-- , i.value
+-- , i.lat
+-- , i.lon
+-- FROM public.measurements_import i
+-- JOIN public.sensors_map m ON (i.sensors_id = m.old_sensors_id)
+-- ON CONFLICT DO NOTHING;
 
 
 
 
--- after inserting manually we need to update the sequences
-SELECT setval(
- pg_get_serial_sequence('sensor_nodes', 'sensor_nodes_id'),
- (SELECT MAX(sensor_nodes_id) FROM public.sensor_nodes)
-);
+-- -- after inserting manually we need to update the sequences
+-- SELECT setval(
+--  pg_get_serial_sequence('sensor_nodes', 'sensor_nodes_id'),
+--  (SELECT MAX(sensor_nodes_id) FROM public.sensor_nodes)
+-- );
 
-SELECT setval(
- pg_get_serial_sequence('sensor_systems', 'sensor_systems_id'),
- (SELECT MAX(sensor_systems_id) FROM public.sensor_systems)
-);
+-- SELECT setval(
+--  pg_get_serial_sequence('sensor_systems', 'sensor_systems_id'),
+--  (SELECT MAX(sensor_systems_id) FROM public.sensor_systems)
+-- );
 
-SELECT setval(
- pg_get_serial_sequence('sensors', 'sensors_id'),
- (SELECT MAX(sensors_id) FROM public.sensors)
-);
+-- SELECT setval(
+--  pg_get_serial_sequence('sensors', 'sensors_id'),
+--  (SELECT MAX(sensors_id) FROM public.sensors)
+-- );
 
 
-COMMIT;
+--COMMIT;
