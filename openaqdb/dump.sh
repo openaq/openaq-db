@@ -1,11 +1,12 @@
 #!/bin/bash
 # create a db connection url
-while getopts ":e:s:d:" opt
+while getopts ":e:s:d:h:" opt
 do
    case "$opt" in
        e ) ED="$OPTARG" ;;
        s ) SD="$OPTARG" ;;
        d ) DUR="$OPTARG" ;;
+       h ) HOST="$OPTARG" ;;
    esac
 done
 
@@ -21,7 +22,11 @@ if [ -z ${DUR} ]; then
     DUR=8h
 fi;
 
-URL=postgres://$DATABASE_WRITE_USER:$DATABASE_WRITE_PASSWORD@localhost:5432/$DATABASE_DB
+if [ -z ${HOST} ]; then
+    HOST=localhost
+fi;
+
+URL=postgres://$DATABASE_WRITE_USER:$DATABASE_WRITE_PASSWORD@$HOST:5432/$DATABASE_DB
 exists=True
 # s3 bucket and base location to use
 BUCKET=s3://openaq-db-backups/measurements
