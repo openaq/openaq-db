@@ -13,9 +13,9 @@ WHERE jobname = 'run-updates-old';
 -- Job to keep rollups up to date
 -- right now its taking about 20s per hour
 SELECT cron.schedule_in_database(
-  'update-rollups'
+  'update-hourly-data'
   , '*/10 * * * *'
-  , $$CALL update_rollups(20)$$
+  , $$CALL update_hourly_data(20)$$
   , 'openaq'
   );
 
@@ -41,5 +41,21 @@ SELECT cron.schedule_in_database(
   'cancel-stalled-ingestions'
   , '*/5 * * * *'
   , $$SELECT cancel_ingestions('30m')$$
+  , 'openaq'
+);
+
+-- make sure the partitions exist
+-- builds the next months partition in advance
+SELECT cron.schedule_in_database(
+  'create-measurements-partition'
+  , '* * 1 * *'
+  , $$SELECT create_measurements_partition(current_date + '1month'::interval)$$
+  , 'openaq'
+);
+
+SELECT cron.schedule_in_database(
+  'create-hourly-data-partition'
+  , '* * 1 * *'
+  , $$SELECT create_hourly_data_partition(current_date + '1month'::interval)$$
   , 'openaq'
 );

@@ -27,9 +27,12 @@ CREATE INDEX rollups_st_idx ON rollups USING btree (st);
 
 -- The following tables, functions and views are to handle
 -- tracking coverage for the system. If possibly we may also want to replace
--- the rollups table above (which uses groups) with the hourly_rollups table
+-- the rollups table above (which uses groups) with the hourly_data table
 -- below. Therefor the table below also includes some extended summary stats
-CREATE TABLE IF NOT EXISTS hourly_rollups (
+SET search_path = public;
+CREATE SCHEMA IF NOT EXISTS _measurements_internal;
+
+CREATE TABLE IF NOT EXISTS hourly_data (
   sensors_id int NOT NULL --REFERENCES sensors ON DELETE CASCADE
 , datetime timestamptz NOT NULL
 , measurands_id int NOT NULL --REFERENCES measurands -- required for partition
@@ -49,20 +52,62 @@ CREATE TABLE IF NOT EXISTS hourly_rollups (
 , updated_on timestamptz -- last time the sensor was updated
 , calculated_on timestamptz-- last time the row rollup was calculated
 , UNIQUE(sensors_id, measurands_id, datetime)
-);
+) PARTITION BY RANGE (datetime);
 
-
-CREATE INDEX IF NOT EXISTS hourly_rollups_sensors_id_idx
-ON hourly_rollups
+CREATE INDEX IF NOT EXISTS hourly_data_sensors_id_idx
+ON hourly_data
 USING btree (sensors_id);
 
-CREATE INDEX IF NOT EXISTS hourly_rollups_datetime_idx
-ON hourly_rollups
+CREATE INDEX IF NOT EXISTS hourly_data_datetime_idx
+ON hourly_data
 USING btree (datetime);
 
-CREATE UNIQUE INDEX IF NOT EXISTS hourly_rollups_sensors_id_datetime_idx
-ON hourly_rollups
+CREATE UNIQUE INDEX IF NOT EXISTS hourly_data_sensors_id_datetime_idx
+ON hourly_data
 USING btree (sensors_id, datetime);
+
+-- not really used but here just in case we need it
+CREATE OR REPLACE FUNCTION create_hourly_data_partition(sd date, ed date) RETURNS text AS $$
+DECLARE
+table_name text := 'hourly_data_'||to_char(sd, 'YYYYMMDD')||||to_char(ed, '_YYYYMMDD');
+BEGIN
+  EXECUTE format('
+          CREATE TABLE IF NOT EXISTS _measurements_internal.%s
+          PARTITION OF hourly_data
+          FOR VALUES
+          FROM (''%s'')
+          TO (''%s'');',
+          table_name,
+          sd,
+          ed
+          );
+   RETURN table_name;
+END;
+$$ LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE FUNCTION create_hourly_data_partition(dt date) RETURNS text AS $$
+DECLARE
+table_name text := 'hourly_data_'||to_char(dt, 'YYYYMM');
+BEGIN
+  EXECUTE format('
+          CREATE TABLE IF NOT EXISTS _measurements_internal.%s
+          PARTITION OF hourly_data
+          FOR VALUES
+          FROM (''%s'')
+          TO (''%s'');',
+          table_name,
+          date_trunc('month', dt),
+          date_trunc('month', dt + '1month'::interval)
+          );
+   RETURN table_name;
+END;
+$$ LANGUAGE plpgsql;
+
+WITH dates AS (
+SELECT generate_series('2016-01-01'::date, '2024-01-01'::date, '1month'::interval) as dt)
+SELECT create_hourly_data_partition(dt::date)
+FROM dates;
 
 
 -- create a table to help us keep track of what days have been updated
@@ -161,7 +206,7 @@ SELECT sy.sensor_nodes_id
 , SUM((h.value_avg >= t.value)::int) as exceedance_count
 , SUM(value_count) as total_count
 , COUNT(*) AS hourly_count
-FROM hourly_rollups h
+FROM hourly_data h
 JOIN sensors s ON (h.sensors_id = s.sensors_id)
 JOIN sensor_systems sy ON (sy.sensor_systems_id = s.sensor_systems_id)
 JOIN thresholds t ON (t.measurands_id = h.measurands_id)
@@ -198,7 +243,7 @@ WITH data AS (
    , h.sensors_id
    , sensor_nodes_id
    , value_count
-   FROM hourly_rollups h
+   FROM hourly_data h
    JOIN sensors s ON (h.sensors_id = s.sensors_id)
    JOIN sensor_systems ss ON (s.sensor_systems_id = ss.sensor_systems_id)
    WHERE datetime > day::timestamp
@@ -242,12 +287,12 @@ $$ LANGUAGE SQL;
 --\set st '''2023-01-19 15:00:00+00'''::timestamptz
 
 
-CREATE OR REPLACE FUNCTION calculate_hourly_rollup(st timestamptz, et timestamptz) RETURNS TABLE (
+CREATE OR REPLACE FUNCTION calculate_hourly_data(st timestamptz, et timestamptz) RETURNS TABLE (
   sensors_count bigint
 , measurements_count bigint
 ) AS $$
 WITH inserted AS (
-INSERT INTO hourly_rollups (
+INSERT INTO hourly_data (
   sensors_id
 , measurands_id
 , datetime
@@ -308,7 +353,7 @@ $$ LANGUAGE SQL;
 
 
 -- A method that includes specifying the sensors_id
-CREATE OR REPLACE FUNCTION calculate_hourly_rollup(
+CREATE OR REPLACE FUNCTION calculate_hourly_data(
   id int
 , st timestamptz
 , et timestamptz
@@ -317,7 +362,7 @@ CREATE OR REPLACE FUNCTION calculate_hourly_rollup(
 , measurements_count bigint
 ) AS $$
 WITH inserted AS (
-INSERT INTO hourly_rollups (
+INSERT INTO hourly_data (
   sensors_id
 , measurands_id
 , datetime
@@ -379,24 +424,24 @@ $$ LANGUAGE SQL;
 
 -- Some helper functions to make things easier
 -- Pass the time ending timestamp to calculate one hour
-CREATE OR REPLACE FUNCTION calculate_hourly_rollup(et timestamptz DEFAULT now() - '1hour'::interval) RETURNS TABLE (
+CREATE OR REPLACE FUNCTION calculate_hourly_data(et timestamptz DEFAULT now() - '1hour'::interval) RETURNS TABLE (
   sensors_count bigint
 , measurements_count bigint
 ) AS $$
-SELECT * FROM calculate_hourly_rollup(et - '1hour'::interval, et);
+SELECT * FROM calculate_hourly_data(et - '1hour'::interval, et);
 $$ LANGUAGE SQL;
 
 -- Helper function to record a how day
-CREATE OR REPLACE FUNCTION calculate_hourly_rollup(dt date) RETURNS TABLE (
+CREATE OR REPLACE FUNCTION calculate_hourly_data(dt date) RETURNS TABLE (
   sensors_count bigint
 , measurements_count bigint
 ) AS $$
-SELECT * FROM calculate_hourly_rollup(dt::timestamptz, dt + '1day'::interval);
+SELECT * FROM calculate_hourly_data(dt::timestamptz, dt + '1day'::interval);
 $$ LANGUAGE SQL;
 
 
---DROP FUNCTION IF EXISTS update_hourly_rollup(timestamptz);
-CREATE OR REPLACE FUNCTION update_hourly_rollup(hr timestamptz DEFAULT now() - '1hour'::interval) RETURNS bigint AS $$
+--DROP FUNCTION IF EXISTS update_hourly_data(timestamptz);
+CREATE OR REPLACE FUNCTION update_hourly_data(hr timestamptz DEFAULT now() - '1hour'::interval) RETURNS bigint AS $$
 DECLARE
 nw timestamptz := clock_timestamp();
 mc bigint;
@@ -404,7 +449,7 @@ BEGIN
 WITH inserted AS (
   SELECT COALESCE(measurements_count, 0) as measurements_count
   , COALESCE(sensors_count, 0) as sensors_count
-  FROM calculate_hourly_rollup(hr))
+  FROM calculate_hourly_data(hr))
 INSERT INTO hourly_stats (
   datetime
 , calculated_on
@@ -433,19 +478,19 @@ $$ LANGUAGE plpgsql;
 
 
 -- helpers for measurand_id
-CREATE OR REPLACE FUNCTION calculate_hourly_rollup(id int, et timestamptz) RETURNS TABLE (
+CREATE OR REPLACE FUNCTION calculate_hourly_data(id int, et timestamptz) RETURNS TABLE (
   sensors_count bigint
 , measurements_count bigint
 ) AS $$
-SELECT calculate_hourly_rollup(id, et - '1hour'::interval, et);
+SELECT calculate_hourly_data(id, et - '1hour'::interval, et);
 $$ LANGUAGE SQL;
 
 -- Helper function to record a how day
-CREATE OR REPLACE FUNCTION calculate_hourly_rollup(id int, dt date) RETURNS TABLE (
+CREATE OR REPLACE FUNCTION calculate_hourly_data(id int, dt date) RETURNS TABLE (
   sensors_count bigint
 , measurements_count bigint
 ) AS $$
-SELECT calculate_hourly_rollup(id, dt::timestamptz, dt + '1day'::interval);
+SELECT calculate_hourly_data(id, dt::timestamptz, dt + '1day'::interval);
 $$ LANGUAGE SQL;
 
 -- Simple view for coverage
@@ -457,7 +502,7 @@ SELECT r.sensors_id
 , CASE WHEN value_count >= (s.metadata->'hourly_frequency')::int THEN 100
   ELSE ROUND(value_count/(s.metadata->'hourly_frequency')::int::decimal * 100)
   END as coverage
-FROM hourly_rollups r
+FROM hourly_data r
 JOIN sensors s ON (r.sensors_id = s.sensors_id);
 
 -- simple table to add some time tracking
@@ -483,8 +528,7 @@ CREATE OR REPLACE FUNCTION log_performance(text, timestamptz) RETURNS timestampt
 $$ LANGUAGE SQL;
 
 
-
-CREATE OR REPLACE PROCEDURE update_rollups(lmt int DEFAULT 1000) AS $$
+CREATE OR REPLACE PROCEDURE update_hourly_data(lmt int DEFAULT 1000) AS $$
 DECLARE
 dt timestamptz;
 BEGIN
@@ -498,7 +542,7 @@ FOR dt IN (
     LIMIT lmt)
 LOOP
   RAISE NOTICE 'updating hour: %', dt;
-  PERFORM update_hourly_rollup(dt);
+  PERFORM update_hourly_data(dt);
   COMMIT;
 END LOOP;
 END;

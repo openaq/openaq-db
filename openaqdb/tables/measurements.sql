@@ -29,8 +29,8 @@ ON measurements USING btree (sensors_id, datetime);
 CREATE INDEX IF NOT EXISTS measurements_value_idx
 ON measurements USING brin (value);
 
-
-CREATE OR REPLACE FUNCTION create_partition(sd date, ed date) RETURNS text AS $$
+-- not used but here just in case we need it. Helpful for migrating timescale data
+CREATE OR REPLACE FUNCTION create_measurements_partition(sd date, ed date) RETURNS text AS $$
 DECLARE
 table_name text := 'measurements_'||to_char(sd, 'YYYYMMDD')||||to_char(ed, '_YYYYMMDD');
 BEGIN
@@ -49,7 +49,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 
-CREATE OR REPLACE FUNCTION create_partition(dt date) RETURNS text AS $$
+CREATE OR REPLACE FUNCTION create_measurements_partition(dt date) RETURNS text AS $$
 DECLARE
 table_name text := 'measurements_'||to_char(dt, 'YYYYMM');
 BEGIN
@@ -71,7 +71,7 @@ $$ LANGUAGE plpgsql;
 -- create some tables
 WITH dates AS (
 SELECT generate_series('2016-01-01'::date, '2024-01-01'::date, '1month'::interval) as dt)
-SELECT create_partition(dt::date)
+SELECT create_measurements_partition(dt::date)
 FROM dates;
 
 
