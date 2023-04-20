@@ -89,4 +89,5 @@ else
 fi
 
 # If a monitoring user exists the following script will install the monitoring
+./install_pgbouncer.sh
 ./install_prometheus_postgresql_exporter.sh
