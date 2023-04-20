@@ -3,7 +3,7 @@
 sudo su
 
 PGBOUNCER_VERSION=1.17.0
-PGBOUNCER_FDW_VERSION=0.3
+PGBOUNCER_FDW_VERSION=0.4
 ADMIN_USER=$DATABASE_WRITE_USER
 ADMIN_PASSWORD=$DATABASE_WRITE_PASSWORD
 AUTH_TYPE=trust # md5
@@ -74,10 +74,9 @@ auth_type = $AUTH_TYPE
 auth_file = /etc/pgbouncer/userlist.txt
 
 ;auth_query = SELECT * FROM scalegrid_pg.user_lookup($1);
-auth_user = $ADMIN_USER
-
-admin_users = $ADMIN_USER
-stats_users = $ADMIN_USER
+auth_user = $ADMIN_USER, $DATABASE_MONITOR_USER
+admin_users = $ADMIN_USER, $DATABASE_MONITOR_USER
+stats_users = $ADMIN_USER, $DATABASE_MONITOR_USER
 
 pool_mode = session
 server_reset_query = DISCARD ALL
@@ -93,6 +92,7 @@ echo $INI | sudo -i -u postgres tee /etc/pgbouncer/pgbouncer.ini  > /dev/null
 IFS=
 USERS=$(cat <<EOF
 "$ADMIN_USER" "$ADMIN_PASSWORD"
+"$DATABASE_MONITOR_USER" "$DATABASE_MONITOR_PASSWORD"
 EOF
       )
 echo $USERS | sudo -i -u postgres tee /etc/pgbouncer/userlist.txt  > /dev/null
@@ -115,29 +115,23 @@ cd pgbouncer_fdw-$PGBOUNCER_FDW_VERSION
 make -j $JOBS
 make install
 
-
-
-CREATE SERVER pgbouncer FOREIGN DATA WRAPPER dblink_fdw OPTIONS (host '44.205.224.91',
-                                                                 port '6432',
-                                                                 dbname 'pgbouncer');
-
-CREATE SERVER pgbouncer FOREIGN DATA WRAPPER dblink_fdw OPTIONS (host 'localhost',
-                                                                 port '6432',
-                                                                 dbname 'pgbouncer');
-
-CREATE USER MAPPING FOR PUBLIC SERVER pgbouncer OPTIONS (user 'rwuser', password 'OpenAQRW4326');
-
-
-GRANT USAGE ON FOREIGN SERVER pgbouncer TO rwuser;
-
-GRANT SELECT ON pgbouncer_clients TO rwuser;
-GRANT SELECT ON pgbouncer_config TO rwuser;
-GRANT SELECT ON pgbouncer_databases TO rwuser;
-GRANT SELECT ON pgbouncer_dns_hosts TO rwuser;
-GRANT SELECT ON pgbouncer_dns_zones TO rwuser;
-GRANT SELECT ON pgbouncer_lists TO rwuser;
-GRANT SELECT ON pgbouncer_pools TO rwuser;
-GRANT SELECT ON pgbouncer_servers TO rwuser;
-GRANT SELECT ON pgbouncer_sockets TO rwuser;
-GRANT SELECT ON pgbouncer_stats TO rwuser;
-GRANT SELECT ON pgbouncer_users TO rwuser;
+## and then set it all up
+sudo -i -u postgres \
+     psql -d openaq \
+     -c "BEGIN;" \
+     -c "CREATE SERVER IF NOT EXISTS pgbouncer FOREIGN DATA WRAPPER dblink_fdw OPTIONS (host 'localhost',port '6432', dbname 'pgbouncer')" \
+     -c "CREATE USER MAPPING IF NOT EXISTS FOR PUBLIC SERVER pgbouncer OPTIONS (user '$DATABASE_MONITOR_USER', password '$DATABASE_MONITOR_PASSWORD')" \
+     -c "CREATE EXTENSION IF NOT EXISTS pgbouncer_fdw" \
+     -c "GRANT USAGE ON FOREIGN SERVER pgbouncer TO $DATABASE_MONITOR_USER;" \
+     -c "GRANT SELECT ON pgbouncer_clients TO $DATABASE_MONITOR_USER;" \
+     -c "GRANT SELECT ON pgbouncer_config TO $DATABASE_MONITOR_USER;" \
+     -c "GRANT SELECT ON pgbouncer_databases TO $DATABASE_MONITOR_USER;" \
+     -c "GRANT SELECT ON pgbouncer_dns_hosts TO $DATABASE_MONITOR_USER;" \
+     -c "GRANT SELECT ON pgbouncer_dns_zones TO $DATABASE_MONITOR_USER;" \
+     -c "GRANT SELECT ON pgbouncer_lists TO $DATABASE_MONITOR_USER;" \
+     -c "GRANT SELECT ON pgbouncer_pools TO $DATABASE_MONITOR_USER;" \
+     -c "GRANT SELECT ON pgbouncer_servers TO $DATABASE_MONITOR_USER;" \
+     -c "GRANT SELECT ON pgbouncer_sockets TO $DATABASE_MONITOR_USER;" \
+     -c "GRANT SELECT ON pgbouncer_stats TO $DATABASE_MONITOR_USER;" \
+     -c "GRANT SELECT ON pgbouncer_users TO $DATABASE_MONITOR_USER;" \
+     -c "COMMIT;"
