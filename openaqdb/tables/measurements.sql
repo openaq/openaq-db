@@ -2,6 +2,92 @@ SET search_path = public;
 
 CREATE SCHEMA IF NOT EXISTS _measurements_internal;
 
+CREATE SEQUENCE IF NOT EXISTS data_tables_sq START 10;
+CREATE TABLE IF NOT EXISTS data_tables (
+  data_tables_id int PRIMARY KEY DEFAULT nextval('data_tables_sq')
+ , table_schema text NOT NULL
+ , table_name text NOT NULL
+ --, table_stats jsonb NOT NULL DEFAULT '{}'
+ , calculated_on timestamp NOT NULL DEFAULT now()
+ , UNIQUE(table_schema, table_name)
+)
+
+CREATE SEQUENCE IF NOT EXISTS data_table_partitions_sq START 10;
+CREATE TABLE IF NOT EXISTS data_table_partitions (
+  data_table_partitions_id int PRIMARY KEY DEFAULT nextval('data_table_partitions_sq')
+  , data_tables_id int NOT NULL REFERENCES data_tables
+  , table_schema text NOT NULL
+  , table_name text NOT NULL
+  , start_date date NOT NULL
+  , end_date date NOT NULL
+);
+
+CREATE SEQUENCE IF NOT EXISTS partitions_stats_sq START 10;
+CREATE TABLE IF NOT EXISTS partitions_stats (
+    data_table_partitions_id int PRIMARY KEY REFERENCES data_table_partitions
+  , table_size bigint NOT NULL
+  , index_size bigint NOT NULL
+  , row_count bigint
+  , calculated_on timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE OR REPLACE FUNCTION calculate_partition_stats() RETURNS timestamptz AS $$
+WITH measurement_tables AS (
+  SELECT data_table_partitions_id
+  , ('"' || table_schema || '"."' || table_name || '"') AS table_name
+  FROM data_table_partitions
+), measurement_sizes AS (
+  SELECT data_table_partitions_id
+  , table_name
+  , pg_table_size(table_name) as table_size
+  , pg_indexes_size(table_name) as index_size
+  FROM measurement_tables
+), stats_inserted AS (
+  INSERT INTO partitions_stats (
+  data_table_partitions_id
+  , table_size
+  , index_size
+  , row_count
+  , calculated_on
+  )
+  SELECT data_table_partitions_id
+  , table_size
+  , index_size
+  , row_count_estimate(table_name) as row_count
+  , now() as calculated_on
+  FROM measurement_sizes
+  ON CONFLICT(data_table_partitions_id) DO UPDATE
+  SET table_size = EXCLUDED.table_size
+  , index_size = EXCLUDED.index_size
+  , row_count = EXCLUDED.row_count
+  , calculated_on = EXCLUDED.calculated_on
+  RETURNING calculated_on
+  ) SELECT MAX(calculated_on) FROM stats_inserted;
+$$ LANGUAGE SQL;
+
+
+CREATE OR REPLACE VIEW data_table_stats AS
+SELECT t.table_schema||'.'||t.table_name as table_name
+  , ROUND(AVG(table_size)) as table_size_avg
+  , MAX(table_size) as table_size_max
+  , MIN(table_size) as table_size_min
+  , SUM(table_size) as table_size_total
+  , PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY table_size) as table_size_med
+  , ROUND(AVG(index_size)) as index_size_avg
+  , MAX(index_size) as index_size_max
+  , MIN(index_size) as index_size_min
+  , SUM(index_size) as index_size_total
+  , PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY index_size) as index_size_med
+  , COUNT(table_size) as partitions_count
+  , MIN(s.calculated_on) as calculated_on
+  FROM partitions_stats s
+  JOIN data_table_partitions p ON (s.data_table_partitions_id = p.data_table_partitions_id)
+  JOIN data_tables t ON (p.data_tables_id = t.data_tables_id)
+  WHERE table_size > 0
+  GROUP BY 1;
+
+
+
 CREATE TABLE IF NOT EXISTS measurements (
     sensors_id integer,
     datetime timestamp with time zone,
@@ -51,22 +137,44 @@ $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION create_measurements_partition(dt date) RETURNS text AS $$
 DECLARE
-table_name text := 'measurements_'||to_char(dt, 'YYYYMM');
+_table_schema text := '_measurements_internal';
+_table_name text := 'measurements_'||to_char(dt, 'YYYYMM');
+sd date := date_trunc('month', dt);
+ed date := date_trunc('month', dt + '1month'::interval);
 BEGIN
   EXECUTE format('
-          CREATE TABLE IF NOT EXISTS _measurements_internal.%s
+          CREATE TABLE IF NOT EXISTS %s.%s
           PARTITION OF measurements
           FOR VALUES
           FROM (''%s'')
           TO (''%s'');',
-          table_name,
-          date_trunc('month', dt),
-          date_trunc('month', dt + '1month'::interval)
+          _table_schema,
+          _table_name,
+          sd,
+          ed
           );
-   RETURN table_name;
+   -- register that table
+   INSERT INTO data_table_partitions (
+   data_tables_id
+   , table_schema
+   , table_name
+   , start_date
+   , end_date)
+   SELECT data_tables_id
+   , _table_schema
+   , _table_name
+   , sd
+   , ed
+   FROM data_tables
+   WHERE table_schema = 'public'
+   AND table_name = 'measurements';
+   RETURN _table_name;
 END;
 $$ LANGUAGE plpgsql;
 
+
+INSERT INTO data_tables (data_tables_id, table_schema, table_name) VALUES
+(1, 'public', 'measurements');
 
 -- create some tables
 WITH dates AS (

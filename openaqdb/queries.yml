@@ -23,6 +23,113 @@ fetchlog_stats:
         description: "The oldest file that has not been ingested"
 
 
+export_stats:
+  master: true
+  cache_seconds: 3600
+  query: "SELECT stats_interval
+          , days_modified
+          , days_added
+          , days_exported
+          , days_pending
+          FROM public.export_stats
+          WHERE calculated_on > now() - '3600s'::interval"
+  metrics:
+    - stats_interval:
+        usage: "LABEL"
+        description: "Interval the stats were calculated from"
+    - days_modified:
+        usage: "COUNTER"
+        description: "Total number of days that were modified since last interval"
+    - days_added:
+        usage: "COUNTER"
+        description: "Total number of days that were added since last interval"
+    - days_exported:
+        usage: "COUNTER"
+        description: "Total number of days that were exported since last interval"
+    - days_pending:
+        usage: "COUNTER"
+        description: "Total number of days that were pending since last interval"
+
+
+data_table_stats:
+  master: true
+  cache_seconds: 3600
+  query: "SELECT table_name
+          , table_size_avg
+          , table_size_med
+          , table_size_max
+          , table_size_min
+          , table_size_total
+          , index_size_avg
+          , index_size_med
+          , index_size_max
+          , index_size_min
+          , index_size_total
+          , partitions_count
+          FROM public.data_table_stats
+          WHERE calculated_on > now() - '3600s'::interval"
+  metrics:
+    - table_name:
+        usage: "LABEL"
+        description: "Name of the parent table"
+    - table_size_avg:
+        usage: "COUNTER"
+        description: "Average size of the partitions in kilobytes"
+    - table_size_med:
+        usage: "COUNTER"
+        description: "Median size of the partitions in kilobytes"
+    - table_size_min:
+        usage: "COUNTER"
+        description: "Minimum size of the partitions in kilobytes"
+    - table_size_max:
+        usage: "COUNTER"
+        description: "Maximum size of the partitions in kilobytes"
+    - table_size_total:
+        usage: "COUNTER"
+        description: "Total index size of all partitions in kilobytes"
+    - index_size_avg:
+        usage: "COUNTER"
+        description: "Average index size of the partitions in kilobytes"
+    - index_size_med:
+        usage: "COUNTER"
+        description: "Median index size of the partitions in kilobytes"
+    - index_size_min:
+        usage: "COUNTER"
+        description: "Minimum index size of the partitions in kilobytes"
+    - index_size_max:
+        usage: "COUNTER"
+        description: "Maximum index size of the partitions in kilobytes"
+    - index_size_total:
+        usage: "COUNTER"
+        description: "Total index size of all partitions in kilobytes"
+    - partitions_count:
+        usage: "COUNTER"
+        description: "Number of partitions"
+
+
+source_stats:
+  master: true
+  cache_seconds: 3600
+  query: "SELECT source_name
+          , nodes_added
+          , nodes_active
+          , nodes_total
+          FROM public.source_stats"
+  metrics:
+    - source_name:
+        usage: "LABEL"
+        description: "The source/owner of the node"
+    - nodes_total:
+        usage: "COUNTER"
+        description: "The total number of nodes associated with that source"
+    - nodes_added:
+        usage: "GUAGE"
+        description: "The number of nodes added to that source in the last 24h"
+    - nodes_active:
+        usage: "GUAGE"
+        description: "The number of nodes active for that source in the last 24h"
+
+
 ingest_stats:
   master: true
   cache_seconds: 300

@@ -88,41 +88,50 @@ $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION create_hourly_data_partition(dt date) RETURNS text AS $$
 DECLARE
-table_name text := 'hourly_data_'||to_char(dt, 'YYYYMM');
+_table_schema text := '_measurements_internal';
+_table_name text := 'hourly_data_'||to_char(dt, 'YYYYMM');
+sd date := date_trunc('month', dt);
+ed date := date_trunc('month', dt + '1month'::interval);
 BEGIN
   EXECUTE format('
-          CREATE TABLE IF NOT EXISTS _measurements_internal.%s
+          CREATE TABLE IF NOT EXISTS %s.%s
           PARTITION OF hourly_data
           FOR VALUES
           FROM (''%s'')
           TO (''%s'');',
-          table_name,
-          date_trunc('month', dt),
-          date_trunc('month', dt + '1month'::interval)
+          _table_schema,
+          _table_name,
+          sd,
+          ed
           );
-   RETURN table_name;
+   -- register that table
+   INSERT INTO data_table_partitions (
+   data_tables_id
+   , table_schema
+   , table_name
+   , start_date
+   , end_date)
+   SELECT data_tables_id
+   , _table_schema
+   , _table_name
+   , sd
+   , ed
+   FROM data_tables
+   WHERE table_schema = 'public'
+   AND table_name = 'hourly_data';
+   RETURN _table_name;
 END;
 $$ LANGUAGE plpgsql;
+
+
+INSERT INTO data_tables (data_tables_id, table_schema, table_name) VALUES
+(2, 'public', 'hourly_data');
+
 
 WITH dates AS (
 SELECT generate_series('2016-01-01'::date, '2024-01-01'::date, '1month'::interval) as dt)
 SELECT create_hourly_data_partition(dt::date)
 FROM dates;
-
-
--- create a table to help us keep track of what days have been updated
--- This table is used to back calculate rollup days. If the rollup service (lambda)
--- is running than adding a day and nulling the calculated on will update that day
-CREATE TABLE IF NOT EXISTS daily_stats (
-  day date NOT NULL UNIQUE
-, sensor_nodes_count bigint NOT NULL
-, sensors_count bigint NOT NULL
-, hours_count bigint NOT NULL
-, measurements_count bigint NOT NULL
-, calculated_on timestamp
-, initiated_on timestamp
-, metadata jsonb
-);
 
 -- use this to keep track of what hours are stale
 -- should be updated on EVERY ingestion
@@ -138,27 +147,108 @@ CREATE TABLE IF NOT EXISTS hourly_stats (
  );
 
 
+-- create a table to help us keep track of what days have been exported
+-- we can use the hourly_stats to determine which are outdated
+-- basically check and see which days have either not been exported
+-- or
+CREATE TABLE IF NOT EXISTS daily_stats (
+  day date NOT NULL UNIQUE
+, sensor_nodes_count bigint NOT NULL
+, sensors_count bigint NOT NULL
+, hours_count bigint NOT NULL
+, measurements_count bigint NOT NULL
+, export_path text
+--, calculated_on timestamp
+, initiated_on timestamp
+, exported_on timestamp
+, metadata jsonb
+);
+
+
+CREATE OR REPLACE FUNCTION has_measurement(timestamptz) RETURNS boolean AS $$
+WITH m AS (
+SELECT datetime
+FROM measurements
+WHERE datetime = $1
+LIMIT 1)
+SELECT COUNT(1) > 0
+FROM m;
+$$ LANGUAGE SQL;
+
+
+CREATE OR REPLACE FUNCTION has_measurement(date) RETURNS boolean AS $$
+WITH m AS (
+SELECT datetime
+FROM measurements
+WHERE datetime > $1
+AND datetime <= $1 + '1day'::interval
+LIMIT 1)
+SELECT COUNT(1) > 0
+FROM m;
+$$ LANGUAGE SQL;
+
 
 -- method to update all the hourly stats
 -- based on the measurements table
+-- MUCH faster than the groupby method
 CREATE OR REPLACE FUNCTION reset_hourly_stats(
   st timestamptz DEFAULT '-infinity'
   , et timestamptz DEFAULT 'infinity'
   )
 RETURNS bigint AS $$
-WITH inserts AS (
-     INSERT INTO hourly_stats (datetime, modified_on)
-     SELECT date_trunc('hour', datetime) as datetime
-     , MAX(added_on) as modified_on
-     FROM measurements
-     WHERE datetime >= st
-     AND datetime <= et
-     GROUP BY 1
-     ON CONFLICT (datetime) DO UPDATE
-     SET modified_on = GREATEST(EXCLUDED.modified_on, hourly_stats.modified_on)
-     RETURNING 1
-   ) SELECT COUNT(1) FROM inserts;
+WITH first_and_last AS (
+SELECT MIN(datetime) as datetime_first
+, MAX(datetime) as datetime_last
+FROM measurements
+WHERE datetime >= st
+AND datetime <= et
+), datetimes AS (
+SELECT generate_series(
+   date_trunc('hour', datetime_first)
+   , date_trunc('hour', datetime_last)
+   , '1hour'::interval) as datetime
+FROM first_and_last
+), inserts AS (
+INSERT INTO hourly_stats (datetime, modified_on)
+SELECT datetime
+, now()
+FROM datetimes
+WHERE has_measurement(datetime)
+ON CONFLICT (datetime) DO UPDATE
+SET modified_on = GREATEST(EXCLUDED.modified_on, hourly_stats.modified_on)
+RETURNING 1)
+SELECT COUNT(1) FROM inserts;
 $$ LANGUAGE SQL;
+
+
+
+CREATE OR REPLACE FUNCTION initialize_daily_stats(
+  sd date DEFAULT '-infinity'
+  , ed date DEFAULT 'infinity'
+  )
+RETURNS bigint AS $$
+WITH first_and_last AS (
+SELECT MIN(datetime) as datetime_first
+, MAX(datetime) as datetime_last
+FROM measurements
+WHERE datetime >= sd
+AND datetime <= ed
+), datetimes AS (
+SELECT generate_series(
+   date_trunc('day', datetime_first)
+   , date_trunc('day', datetime_last)
+   , '1day'::interval) as day
+FROM first_and_last
+), inserts AS (
+INSERT INTO daily_stats (day, sensor_nodes_count, sensors_count, measurements_count, hours_count)
+SELECT day::date, -1, -1, -1, -1
+FROM datetimes
+WHERE has_measurement(day::date)
+ON CONFLICT (day) DO NOTHING
+RETURNING 1)
+SELECT COUNT(1) FROM inserts;
+$$ LANGUAGE SQL;
+
 
 
 -- Table to hold the list of thresholds that we will
@@ -538,7 +628,7 @@ FOR dt IN (
     WHERE datetime < now() - '1hour'::interval
     AND (calculated_on IS NULL
     OR calculated_on < COALESCE(modified_on, added_on))
-    ORDER BY datetime DESC
+    ORDER BY datetime ASC
     LIMIT lmt)
 LOOP
   RAISE NOTICE 'updating hour: %', dt;

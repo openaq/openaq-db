@@ -15,7 +15,7 @@ WHERE jobname = 'run-updates-old';
 SELECT cron.schedule_in_database(
   'update-hourly-data'
   , '*/10 * * * *'
-  , $$CALL update_hourly_data(20)$$
+  , $$CALL update_hourly_data(80)$$
   , 'openaq'
   );
 
@@ -34,6 +34,20 @@ SELECT cron.schedule_in_database(
   , $$CALL update_daily_cached_tables()$$
   , 'openaq'
   );
+
+SELECT cron.schedule_in_database(
+  'calculate-export-stats'
+  , '0 * * * *'
+  , $$SELECT calculate_export_stats('1hour'::interval)$$
+  , 'openaq'
+);
+
+SELECT cron.schedule_in_database(
+  'calculate-partition-stats'
+  , '0 * * * *'
+  , $$SELECT calculate_partition_stats()$$
+  , 'openaq'
+);
 
 -- just in case we start having failed ingestions
 -- we dont want to keep them open

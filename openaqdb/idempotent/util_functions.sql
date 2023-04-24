@@ -562,7 +562,21 @@ END
 $$ LANGUAGE plpgsql;
 
 
+-- from
+-- https://stackoverflow.com/questions/7943233/fast-way-to-discover-the-row-count-of-a-table-in-postgresql
+CREATE OR REPLACE FUNCTION row_count_estimate(ftn text) RETURNS bigint AS $$
+SELECT (CASE WHEN c.reltuples < 0 THEN NULL       -- never vacuumed
+             WHEN c.relpages = 0 THEN float8 '0'  -- empty table
+             ELSE c.reltuples / c.relpages END
+     * (pg_catalog.pg_relation_size(c.oid)
+      / pg_catalog.current_setting('block_size')::int)
+       )::bigint
+FROM   pg_catalog.pg_class c
+WHERE  c.oid = ftn::regclass;
+$$ LANGUAGE SQL;
 
+
+SELECT row_count_estimate('_measurements_internal.hourly_data_202112');
 
 
 SELECT expected_hours('2021-01-01 00:00:00', '2023-01-01 00:00:00', 'month', '01'); -- 1488

@@ -131,3 +131,39 @@ SELECT *
 FROM locations_view;
 CREATE INDEX ON locations_view_cached (id);
 CREATE INDEX ON locations_view_cached USING GIST (geom);
+
+CREATE OR REPLACE VIEW source_stats AS
+WITH nodes AS (
+  SELECT sensor_nodes_id
+  , p.source_name
+  , added_on
+  FROM sensor_nodes n
+  JOIN providers p ON (n.providers_id = p.providers_id)
+), a AS (
+  SELECT source_name
+  , COUNT(1) as n
+  FROM nodes
+  WHERE added_on > now() - '1day'::interval
+  GROUP BY source_name
+), t AS (
+  SELECT source_name
+  , COUNT(1) as n
+  FROM nodes
+  GROUP BY source_name
+), a2 AS (
+  SELECT source_name
+  , COUNT(DISTINCT y.sensor_nodes_id) FILTER (WHERE r.modified_on > now() - '1day'::interval) as n
+  , MAX(r.modified_on) as last_modified
+  FROM sensors_rollup r
+  JOIN sensors s ON (r.sensors_id = s.sensors_id)
+  JOIN sensor_systems y ON (s.sensor_systems_id = y.sensor_systems_id)
+  JOIN nodes n ON (y.sensor_nodes_id = n.sensor_nodes_id)
+  GROUP BY source_name)
+SELECT t.source_name
+, COALESCE(t.n, 0) as nodes_total
+, COALESCE(a.n, 0) as nodes_added
+, COALESCE(a2.n,0) as nodes_active
+, a2.last_modified
+FROM t
+LEFT JOIN a ON (t.source_name = a.source_name)
+LEFT JOIN a2 ON (t.source_name = a2.source_name);
