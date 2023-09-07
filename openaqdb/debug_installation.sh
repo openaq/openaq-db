@@ -11,5 +11,8 @@ psql -XAwqt -U $DATABASE_WRITE_USER -d postgres -c 'SELECT TRUE'
 echo 'Checking if openaq database was created'
 psql -XAwqt -U $DATABASE_WRITE_USER -d openaq -c 'SELECT TRUE'
 
+echo 'Checking if pgbouncer is installed'
+psql -XAwqt -p 6432 -U $DATABASE_WRITE_USER -d openaq -c 'SELECT TRUE'
+
 echo 'Check if the SQL install finished'
-tail /app/openaqdb/openaq_install.log
+tail /var/log/openaq/openaq_install.log

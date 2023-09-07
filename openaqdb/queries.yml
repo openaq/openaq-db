@@ -223,3 +223,27 @@ ingest_stats:
     - ingest_count:
         usage: "COUNTER"
         description: ""
+
+
+
+SELECT status
+	, COUNT(1) as n
+	FROM cron.job_run_details
+	WHERE end_time IS NOT NULL
+	AND end_time > now() - '300s'::interval
+	GROUP BY status;
+
+SELECT j.jobname
+	, EXTRACT(EPOCH FROM age(end_time, start_time)) as secs
+	FROM cron.job_run_details d
+	JOIN cron.job j USING (jobid)
+	WHERE end_time IS NOT NULL
+	AND end_time > now() - '300s'::interval;
+
+
+SELECT j.jobname
+	, 1 as running
+	FROM cron.job_run_details d
+	JOIN cron.job j USING (jobid)
+	WHERE status IS NULL
+	AND end_time IS NULL;

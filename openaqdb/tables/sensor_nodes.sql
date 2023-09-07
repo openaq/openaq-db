@@ -63,16 +63,16 @@ BEGIN
     ;
     INSERT INTO sensor_nodes_history
     SELECT
-        NEW.sensor_nodes_id,
-        NEW.ismobile,
-        NEW.geom,
-        NEW.site_name,
-        NEW.source_name,
-        NEW.city,
-        NEW.country,
-        NEW.metadata,
+        OLD.sensor_nodes_id,
+        OLD.ismobile,
+        OLD.geom,
+        OLD.site_name,
+        OLD.source_name,
+        OLD.city,
+        OLD.country,
+        OLD.metadata,
         now(),
-        NEW.source_id;
+        OLD.source_id;
     RETURN NEW;
 END;
 $$ LANGUAGE PLPGSQL;

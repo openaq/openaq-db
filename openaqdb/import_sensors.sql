@@ -9,14 +9,17 @@ DROP TABLE IF EXISTS sensors_migrate
 
 \timing on
 
-SET statement_timeout TO '8h';
+SET statement_timeout TO '12h';
 
+--\set created_on '''2023-04-25'''::timestamp
 
-DROP TABLE IF EXISTS sensor_nodes_tracking;
+--DROP TABLE IF EXISTS sensor_nodes_tracking;
+
 WITH history AS (
  SELECT sensor_nodes_id
  , created
  FROM sensor_nodes_history
+ --WHERE created > :created_on
  --LIMIT 10000
 )
 SELECT sensor_nodes_id
@@ -27,13 +30,14 @@ SELECT sensor_nodes_id
  FROM history
  GROUP BY 1;
 
--- SELECT sensors_id
--- , COUNT(*) as n
--- , MIN(created) as added_on
--- , MAX(created) as modified_on
--- INTO sensors_tracking
--- FROM sensors_history
--- GROUP BY 1;
+DROP TABLE IF EXISTS sensors_tracking;
+SELECT sensors_id
+, COUNT(*) as n
+, MIN(created) as added_on
+, MAX(created) as modified_on
+INTO sensors_tracking
+FROM sensors_history
+GROUP BY 1;
 
 CREATE TABLE IF NOT EXISTS sensor_nodes_migrate (
     sensor_nodes_id int primary key,
@@ -106,7 +110,7 @@ SELECT s.sensors_id
 , m.measurand
 , m.units
 ,  CASE
-     WHEN s.metadata->>'data_averaging_period_seconds' IS NOT NULL THEN (s.metadata->>'data_averaging_period_seconds')::int
+     WHEN s.metadata->>'data_averaging_period_seconds' IS NOT NULL THEN ROUND((s.metadata->>'data_averaging_period_seconds')::numeric)::int
      WHEN origin ~* 'SENSTATE' THEN 60
      WHEN origin ~* 'CLARITY' THEN 90
      WHEN origin ~* 'PURPLE' THEN 120
@@ -319,6 +323,7 @@ JOIN sensors_import i ON (r.sensors_id = i.sensors_id)
 --WHERE sensor_systems_id = 6654;
 ON CONFLICT DO NOTHING;
 
+
 -- check the nodes map
 -- turkiye should be missing (~71)
 SELECT i.sensor_nodes_id
@@ -401,6 +406,25 @@ WITH reduced AS (
 )
 SELECT COUNT(1)
 FROM reduced;
+
+
+CREATE OR REPLACE VIEW export_logs_migrate AS
+SELECT m.sensor_nodes_id
+, l.day
+, l.records
+, l.measurands
+, l.modified_on
+, l.queued_on
+, l.exported_on
+, metadata->>'Key' as key
+, metadata->>'Bucket' as bucket
+, (metadata->>'sec')::double precision as sec
+, metadata->>'error' as error
+, (metadata->>'version')::int as version
+, m.old_sensor_nodes_id
+FROM open_data_export_logs l
+JOIN sensor_nodes_map m ON (l.sensor_nodes_id = m.old_sensor_nodes_id);
+
 
 -- these data should be able to be imported directly
 

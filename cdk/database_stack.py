@@ -10,6 +10,7 @@ from aws_cdk import (
 from utils import get_latest_snapshot
 from constructs import Construct
 import os
+import sys
 
 
 class DatabaseStack(Stack):
@@ -34,6 +35,7 @@ class DatabaseStack(Stack):
         expose5432: bool = True,
         expose6432: bool = True,
         expose9187: bool = True,
+        expose9100: bool = True,
         httpIpRange: str = '0.0.0.0/0',
         sshIpRange: str = None,
         linuxVersion: str = 'amazon_linux_2',
@@ -103,6 +105,12 @@ class DatabaseStack(Stack):
                 connection=_ec2.Port.tcp(9187)
             )
 
+        if expose9100:
+	        sg.add_ingress_rule(
+                peer=_ec2.Peer.ipv4(httpIpRange),
+                connection=_ec2.Port.tcp(9100)
+            )
+
         # Check if we need to lookup the snapshot id
         if snapshotId == 'LATEST':
             snapshotId = get_latest_snapshot('Scalegrid-LCSDatabase-41094-')
@@ -135,7 +143,7 @@ class DatabaseStack(Stack):
         }
         # clear the env file in case it comes from an existing image
         # in which case it already may have values
-        UserData.add_commands('> /etc/environment')
+        UserData.add_commands('touch -a /etc/environment')
         for key in data:
             value = data[key]
             # Do not export the word `None`
@@ -195,7 +203,7 @@ class DatabaseStack(Stack):
                 'cd /app && unzip -o db.zip -d openaqdb'
             ),
             _ec2.InitCommand.shell_command(
-                '/app/openaqdb/install_database.sh > install_database.log 2>&1'
+                'mkdir -p /var/log/openaq && /app/openaqdb/install_database.sh > /var/log/openaq/install_database.log 2>&1'
             ),
         )
 
@@ -213,8 +221,7 @@ class DatabaseStack(Stack):
                 name=machineImageName,
             )
         else:
-            image = _ec2.MachineImage.latest_amazon_linux(
-                generation=_ec2.AmazonLinuxGeneration.AMAZON_LINUX_2,
+            image = _ec2.MachineImage.latest_amazon_linux2023(
                 cpu_type=_ec2.AmazonLinuxCpuType.X86_64,
             )
 

@@ -5,49 +5,16 @@
 
 -- first/last updated should not be queried directly
 
--- Sensors rollups will store the summary for the sensors
--- entire lifespan
-DROP TABLE IF EXISTS sensors_rollup;
-CREATE SEQUENCE IF NOT EXISTS sensors_rollup_sq START 10;
-CREATE TABLE IF NOT EXISTS sensors_rollup (
-    sensors_id int PRIMARY KEY REFERENCES sensors
-  , datetime_first timestamptz -- first recorded measument datetime (@ingest)
-  , datetime_last timestamptz -- last recorded measurement time (@ingest)
-  , geom_latest geometry -- last recorded point (@ingest)
-  , value_latest double precision -- last recorded measurement (@ingest)
-  , value_count int NOT NULL -- total count of measurements (@ingest, @rollup)
-  , value_avg double precision -- average of all measurements (@ingest, @rollup)
-  , value_sd double precision -- sd of all measurements (@ingest, @rollup)
-  , value_min double precision -- lowest measurement value (@ingest, @rollup)
-  , value_max double precision -- highest value measured (@ingest, @rollup)
-  --, value_p05 double precision -- 5th percentile (@rollup)
-  --, value_p50 double precision -- median (@rollup)
-  --, value_p95 double precision -- 95th percentile (@rollup)
-  , added_on timestamptz NOT NULL DEFAULT now() -- first time measurements were added (@ingest)
-  , modified_on timestamptz NOT NULL DEFAULT now() -- last time we measurements were added (@ingest)
-  --, calculated_on timestamptz -- last time data was rolled up (@rollup)
-);
-
-
-
--- Sensors latest will act as a cache for the most recent
--- sensor value, managed by the ingester
-CREATE TABLE IF NOT EXISTS sensors_latest (
-    sensors_id int PRIMARY KEY NOT NULL REFERENCES sensors
-  , datetime timestamptz
-  , value double precision NOT NULL
-  , lat double precision -- so that nulls dont take up space
-  , lon double precision
-  , modified_on timestamptz DEFAULT now()
-  , fetchlogs_id int -- for debugging issues, no reference constraint
-);
 
 DROP VIEW IF EXISTS locations_view CASCADE;
+
+
 CREATE OR REPLACE VIEW locations_view AS
 -----------------------------
 WITH nodes_instruments AS (
 -----------------------------
   SELECT sn.sensor_nodes_id
+  , bool_or(i.is_monitor) as is_monitor
   , json_agg(json_build_object(
     'id', i.instruments_id
     , 'name', i.label
@@ -56,6 +23,8 @@ WITH nodes_instruments AS (
       , 'name', mc.full_name
       )
   )) as instruments
+  , array_agg(DISTINCT mc.full_name) as manufacturers
+  , array_agg(DISTINCT i.manufacturer_entities_id) as manufacturer_ids
   FROM sensor_nodes sn
   JOIN sensor_systems ss USING (sensor_nodes_id)
   JOIN instruments i USING (instruments_id)
@@ -77,6 +46,8 @@ WITH nodes_instruments AS (
         , 'display_name', m.display
         )
     )) as sensors
+    , array_agg(DISTINCT m.measurand) as parameters
+    , array_agg(DISTINCT m.measurands_id) as parameter_ids
   FROM sensor_nodes sn
   JOIN sensor_systems ss USING (sensor_nodes_id)
   JOIN sensors s USING (sensor_systems_id)
@@ -89,10 +60,7 @@ SELECT
   , site_name as name
   , l.ismobile
   , t.tzid as timezone
--- the following is a placeholder that should
--- be replaced with something at either the instrument
--- or the provider level
-  , COALESCE(l.origin, '') = 'OPENAQ' as ismonitor
+  , ni.is_monitor as ismonitor
   , l.city
   , jsonb_build_object(
       'id', c.countries_id
@@ -102,6 +70,7 @@ SELECT
   , jsonb_build_object(
       'id', oc.entities_id
     , 'name', oc.full_name
+    , 'type', oc.entity_type
     ) as owner
   , jsonb_build_object(
       'id', p.providers_id
@@ -116,21 +85,101 @@ SELECT
   , get_datetime_object(ns.datetime_first, t.tzid) as datetime_first
   , get_datetime_object(ns.datetime_last, t.tzid) as datetime_last
   , l.geom -- exposed for use in spatial queries
+  , l.geom::geography as geog
   , c.countries_id
+  , ns.parameters
+  , ns.parameter_ids
+  , oc.entity_type::text~*'research' as is_analysis
+  , ni.manufacturers
+  , ni.manufacturer_ids
 FROM sensor_nodes l
 JOIN timezones t ON (l.timezones_id = t.gid)
 JOIN countries c ON (c.countries_id = l.countries_id)
-JOIN entities oc ON (oc.entities_id = 1)
+JOIN entities oc ON (oc.entities_id = l.owner_entities_id)
 JOIN providers p ON (p.providers_id = l.providers_id)
 JOIN nodes_instruments ni USING (sensor_nodes_id)
 JOIN nodes_sensors ns USING (sensor_nodes_id);
 
-
-CREATE MATERIALIZED VIEW IF NOT EXISTS locations_view_cached AS
+DROP MATERIALIZED VIEW IF EXISTS locations_view_cached;
+CREATE MATERIALIZED VIEW locations_view_cached AS
 SELECT *
 FROM locations_view;
 CREATE INDEX ON locations_view_cached (id);
 CREATE INDEX ON locations_view_cached USING GIST (geom);
+CREATE INDEX ON locations_view_cached((datetime_last->>'utc') DESC NULLS LAST);
+CREATE INDEX locations_view_cached_is_analysis ON locations_view_cached(is_analysis);
+CREATE INDEX locations_view_cached_entity_onwer ON locations_view_cached((owner->>'type'));
+
+
+DROP VIEW IF EXISTS locations_manufacturers;
+CREATE OR REPLACE VIEW locations_manufacturers AS
+WITH locations AS (
+ SELECT sn.sensor_nodes_id as id
+  , jsonb_build_object(
+     'modelName', i.label
+     , 'manufacturerName', mc.full_name
+  ) as manufacturer
+  FROM sensor_nodes sn
+  JOIN sensor_systems ss ON (ss.sensor_nodes_id = sn.sensor_nodes_id)
+  JOIN instruments i ON (ss.instruments_id = i.instruments_id)
+  JOIN entities mc ON (mc.entities_id = i.manufacturer_entities_id)
+  GROUP BY 1,2)
+  SELECT id
+  , jsonb_agg(manufacturer) as manufacturers
+  FROM locations
+  GROUP BY 1
+  ;
+
+
+DROP MATERIALIZED VIEW IF EXISTS locations_manufacturers_cached;
+CREATE MATERIALIZED VIEW locations_manufacturers_cached AS
+SELECT *
+FROM locations_manufacturers
+ORDER BY id;
+CREATE INDEX IF NOT EXISTS locations_manufacturers_id_idx
+ON locations_manufacturers_cached (id);
+
+
+CREATE OR REPLACE VIEW locations_latest_measurements AS
+  SELECT sn.sensor_nodes_id as id
+  , jsonb_agg(jsonb_build_object(
+      'parameter', m.measurand
+    , 'id', m.measurands_id
+    , 'parameterId', m.measurands_id
+    , 'unit', m.units
+    , 'value', sl.value_latest
+    , 'lastUpdated', sl.datetime_last
+    , 'sourceName', sn.source_name
+    , 'displayName', m.measurand||' '||COALESCE(m.units, 'n/a')
+    , 'count', sl.value_count
+    , 'average', sl.value_avg
+    , 'lastValue', sl.value_latest
+    , 'firstUpdated', sl.datetime_first
+    , 'averagingPeriod', jsonb_build_object(
+       'value', s.data_averaging_period_seconds
+     , 'unit', 'seconds'
+    ))) as measurements
+   , jsonb_agg(jsonb_build_object(
+        'id', m.measurands_id
+       , 'parameter', m.measurand||' '||m.units
+    ,   'count', sl.value_count
+    )) as counts
+    , array_agg(m.measurand) as parameters
+    , SUM(sl.value_count) as total_count
+  FROM sensor_nodes sn
+  JOIN sensor_systems ss USING (sensor_nodes_id)
+  JOIN sensors s USING (sensor_systems_id)
+  JOIN sensors_rollup sl USING (sensors_id)
+  JOIN measurands m USING (measurands_id)
+  GROUP BY sensor_nodes_id;
+
+DROP MATERIALIZED VIEW IF EXISTS locations_latest_measurements_cached;
+CREATE MATERIALIZED VIEW locations_latest_measurements_cached AS
+SELECT *
+FROM locations_latest_measurements
+ORDER BY id;
+CREATE INDEX IF NOT EXISTS locations_latest_measurements_id_idx ON locations_latest_measurements_cached (id);
+
 
 CREATE OR REPLACE VIEW source_stats AS
 WITH nodes AS (
@@ -167,3 +216,53 @@ SELECT t.source_name
 FROM t
 LEFT JOIN a ON (t.source_name = a.source_name)
 LEFT JOIN a2 ON (t.source_name = a2.source_name);
+
+
+
+
+	WITH summary AS (
+  SELECT sn.sensor_nodes_id
+  , MIN(sl.datetime_first) as datetime_first
+  , MAX(sl.datetime_last) as datetime_last -- need to change
+	, COUNT(ss.*) as systems
+	, array_agg(s.sensors_id) as sensors
+	, bool_or(i.is_monitor) as is_monitor
+	, MIN(sn.added_on) as added_on
+  FROM sensor_nodes sn
+  LEFT JOIN sensor_systems ss USING (sensor_nodes_id)
+  LEFT JOIN sensors s USING (sensor_systems_id)
+	LEFT JOIN instruments i USING (instruments_id)
+  LEFT JOIN sensors_rollup sl USING (sensors_id)
+  JOIN measurands m USING (measurands_id)
+	WHERE sl.datetime_first IS NULL
+  GROUP BY sensor_nodes_id)
+	SELECT --*
+	COUNT(*), MIN(sensor_nodes_id), MAX(sensor_nodes_id), MIN(added_on), MAX(added_on)
+	FROM summary
+	WHERE datetime_first IS NULL
+	--AND is_monitor
+--	AND measurements > 0
+	LIMIT 10;
+
+
+	WITH nodes AS (
+  SELECT sn.sensor_nodes_id
+	, s.sensors_id
+  FROM sensor_nodes sn
+  LEFT JOIN sensor_systems ss USING (sensor_nodes_id)
+  LEFT JOIN sensors s USING (sensor_systems_id)
+  LEFT JOIN sensors_rollup sl USING (sensors_id)
+	WHERE sl IS NULL
+	), sensors_check AS (
+	SELECT sensor_nodes_id
+	, sensors_id
+	, has_measurement(sensors_id) as has
+	FROM nodes
+	--AND is_monitor
+--	AND measurements > 0
+--	LIMIT 10
+	)
+	SELECT COUNT(DISTINCT sensor_nodes_id)
+	, COUNT(*)
+	FROM sensors_check
+	WHERE has;

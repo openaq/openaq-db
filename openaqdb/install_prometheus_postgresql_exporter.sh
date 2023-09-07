@@ -2,7 +2,6 @@
 
 # should be run as root
 
-POSTGRES_EXPORTER_VERSION=0.11.1
 DBUSER=$DATABASE_MONITOR_USER
 PASSWORD=$DATABASE_MONITOR_PASSWORD
 QUERIES_FILE=/app/openaqdb/queries.yml
@@ -18,11 +17,6 @@ ALTER USER ${DBUSER} SET SEARCH_PATH TO postgres_exporter,pg_catalog;
 GRANT CONNECT ON DATABASE postgres TO ${DBUSER};
 GRANT pg_monitor TO ${DBUSER};
 EOSQL
-
-    cd /tmp
-    wget https://github.com/prometheus-community/postgres_exporter/releases/download/v${POSTGRES_EXPORTER_VERSION}/postgres_exporter-${POSTGRES_EXPORTER_VERSION}.linux-amd64.tar.gz
-    tar -xvf postgres_exporter-${POSTGRES_EXPORTER_VERSION}.linux-amd64.tar.gz
-    mv postgres_exporter-${POSTGRES_EXPORTER_VERSION}.linux-amd64/postgres_exporter /usr/bin
 
     IFS=
     EXP=$(cat <<EOF
@@ -57,7 +51,7 @@ EOF
 
     systemctl daemon-reload
     systemctl enable postgres-exporter
-    systemctl start postgres-exporte
+    systemctl start postgres-exporter
     systemctl status postgres-exporter
 
 fi

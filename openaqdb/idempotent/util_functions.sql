@@ -79,65 +79,6 @@ CREATE AGGREGATE array_merge_agg(
 );
 
 
-CREATE OR REPLACE FUNCTION get_providers_id(p text)
-RETURNS int LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
-SELECT providers_id
-FROM providers
-WHERE source_name = p
-LIMIT 1;
-$$;
-
-
-CREATE OR REPLACE FUNCTION timezone(g geography)
-RETURNS text LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
-SELECT tzid from timezones WHERE st_intersects(g, geog) LIMIT 1;
-$$;
-CREATE OR REPLACE FUNCTION timezone(g geometry)
-RETURNS text LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
-SELECT tzid from timezones WHERE st_intersects(g::geography, geog) LIMIT 1;
-$$;
-CREATE OR REPLACE FUNCTION get_timezones_id(g geometry)
-RETURNS int LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
-SELECT gid from timezones WHERE st_intersects(g::geography, geog) LIMIT 1;
-$$;
-
-CREATE OR REPLACE FUNCTION get_timezones_id(tz text)
-RETURNS int LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
-SELECT gid
-FROM timezones
-WHERE lower(tzid) = lower(tz)
-LIMIT 1;
-$$;
-
-CREATE OR REPLACE FUNCTION get_countries_id(g geography)
-RETURNS int LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
-SELECT countries_id from countries WHERE st_intersects(g::geometry, geom) LIMIT 1;
-$$;
-CREATE OR REPLACE FUNCTION get_countries_id(g geometry)
-RETURNS int LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
-SELECT countries_id from countries WHERE st_intersects(g, geom) LIMIT 1;
-$$;
-
-CREATE OR REPLACE FUNCTION country(g geography)
-RETURNS text LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
-SELECT iso from countries WHERE st_intersects(g::geometry, geom) LIMIT 1;
-$$;
-CREATE OR REPLACE FUNCTION country(g geometry)
-RETURNS text LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
-SELECT iso from countries WHERE st_intersects(g, geom) LIMIT 1;
-$$;
-
-CREATE OR REPLACE FUNCTION countries(nodes int[])
-RETURNS text[] AS
-$$
-WITH t AS (
-        SELECT DISTINCT country
-        FROM sensor_nodes WHERE
-        sensor_nodes_id = ANY(nodes)
-) SELECT array_agg(country) FROM t;
-$$ LANGUAGE SQL;
-
-
 CREATE OR REPLACE FUNCTION format_timestamp(tstz timestamptz, tz text DEFAULT 'UTC') returns text AS $$
 SELECT replace(format(
                 '%sT%s+%s',
@@ -190,9 +131,6 @@ SELECT json_build_object(
      );
 $$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
 
-
-CREATE EXTENSION IF NOT EXISTS "unaccent";
-
 CREATE OR REPLACE FUNCTION slugify("value" TEXT)
 RETURNS TEXT AS $$
   -- removes accents (diacritic signs) from a given string --
@@ -222,36 +160,6 @@ RETURNS TEXT AS $$
   SELECT "value" FROM "trimmed";
 $$ LANGUAGE SQL STRICT IMMUTABLE;
 
-CREATE OR REPLACE FUNCTION sources_jsonb(s sources)
-RETURNS jsonb AS $$
-SELECT jsonb_strip_nulls(jsonb_build_object(
-    'id', "slug",
-    'name', name,
-    'readme',
-        case when readme is not null then
-        '/v2/sources/readme/' || slug
-        else null end
-) || coalesce(metadata,'{}'::jsonb)) FROM (SELECT s.*) as row;
-$$ LANGUAGE SQL;
-
-CREATE OR REPLACE FUNCTION sources(s int)
-RETURNS jsonb AS $$
-SELECT jsonb_agg(sources_jsonb(sources))
-FROM
-sensor_nodes_sources
-LEFT JOIN sources USING (sources_id)
-WHERE sensor_nodes_id=$1;
-$$ LANGUAGE SQL;
-
-CREATE OR REPLACE FUNCTION sources(s int[])
-RETURNS jsonb AS $$
-SELECT jsonb_agg(distinct sources_jsonb(sources))
-FROM
-sensor_nodes_sources
-LEFT JOIN sources USING (sources_id)
-WHERE sensor_nodes_id= ANY($1);
-$$ LANGUAGE SQL;
-
 CREATE OR REPLACE FUNCTION mfr(sensor_systems_metadata jsonb) RETURNS JSONB AS $$
 WITH t AS (
         SELECT
@@ -268,19 +176,19 @@ WITH t AS (
 $$ LANGUAGE SQL;
 
 
-CREATE OR REPLACE FUNCTION manufacturers(_sensor_nodes_id int)
-RETURNS jsonb AS $$
-WITH t AS (
-        SELECT
-        metadata->>'manufacturer_name' as "manufacturerName",
-        metadata->>'model_name' as "modelName"
-        FROM
-        sensor_systems
-        WHERE
-        sensor_nodes_id=$1
-) SELECT jsonb_strip_nulls(jsonb_agg(to_jsonb(t)))
-FROM t;
-$$ LANGUAGE SQL;
+-- CREATE OR REPLACE FUNCTION manufacturers(_sensor_nodes_id int)
+-- RETURNS jsonb AS $$
+-- WITH t AS (
+--         SELECT
+--         metadata->>'manufacturer_name' as "manufacturerName",
+--         metadata->>'model_name' as "modelName"
+--         FROM
+--         sensor_systems
+--         WHERE
+--         sensor_nodes_id=$1
+-- ) SELECT jsonb_strip_nulls(jsonb_agg(to_jsonb(t)))
+-- FROM t;
+-- $$ LANGUAGE SQL;
 
 CREATE OR REPLACE FUNCTION node_from_sensor(int) returns int AS $$
 WITH ids AS (
@@ -574,6 +482,66 @@ SELECT (CASE WHEN c.reltuples < 0 THEN NULL       -- never vacuumed
 FROM   pg_catalog.pg_class c
 WHERE  c.oid = ftn::regclass;
 $$ LANGUAGE SQL;
+
+
+-- adapted from
+--	https://www.tangramvision.com/blog/how-to-benchmark-postgresql-queries-well#logging-options
+CREATE OR REPLACE FUNCTION bench(query TEXT, iterations INTEGER = 100)
+RETURNS TABLE(
+	avg_n NUMERIC,
+	sd_n NUMERIC,
+	r FLOAT,
+	avg FLOAT,
+	sd FLOAT,
+	 min FLOAT,
+	q1 FLOAT,
+	median FLOAT,
+	q3 FLOAT,
+	p95 FLOAT,
+	max FLOAT
+	) AS $$
+DECLARE
+  _start TIMESTAMPTZ;
+  _end TIMESTAMPTZ;
+  _delta DOUBLE PRECISION;
+	_records INT;
+BEGIN
+  CREATE TEMP TABLE IF NOT EXISTS _bench_results (
+      elapsed DOUBLE PRECISION,
+		  n INT
+  );
+  -- Warm the cache
+  FOR i IN 1..5 LOOP
+    EXECUTE query;
+  END LOOP;
+  -- Run test and collect elapsed time into _bench_results table
+  FOR i IN 1..iterations LOOP
+    _start = clock_timestamp();
+    EXECUTE query INTO _records;
+    _end = clock_timestamp();
+    _delta = 1000 * ( extract(epoch from _end) - extract(epoch from _start) );
+		--GET DIAGNOSTICS _records = ROW_COUNT;
+    INSERT INTO _bench_results VALUES (_delta, _records);
+  END LOOP;
+
+  RETURN QUERY SELECT
+	  avg(n),
+	  stddev(n),
+		corr(n::float, elapsed),
+    avg(elapsed),
+	  stddev(elapsed),
+    min(elapsed),
+    percentile_cont(0.25) WITHIN GROUP (ORDER BY elapsed),
+    percentile_cont(0.5) WITHIN GROUP (ORDER BY elapsed),
+    percentile_cont(0.75) WITHIN GROUP (ORDER BY elapsed),
+    percentile_cont(0.95) WITHIN GROUP (ORDER BY elapsed),
+    max(elapsed)
+    FROM _bench_results;
+  DROP TABLE IF EXISTS _bench_results;
+
+END
+$$
+LANGUAGE plpgsql;
 
 
 SELECT row_count_estimate('_measurements_internal.hourly_data_202112');

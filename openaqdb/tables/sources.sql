@@ -14,3 +14,33 @@ CREATE TABLE sensor_nodes_sources (
     sources_id int references sources(sources_id),
     unique(sensor_nodes_id, sources_id)
 );
+
+CREATE OR REPLACE FUNCTION sources_jsonb(s sources)
+RETURNS jsonb AS $$
+SELECT jsonb_strip_nulls(jsonb_build_object(
+    'id', "slug",
+    'name', name,
+    'readme',
+        case when readme is not null then
+        '/v2/sources/readme/' || slug
+        else null end
+) || coalesce(metadata,'{}'::jsonb)) FROM (SELECT s.*) as row;
+$$ LANGUAGE SQL;
+
+CREATE OR REPLACE FUNCTION sources(s int)
+RETURNS jsonb AS $$
+SELECT jsonb_agg(sources_jsonb(sources))
+FROM
+sensor_nodes_sources
+LEFT JOIN sources USING (sources_id)
+WHERE sensor_nodes_id=$1;
+$$ LANGUAGE SQL;
+
+CREATE OR REPLACE FUNCTION sources(s int[])
+RETURNS jsonb AS $$
+SELECT jsonb_agg(distinct sources_jsonb(sources))
+FROM
+sensor_nodes_sources
+LEFT JOIN sources USING (sources_id)
+WHERE sensor_nodes_id= ANY($1);
+$$ LANGUAGE SQL;

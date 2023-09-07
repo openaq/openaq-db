@@ -120,6 +120,7 @@ CREATE TABLE IF NOT EXISTS instruments (
   , manufacturer_entities_id int NOT NULL REFERENCES entities
   , label text NOT NULL UNIQUE
   , description text
+  , is_monitor boolean NOT NULL DEFAULT 'f'
 );
 
 -- models
@@ -240,17 +241,25 @@ JOIN (SELECT manufacturer_entities_id
 -- use the instrument model sensors to get a list
 -- of all possible sensor units
 
-INSERT INTO entities (entities_id
-, full_name
-, entity_type) VALUES
-(1, 'OpenAQ admin', 'Person'::entity_type)
+INSERT INTO entities (
+  entities_id
+, entity_type
+, full_name) VALUES
+  (1, 'Person', 'OpenAQ admin')
+, (2, 'Person', 'Default Person')
+, (3, 'Organization', 'Default Organization')
+, (4, 'Governmental Organization', 'Default Governmental Organization')
+, (5, 'Research Organization', 'Default Research Organization')
+, (6, 'Community Organization', 'Default Community Organization')
+, (7, 'Private Organization', 'Default Private Organization')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO instruments (instruments_id
 , label
 , description
-, manufacturer_entities_id) VALUES
-(1, 'N/A', 'Instrument is not available', 1)
+, manufacturer_entities_id
+, is_monitor) VALUES
+(1, 'N/A', 'Instrument is not available', 1, 'f')
 ON CONFLICT DO NOTHING;
 
 

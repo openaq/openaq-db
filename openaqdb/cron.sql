@@ -19,6 +19,15 @@ SELECT cron.schedule_in_database(
   , 'openaq'
   );
 
+-- at quarter past each hour calculate
+-- the latest 10 hours that need updating
+SELECT cron.schedule_in_database(
+  'update-hourly-data-latest'
+  , '15 * * * *'
+  , $$CALL update_hourly_data_latest(10)$$
+  , 'openaq'
+  );
+
 -- keep the cached tables up to date
 -- last checked this takes about 2s to run
 SELECT cron.schedule_in_database(
@@ -73,3 +82,29 @@ SELECT cron.schedule_in_database(
   , $$SELECT create_hourly_data_partition(current_date + '1month'::interval)$$
   , 'openaq'
 );
+
+SELECT cron.schedule_in_database(
+  'check-metadata'
+  , '0 * * * *'
+  , $$CALL check_metadata()$$
+  , 'openaq'
+);
+
+WITH jobs AS (
+	SELECT jobid
+	, start_time::date as day
+	, age(end_time, start_time) as duration
+	FROM cron.job_run_details
+	WHERE start_time > current_date - 14
+	AND jobid = 4
+	)
+	SELECT jobid
+	, day
+	, MIN(duration)
+	, MAX(duration)
+	, AVG(duration)
+	, COUNT(1)
+	FROM jobs
+	GROUP BY jobid, day
+	ORDER BY 1,2
+	LIMIT 30;

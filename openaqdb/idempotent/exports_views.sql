@@ -18,6 +18,7 @@ $$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
 -- but will need to be structured the same way
 -- the current setup
 DROP VIEW IF EXISTS measurement_data_export;
+
 CREATE OR REPLACE VIEW measurement_data_export AS
 SELECT s.sensors_id
 , sn.sensor_nodes_id
@@ -32,10 +33,10 @@ SELECT s.sensors_id
 -- utc time for use in query
 , m.datetime
 -- get the current offset
-, sn.metadata->>'timezone' as tz
+, t.tzid as tz
 --, utc_offset(m.datetime, sn.metadata->>'timezone') as utc_offset
 -- local time with tz for exporting
-, format_timestamp(m.datetime, sn.metadata->>'timezone') as datetime_str
+, format_timestamp(m.datetime, t.tzid) as datetime_str
 , p.measurand
 , p.units
 , m.value
@@ -54,7 +55,8 @@ JOIN measurands p ON (s.measurands_id = p.measurands_id)
 JOIN sensor_systems ss ON (s.sensor_systems_id = ss.sensor_systems_id)
 JOIN sensor_nodes sn ON (ss.sensor_nodes_id = sn.sensor_nodes_id)
 JOIN providers pr ON (sn.source_name = pr.source_name)
-WHERE sn.metadata->'timezone' IS NOT NULL
+JOIN timezones t ON (sn.timezones_id = t.gid)
+WHERE t.gid IS NOT NULL
 -- once we have versioning we can uncomment this line
 --AND s.sensors_id NOT IN (SELECT sensors_id FROM versions)
 ;
@@ -127,39 +129,45 @@ SELECT l.sensor_nodes_id
 , l.modified_on
 , queued_on
 , exported_on
-, utc_offset(sn.metadata->>'timezone') as utc_offset
+--, utc_offset(sn.metadata->>'timezone') as utc_offset
+, utc_offset(tz.tzid) as utc_offset
 FROM public.open_data_export_logs l
 JOIN public.sensor_nodes sn ON (l.sensor_nodes_id = sn.sensor_nodes_id)
 JOIN public.timezones tz ON (sn.timezones_id = tz.gid)
-WHERE (queued_on IS NULL -- has not been done yet
-OR l.modified_on > l.queued_on) -- has changed since being done
--- wait until the day is done in that timezone to export data
-AND day < (now() AT TIME ZONE tz.tzid - '72hours'::interval)::date;
+WHERE
+-- older than 72 hours to give us time to collect data
+day < (now() AT TIME ZONE tz.tzid - '72hours'::interval)::date
+-- it has not been exported OR modified after being exported
+AND (exported_on IS NULL OR l.modified_on > exported_on)
+-- Has not been queued OR was queued over an hour ago
+AND (queued_on IS NULL OR age(now(), queued_on) > '1hour'::interval)
+-- No error
+AND NOT has_error
+;
 
 
-  SELECT l.sensor_nodes_id
-  , day
-  , records
-  , measurands
-  , l.modified_on
-  , queued_on
-  , exported_on
-  , utc_offset(sn.metadata->>'timezone') as utc_offset
-  , (l.metadata->>'version')::int as version
-  FROM public.open_data_export_logs l
-  JOIN public.sensor_nodes sn ON (l.sensor_nodes_id = sn.sensor_nodes_id)
-  WHERE
-  -- first the requirements
-  (day < current_date AND age(now(), queued_on) > '1hour'::interval AND l.metadata->>'error' IS NULL)
-  -- now the optional
-  AND (
-    -- its never been exported
-    exported_on IS NULL
-    -- or its been re-queued
-    OR (l.queued_on > l.exported_on)
-    -- or its an older version
-    OR (l.metadata->>'version' IS NULL OR (l.metadata->>'version')::int < 1)
-  ) LIMIT 10;
+CREATE OR REPLACE VIEW pending_location_days2 AS
+SELECT l.sensor_nodes_id
+, day
+, records
+, measurands
+, l.modified_on
+, queued_on
+, exported_on
+, utc_offset(sn.metadata->>'timezone') as utc_offset
+FROM public.open_data_export_logs l
+JOIN public.sensor_nodes sn ON (l.sensor_nodes_id = sn.sensor_nodes_id)
+WHERE
+-- older than 72 hours to give us time to collect data
+day < (now() AT TIME ZONE (sn.metadata->>'timezone')::text - '72hours'::interval)::date
+-- it has not been exported OR modified after being exported
+AND (exported_on IS NULL OR l.modified_on > exported_on)
+-- Has not been queued OR was queued over an hour ago
+AND (queued_on IS NULL OR age(now(), queued_on) > '20min'::interval)
+-- No error
+AND (l.metadata->>'error' IS NULL)
+ORDER BY day ASC
+;
 
 
 
@@ -240,6 +248,30 @@ AND pending.sensor_nodes_id = open_data_export_logs.sensor_nodes_id
 RETURNING pending.*;
 $$ LANGUAGE SQL;
 
+
+CREATE OR REPLACE FUNCTION get_pending2(lmt int = 100) RETURNS TABLE(
+   sensor_nodes_id int
+ , day date
+ , records int
+ , measurands int
+ , modified_on timestamptz
+ , queued_on timestamptz
+ , exported_on timestamptz
+ , utc_offset interval
+ ) AS $$
+WITH pending AS (
+  SELECT *
+  FROM pending_location_days2
+  LIMIT lmt)
+UPDATE public.open_data_export_logs
+SET queued_on = now()
+FROM pending
+WHERE pending.day = open_data_export_logs.day
+AND pending.sensor_nodes_id = open_data_export_logs.sensor_nodes_id
+RETURNING pending.*;
+$$ LANGUAGE SQL;
+
+
 -- used to make the entry as finished
 -- also resets any error that was registered
 CREATE OR REPLACE FUNCTION update_export_log_exported(dy date, id int, n int) RETURNS interval AS $$
@@ -261,3 +293,51 @@ RETURNING exported_on - queued_on;
 $$ LANGUAGE SQL;
 
 COMMIT;
+
+
+
+-- CREATE OR REPLACE VIEW measurement_data_export2 AS
+-- SELECT s.sensors_id
+-- , sn.sensor_nodes_id
+-- , sn.site_name||'-'||ss.sensor_systems_id as location
+-- , p.measurands_id
+-- , s.source_id as sensor
+-- -- utc time for use in query
+-- , m.datetime
+-- -- get the current offset
+-- , t.tzid as tz
+-- --, utc_offset(m.datetime, sn.metadata->>'timezone') as utc_offset
+-- -- local time with tz for exporting
+-- , p.measurand
+-- , p.units
+-- , m.value
+-- , pr.export_prefix as provider
+-- FROM measurements m
+-- JOIN sensors s ON (m.sensors_id = s.sensors_id)
+-- JOIN measurands p ON (s.measurands_id = p.measurands_id)
+-- JOIN sensor_systems ss ON (s.sensor_systems_id = ss.sensor_systems_id)
+-- JOIN sensor_nodes sn ON (ss.sensor_nodes_id = sn.sensor_nodes_id)
+-- JOIN providers pr ON (sn.source_name = pr.source_name)
+-- JOIN timezones t ON (sn.timezones_id = t.gid)
+-- WHERE t.gid IS NOT NULL;
+
+-- \timing on
+
+-- --EXPLAIN ANALYZE
+-- SELECT COUNT(1)
+-- 	FROM measurement_data_export
+-- 	WHERE sensor_nodes_id = 61941
+-- 	AND datetime > timezone(tz, '2023-07-15'::timestamp)
+-- 	AND datetime <= timezone(tz, '2023-07-16'::timestamp);
+
+-- SELECT COUNT(1)
+-- 	FROM measurements
+-- 	WHERE sensors_id = 893551
+-- 	AND datetime > '2023-07-15'::timestamp
+-- 	AND datetime <= '2023-07-16'::timestamp;
+
+
+-- SELECT COUNT(1)
+-- 	FROM measurements
+-- 	WHERE datetime > '2023-04-15 01:00:00'::timestamp
+-- 	AND datetime <= '2023-04-15 02:00:00'::timestamp;
