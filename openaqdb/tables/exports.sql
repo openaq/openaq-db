@@ -132,3 +132,69 @@ FROM providers
 WHERE source_name = p
 LIMIT 1;
 $$;
+
+	CREATE TABLE IF NOT EXISTS providers_stats (
+	providers_id int NOT NULL REFERENCES providers
+, day date NOT NULL
+, sensor_nodes_count int
+, sensors_count int
+, measurements_count int
+, offset_min interval
+, offset_avg interval
+, offset_max interval
+, datetime_min timestamptz
+, datetime_max timestamptz
+, added_on_min timestamptz
+, added_on_max timestamptz
+, UNIQUE(providers_id, day)
+);
+
+		CREATE OR REPLACE FUNCTION update_providers_stats(dt date DEFAULT current_date-1) RETURNS bigint AS $$
+	WITH inserts AS (
+	INSERT INTO providers_stats (
+	  providers_id
+	, day
+	, sensor_nodes_count
+	, sensors_count
+	, measurements_count
+	, offset_min
+	, offset_avg
+	, offset_max
+	, datetime_min
+	, datetime_max
+	, added_on_min
+	, added_on_max
+	)
+	SELECT n.providers_id
+	, m.added_on::date as day
+	, COUNT(DISTINCT n.sensor_nodes_id) as sensor_nodes_count
+	, COUNT(DISTINCT m.sensors_id) as sensors_count
+	, COUNT(1) as measurements_count
+	, MIN(m.added_on - m.datetime) as offset_min
+	, AVG(m.added_on - m.datetime) as offset_avg
+	, MAX(m.added_on - m.datetime) as offset_max
+	, MIN(datetime) as datetime_min
+	, MAX(datetime) as datetime_max
+	, MIN(m.added_on) as added_on_min
+	, MAX(m.added_on) as added_on_max
+	FROM measurements m
+	JOIN sensors s USING (sensors_id)
+	JOIN sensor_systems y USING (sensor_systems_id)
+	JOIN sensor_nodes n USING (sensor_nodes_id)
+	WHERE m.added_on > dt
+	AND m.added_on < dt + 1
+	GROUP BY 1,2
+	ON CONFLICT (providers_id, day) DO UPDATE
+	SET sensor_nodes_count = EXCLUDED.sensor_nodes_count
+	, sensors_count = EXCLUDED.sensors_count
+	, measurements_count = EXCLUDED.measurements_count
+	, offset_min = EXCLUDED.offset_min
+	, offset_avg = EXCLUDED.offset_avg
+	, offset_max = EXCLUDED.offset_max
+	, datetime_min = EXCLUDED.datetime_min
+	, datetime_max = EXCLUDED.datetime_max
+	, added_on_min = EXCLUDED.added_on_min
+	, added_on_max = EXCLUDED.added_on_max
+  RETURNING 1)
+	SELECT COUNT(1) FROM inserts;
+	$$ LANGUAGE SQL;
