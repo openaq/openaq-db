@@ -772,7 +772,7 @@ JOIN sensor_nodes USING (sensor_nodes_id);
 
 DROP VIEW IF EXISTS public.active_locks;
 CREATE OR REPLACE VIEW public.active_locks AS
- SELECT t.schemaname,
+SELECT t.schemaname,
     t.relname,
     l.locktype,
     l.page,
@@ -785,8 +785,19 @@ CREATE OR REPLACE VIEW public.active_locks AS
    FROM pg_locks l
    JOIN pg_stat_all_tables t ON l.relation = t.relid
    JOIN pg_stat_activity a ON (l.pid = a.pid)
-  WHERE t.schemaname <> 'pg_toast'::name AND t.schemaname <> 'pg_catalog'::name
+  WHERE t.schemaname <> 'pg_toast'::name
+  AND t.schemaname <> 'pg_catalog'::name
   ORDER BY t.schemaname, t.relname;
+
+
+SELECT l.pid
+       , COUNT(1)
+   FROM pg_locks l
+   JOIN pg_stat_all_tables t ON l.relation = t.relid
+   JOIN pg_stat_activity a ON (l.pid = a.pid)
+  WHERE t.schemaname <> 'pg_toast'::name
+  AND t.schemaname <> 'pg_catalog'::name
+  GROUP BY 1;
 
 
 
@@ -880,7 +891,7 @@ WHERE init_datetime > now() - '24h'::interval
 GROUP BY 1
 ORDER BY 1 DESC;
 
-
+DROP VIEW IF EXISTS fetchlogs_daily_summary;
 CREATE OR REPLACE VIEW fetchlogs_daily_summary AS
 SELECT init_datetime::date as added_on
 , MIN(age(completed_datetime, init_datetime)) as ingest_time_min
@@ -895,8 +906,34 @@ SELECT init_datetime::date as added_on
 , SUM((has_error)::int) as errors
 , SUM(records) as records
 , SUM(inserted) as inserted
+, SUM(file_size) as total_size
+, ROUND(AVG(file_size)) as avg_size
+, ROUND(SUM(inserted)::numeric/SUM(records)::numeric * 100, 1) as pct
 FROM fetchlogs
 WHERE init_datetime::date >= current_date - 14
+GROUP BY 1
+ORDER BY 1 DESC;
+
+
+CREATE OR REPLACE VIEW fetchlogs_hourly_summary AS
+SELECT date_trunc('hour', init_datetime) as added_on
+, MIN(age(completed_datetime, init_datetime)) as ingest_time_min
+, MAX(age(completed_datetime, init_datetime)) as ingest_time_max
+, AVG(age(completed_datetime, init_datetime)) as ingest_time_avg
+, MIN(age(completed_datetime, loaded_datetime)) as load_time_min
+, MAX(age(completed_datetime, loaded_datetime)) as load_time_max
+, AVG(age(completed_datetime, loaded_datetime)) as load_time_avg
+, COUNT(1) as files_added
+, SUM((completed_datetime IS NULL)::int) as files_pending
+, ROUND(AVG(jobs)) as jobs_avg
+, SUM((has_error)::int) as errors
+, SUM(records) as records
+, SUM(inserted) as inserted
+, SUM(file_size) as total_size
+, ROUND(AVG(file_size)) as avg_size
+, ROUND(SUM(inserted)::numeric/SUM(records)::numeric * 100, 1) as pct
+FROM fetchlogs
+WHERE init_datetime::date >= current_date - 1
 GROUP BY 1
 ORDER BY 1 DESC;
 
@@ -1000,6 +1037,9 @@ JOIN sensor_nodes sn ON (sn.sensor_nodes_id = n.sensor_nodes_id)
 JOIN providers p ON (sn.providers_id = p.providers_id)
 GROUP BY 1
 ORDER BY lower(p.label);
+
+
+
 
 
 

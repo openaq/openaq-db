@@ -1,4 +1,40 @@
 
+-- Sensors rollups will store the summary for the sensors
+-- entire lifespan
+--DROP TABLE IF EXISTS sensors_rollup;
+CREATE SEQUENCE IF NOT EXISTS sensors_rollup_sq START 10;
+CREATE TABLE IF NOT EXISTS sensors_rollup (
+    sensors_id int PRIMARY KEY REFERENCES sensors
+  , datetime_first timestamptz -- first recorded measument datetime (@ingest)
+  , datetime_last timestamptz -- last recorded measurement time (@ingest)
+  , geom_latest geometry -- last recorded point (@ingest)
+  , value_latest double precision -- last recorded measurement (@ingest)
+  , value_count int NOT NULL -- total count of measurements (@ingest, @rollup)
+  , value_avg double precision -- average of all measurements (@ingest, @rollup)
+  , value_sd double precision -- sd of all measurements (@ingest, @rollup)
+  , value_min double precision -- lowest measurement value (@ingest, @rollup)
+  , value_max double precision -- highest value measured (@ingest, @rollup)
+  --, value_p05 double precision -- 5th percentile (@rollup)
+  --, value_p50 double precision -- median (@rollup)
+  --, value_p95 double precision -- 95th percentile (@rollup)
+  , added_on timestamptz NOT NULL DEFAULT now() -- first time measurements were added (@ingest)
+  , modified_on timestamptz NOT NULL DEFAULT now() -- last time we measurements were added (@ingest)
+  --, calculated_on timestamptz -- last time data was rolled up (@rollup)
+);
+
+
+-- Sensors latest will act as a cache for the most recent
+-- sensor value, managed by the ingester
+CREATE TABLE IF NOT EXISTS sensors_latest (
+    sensors_id int PRIMARY KEY NOT NULL REFERENCES sensors
+  , datetime timestamptz
+  , value double precision NOT NULL
+  , lat double precision -- so that nulls dont take up space
+  , lon double precision
+  , modified_on timestamptz DEFAULT now()
+  , fetchlogs_id int -- for debugging issues, no reference constraint
+);
+
 
 CREATE TABLE IF NOT EXISTS rollups (
     groups_id int REFERENCES groups (groups_id),
@@ -65,6 +101,14 @@ USING btree (datetime);
 CREATE UNIQUE INDEX IF NOT EXISTS hourly_data_sensors_id_datetime_idx
 ON hourly_data
 USING btree (sensors_id, datetime);
+
+CREATE INDEX IF NOT EXISTS hourly_data_measurands_id_idx
+ON hourly_data
+USING btree (measurands_id);
+
+CREATE INDEX IF NOT EXISTS hourly_data_measurands_id_datetime_idx
+ON hourly_data
+USING btree (measurands_id, datetime);
 
 -- not really used but here just in case we need it
 CREATE OR REPLACE FUNCTION create_hourly_data_partition(sd date, ed date) RETURNS text AS $$
@@ -158,7 +202,7 @@ CREATE TABLE IF NOT EXISTS daily_stats (
 , hours_count bigint NOT NULL
 , measurements_count bigint NOT NULL
 , export_path text
---, calculated_on timestamp
+, calculated_on timestamp
 , initiated_on timestamp
 , exported_on timestamp
 , metadata jsonb
@@ -182,6 +226,17 @@ SELECT datetime
 FROM measurements
 WHERE datetime > $1
 AND datetime <= $1 + '1day'::interval
+LIMIT 1)
+SELECT COUNT(1) > 0
+FROM m;
+$$ LANGUAGE SQL;
+
+
+CREATE OR REPLACE FUNCTION has_measurement(int) RETURNS boolean AS $$
+WITH m AS (
+SELECT datetime
+FROM measurements
+WHERE sensors_id = $1
 LIMIT 1)
 SELECT COUNT(1) > 0
 FROM m;
@@ -575,7 +630,7 @@ CREATE OR REPLACE FUNCTION calculate_hourly_data(id int, et timestamptz) RETURNS
 SELECT calculate_hourly_data(id, et - '1hour'::interval, et);
 $$ LANGUAGE SQL;
 
--- Helper function to record a how day
+-- Helper function to record a whole day
 CREATE OR REPLACE FUNCTION calculate_hourly_data(id int, dt date) RETURNS TABLE (
   sensors_count bigint
 , measurements_count bigint
@@ -625,7 +680,7 @@ BEGIN
 FOR dt IN (
     SELECT datetime
     FROM hourly_stats
-    WHERE datetime < now() - '1hour'::interval
+    WHERE datetime < now()
     AND (calculated_on IS NULL
     OR calculated_on < COALESCE(modified_on, added_on))
     ORDER BY datetime ASC
@@ -637,3 +692,247 @@ LOOP
 END LOOP;
 END;
 $$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE PROCEDURE update_hourly_data(lag interval, lmt int DEFAULT 1000) AS $$
+DECLARE
+dt timestamptz;
+BEGIN
+FOR dt IN (
+    SELECT datetime
+    FROM hourly_stats
+    WHERE datetime < now() - lag
+    AND (calculated_on IS NULL
+    OR calculated_on < COALESCE(modified_on, added_on))
+    ORDER BY datetime ASC
+    LIMIT lmt)
+LOOP
+  RAISE NOTICE 'updating hour: %', dt;
+  PERFORM update_hourly_data(dt);
+  COMMIT;
+END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE PROCEDURE update_hourly_data_latest(lmt int DEFAULT 1000) AS $$
+DECLARE
+dt timestamptz;
+BEGIN
+FOR dt IN (
+    SELECT datetime
+    FROM hourly_stats
+    WHERE datetime < now()
+    AND (calculated_on IS NULL
+    OR calculated_on < COALESCE(modified_on, added_on))
+    ORDER BY datetime DESC
+    LIMIT lmt)
+LOOP
+  RAISE NOTICE 'updating hour: %', dt;
+  PERFORM update_hourly_data(dt);
+  COMMIT;
+END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE PROCEDURE update_hourly_data_latest(lag interval, lmt int DEFAULT 1000) AS $$
+DECLARE
+dt timestamptz;
+BEGIN
+FOR dt IN (
+    SELECT datetime
+    FROM hourly_stats
+    WHERE datetime < now() - lag
+    AND (calculated_on IS NULL
+    OR calculated_on < COALESCE(modified_on, added_on))
+    ORDER BY datetime DESC
+    LIMIT lmt)
+LOOP
+  RAISE NOTICE 'updating hour: %', dt;
+  PERFORM update_hourly_data(dt);
+  COMMIT;
+END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
+
+DROP TABLE IF EXISTS sensors_rollup_patch;
+SELECT sensors_id
+, MIN(first_datetime) as first_datetime
+, MAX(last_datetime) as last_datetime
+, SUM(value_count) as value_count
+, AVG(value_avg) as value_avg
+, MIN(value_min) as value_min
+, MAX(value_max) as value_max
+INTO sensors_rollup_patch
+FROM hourly_data
+GROUP BY sensors_id;
+
+SELECT COUNT(1)
+FROM sensors_rollup;
+
+INSERT INTO sensors_rollup (
+ sensors_id
+ , datetime_first
+ , datetime_last
+ , value_count
+ , value_avg
+ , value_min
+ , value_max
+ , value_latest
+)
+SELECT s.sensors_id
+ , s.first_datetime
+ , s.last_datetime
+ , s.value_count
+ , s.value_avg
+ , s.value_min
+ , s.value_max
+ , m.value
+FROM sensors_rollup_patch s
+JOIN measurements m ON (s.sensors_id = m.sensors_id AND s.last_datetime = m.datetime)
+ON CONFLICT (sensors_id) DO UPDATE
+SET datetime_first = EXCLUDED.datetime_first
+, datetime_last = EXCLUDED.datetime_last
+, value_count  = EXCLUDED.value_count
+, value_min = EXCLUDED.value_min
+, value_max = EXCLUDED.value_max
+, value_avg = EXCLUDED.value_avg
+, value_latest = COALESCE(sensors_rollup.value_latest, EXCLUDED.value_latest);
+
+
+
+-- when was it last updated
+DO $$
+DECLARE
+	__st timestamptz := '2023-05-18 15:00:00+00'::timestamptz;
+	__et timestamptz;
+	__calculated_on timestamptz := '-infinity';
+	__count bigint;
+BEGIN
+	__st := date_trunc('hour', __st);
+	__et := __st + '1hour'::interval;
+	SELECT calculated_on INTO __calculated_on
+	FROM hourly_stats h
+	WHERE h.datetime = __st;
+	---
+	WITH sensors AS (
+	SELECT sensors_id
+	FROM measurements
+  WHERE datetime > __st
+  AND datetime <= __et
+	AND added_on > __calculated_on
+	GROUP BY sensors_id)
+	SELECT COUNT(1) INTO __count
+	FROM sensors;
+	RAISE NOTICE 'We found % sensors', __count;
+END
+$$;
+
+
+CREATE OR REPLACE FUNCTION calculate_hourly_data_partial(st timestamptz) RETURNS TABLE (
+  sensors_count bigint
+, measurements_count bigint
+) AS $$
+DECLARE
+	--__st timestamptz := '2023-05-18 15:00:00+00'::timestamptz;
+	et timestamptz;
+	__calculated_on timestamptz := '-infinity';
+	__ns bigint;
+	__nm bigint;
+BEGIN
+	st := date_trunc('hour', st);
+	et := st + '1hour'::interval;
+	SELECT calculated_on INTO __calculated_on
+	FROM hourly_stats h
+	WHERE h.datetime = st;
+	---
+	WITH sensors AS (
+	  SELECT sensors_id
+		FROM measurements
+  	WHERE datetime > st
+  	AND datetime <= et
+		AND added_on > __calculated_on
+		GROUP BY sensors_id
+	), hourly AS (
+		SELECT (stats).measurements_count
+		FROM sensors, calculate_hourly_data(sensors_id, st, et) as stats
+	) SELECT COUNT(1)
+	, SUM(h.measurements_count) INTO __ns, __nm
+		FROM hourly h;
+	---
+	RETURN QUERY
+	SELECT COUNT(1) as sensors_count
+	, SUM(value_count) as measurements_count
+	FROM hourly_data
+	WHERE datetime = st;
+END;
+$$ LANGUAGE plpgsql;
+
+
+SELECT * FROM calculate_hourly_data_partial('2023-05-18 14:00:00+00'::timestamptz);
+
+SELECT * FROM calculate_hourly_data('2023-05-18 15:00:00+00'::timestamptz);
+
+CREATE OR REPLACE FUNCTION calculate_hourly_data(st timestamptz, et timestamptz) RETURNS TABLE (
+  sensors_count bigint
+, measurements_count bigint
+) AS $$
+WITH inserted AS (
+INSERT INTO hourly_data (
+  sensors_id
+, measurands_id
+, datetime
+, first_datetime
+, last_datetime
+, value_count
+, value_avg
+, value_sd
+, value_min
+, value_max
+, value_p02
+, value_p25
+, value_p50
+, value_p75
+, value_p98
+, calculated_on)
+SELECT
+  m.sensors_id
+, measurands_id
+, date_trunc('hour', datetime - '1sec'::interval) + '1hour'::interval as datetime
+, MIN(datetime) as first_datetime
+, MAX(datetime) as last_datetime
+, COUNT(1) as value_count
+, AVG(value) as value_avg
+, STDDEV(value) as value_sd
+, MIN(value) as value_min
+, MAX(value) as value_max
+, PERCENTILE_CONT(0.02) WITHIN GROUP(ORDER BY value) as value_p02
+, PERCENTILE_CONT(0.25) WITHIN GROUP(ORDER BY value) as value_p25
+, PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY value) as value_p50
+, PERCENTILE_CONT(0.75) WITHIN GROUP(ORDER BY value) as value_p75
+, PERCENTILE_CONT(0.98) WITHIN GROUP(ORDER BY value) as value_p98
+, current_timestamp as calculated_on
+FROM measurements m
+JOIN sensors s ON (m.sensors_id = s.sensors_id)
+WHERE datetime > date_trunc('hour', st)
+AND datetime <= date_trunc('hour', et)
+GROUP BY 1,2,3
+HAVING COUNT(1) > 0
+ON CONFLICT (sensors_id, measurands_id, datetime) DO UPDATE
+SET first_datetime = EXCLUDED.first_datetime
+, last_datetime = EXCLUDED.last_datetime
+, value_avg = EXCLUDED.value_avg
+, value_min = EXCLUDED.value_min
+, value_max = EXCLUDED.value_max
+, value_count = EXCLUDED.value_count
+, value_p02 = EXCLUDED.value_p02
+, value_p25 = EXCLUDED.value_p25
+, value_p50 = EXCLUDED.value_p50
+, value_p75 = EXCLUDED.value_p75
+, value_p98 = EXCLUDED.value_p98
+, calculated_on = EXCLUDED.calculated_on
+RETURNING value_count)
+SELECT COUNT(1) as sensors_count
+, SUM(value_count) as measurements_count
+FROM inserted;
+$$ LANGUAGE SQL;

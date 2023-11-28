@@ -674,6 +674,16 @@ BEGIN
     COMMIT;
     PERFORM log_performance('update-locations-view', CURRENT_TIMESTAMP);
     ----------------------------------------
+    RAISE NOTICE 'REFRESHING locations_manufacturers_cached';
+    REFRESH MATERIALIZED VIEW locations_manufacturers_cached;
+    COMMIT;
+    PERFORM log_performance('update-locations-manufacturers', CURRENT_TIMESTAMP);
+    ----------------------------------------
+    RAISE NOTICE 'REFRESHING locations_latest_measurements_cached';
+    REFRESH MATERIALIZED VIEW locations_latest_measurements_cached;
+    COMMIT;
+    PERFORM log_performance('update-locations-latest-measurements-view', CURRENT_TIMESTAMP);
+    ----------------------------------------
     RAISE NOTICE 'REFRESHING countries_view_cached';
     REFRESH MATERIALIZED VIEW countries_view_cached;
     COMMIT;
@@ -706,6 +716,57 @@ BEGIN
     PERFORM log_performance('update-range-exceedances', CURRENT_TIMESTAMP);
 END;
 $$ LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE PROCEDURE check_metadata() AS $$
+DECLARE
+BEGIN
+    ----------------------------------------
+    ----------------------------------------
+    RAISE NOTICE 'UPDATING missing providers';
+    UPDATE sensor_nodes
+    SET providers_id = providers.providers_id
+    FROM providers
+    WHERE lower(sensor_nodes.source_name) = lower(providers.source_name)
+    AND sensor_nodes.providers_id IS NULL;
+    ----------------------------------------
+    ----------------------------------------
+    RAISE NOTICE 'UPDATING missing averaging periods';
+    UPDATE sensors
+    SET data_averaging_period_seconds = ROUND((metadata->>'data_averaging_period_seconds')::numeric)::int
+    , data_logging_period_seconds = ROUND((metadata->>'data_averaging_period_seconds')::numeric)::int
+    WHERE data_averaging_period_seconds IS NULL
+    AND metadata->>'data_averaging_period_seconds' IS NOT NULL;
+    ---------
+    UPDATE sensors
+    SET data_averaging_period_seconds = 60
+    , data_logging_period_seconds = 60
+    WHERE source_id ~* 'senstate'
+    AND data_averaging_period_seconds IS NULL;
+    ---------
+    UPDATE sensors
+    SET data_averaging_period_seconds = 120
+    , data_logging_period_seconds = 120
+    WHERE source_id ~* 'purple'
+    AND data_averaging_period_seconds IS NULL;
+    -----------
+    UPDATE sensors
+    SET data_averaging_period_seconds = 90
+    , data_logging_period_seconds = 300
+    WHERE source_id ~* 'clarity';
+    -----------
+    UPDATE sensors
+    SET data_averaging_period_seconds = 3600
+    , data_logging_period_seconds = 3600
+    WHERE source_id ~* 'airgradient';
+    -----------
+    UPDATE sensors
+    SET data_averaging_period_seconds = 1
+    , data_logging_period_seconds = 1
+    WHERE source_id ~* 'habitatmap';
+END;
+$$ LANGUAGE plpgsql;
+
 
 -- run after you have just imported data outside of the fetcher
 CREATE OR REPLACE PROCEDURE intialize_sensors_rollup() AS $$
@@ -768,3 +829,44 @@ BEGIN
   ON CONFLICT DO NOTHING;
 END;
 $$ LANGUAGE plpgsql;
+
+
+SELECT sensors_id
+, MIN(first_datetime) as first_datetime
+, MAX(last_datetime) as last_datetime
+, COUNT(1) as value_count
+, STDDEV(value_avg) as value_sd
+, AVG(value_avg) as value_avg
+INTO TEMP sensors_temp_table
+FROM hourly_data
+GROUP BY 1;
+
+
+CREATE OR REPLACE FUNCTION reset_hourly_stats(
+  st timestamptz DEFAULT '-infinity'
+  , et timestamptz DEFAULT 'infinity'
+  )
+RETURNS bigint AS $$
+WITH first_and_last AS (
+SELECT MIN(datetime) as datetime_first
+, MAX(datetime) as datetime_last
+FROM measurements
+WHERE datetime >= st
+AND datetime <= et
+), datetimes AS (
+SELECT generate_series(
+   date_trunc('hour', datetime_first)
+   , date_trunc('hour', datetime_last)
+   , '1hour'::interval) as datetime
+FROM first_and_last
+), inserts AS (
+INSERT INTO hourly_stats (datetime, modified_on)
+SELECT datetime
+, now()
+FROM datetimes
+WHERE has_measurement(datetime)
+ON CONFLICT (datetime) DO UPDATE
+SET modified_on = GREATEST(EXCLUDED.modified_on, hourly_stats.modified_on)
+RETURNING 1)
+SELECT COUNT(1) FROM inserts;
+$$ LANGUAGE SQL;

@@ -43,6 +43,16 @@ CREATE TABLE IF NOT EXISTS providers_licenses (
   , EXCLUDE USING gist (providers_id WITH = , active_period WITH &&)
 );
 
+-- do the same for sensor_nodes
+CREATE SEQUENCE IF NOT EXISTS sensor_nodes_licenses_sq START 10;
+CREATE TABLE IF NOT EXISTS sensor_nodes_licenses (
+  sensor_nodes_licenses_id int PRIMARY KEY DEFAULT nextval('sensor_nodes_licenses_sq')
+  , licenses_id int NOT NULL REFERENCES licenses
+  , sensor_nodes_id int NOT NULL REFERENCES sensor_nodes
+  , active_period daterange NOT NULL DEFAULT daterange(current_date, 'infinity')
+  , EXCLUDE USING gist (sensor_nodes_id WITH = , active_period WITH &&)
+);
+
 -- if we had a projects table we could do the same
 -- CREATE SEQUENCE IF NOT EXISTS projects_licenses_sq START 10;
 -- CREATE TABLE IF NOT EXISTS projects_licenses (

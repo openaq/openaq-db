@@ -181,3 +181,9 @@ cd pg_cron
 make -j $JOBS
 make install
 # installs to /usr/lib64/pgsql
+
+cd /tmp
+git clone https://github.com/cybertec-postgresql/pg_squeeze.git
+cd pg_squeeze
+make
+make install

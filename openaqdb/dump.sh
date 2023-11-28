@@ -11,15 +11,15 @@ do
 done
 
 if [ -z ${SD} ]; then
-    SD=2023-01-01
+    SD=$(date -d '1 month ago' '+%Y-%m-%d')
 fi;
 
 if [ -z ${ED} ]; then
-    ED=2023-01-01
+    ED=$(date '+%Y-%m-%d')
 fi;
 
 if [ -z ${DUR} ]; then
-    DUR=8h
+    DUR=24h
 fi;
 
 if [ -z ${HOST} ]; then
@@ -29,20 +29,57 @@ fi;
 URL=postgres://$DATABASE_WRITE_USER:$DATABASE_WRITE_PASSWORD@$HOST:5432/$DATABASE_DB
 exists=True
 # s3 bucket and base location to use
-BUCKET=s3://openaq-db-backups/measurements
+BUCKET=s3://openaq-db-backups
 # dump the sensor nodes
+
+psql $URL -XAwtq -c "SELECT * FROM public.sources_from_openaq" \
+    | gzip -f -c \
+    | aws s3 cp - "${BUCKET}/metadata/sources_from_openaq.csv.gz"
+
+psql $URL -XAwtq -c "SELECT * FROM public.origins" \
+    | gzip -f -c \
+    | aws s3 cp - "${BUCKET}/metadata/origins.csv.gz"
+
+psql $URL -XAwtq -c "SELECT * FROM public.groups" \
+    | gzip -f -c \
+    | aws s3 cp - "${BUCKET}/metadata/groups.csv.gz"
+
+psql $URL -XAwtq -c "SELECT * FROM public.analyses" \
+    | gzip -f -c \
+    | aws s3 cp - "${BUCKET}/measurements/analyses.csv.gz"
+
+psql $URL -XAwtq -c "SELECT * FROM public.groups_sensors" \
+    | gzip -f -c \
+    | aws s3 cp - "${BUCKET}/metadata/groups_sensors.csv.gz"
+
+# adding quotes to make it easier to read back in
+psql $URL -XAwtq -c "SELECT '\"'||slug||'\"', '\"'||readme||'\"' FROM public.readmes" \
+    | gzip -f -c \
+    | aws s3 cp - "${BUCKET}/metadata/readmes.csv.gz"
 
 psql $URL -XAwtq -c "SELECT * FROM public.sensor_nodes_migrate" \
     | gzip -f -c \
-    | aws s3 cp - "${BUCKET}/sensor_nodes_v1.csv.gz"
+    | aws s3 cp - "${BUCKET}/metadata/sensor_nodes_v1.csv.gz"
 
 psql $URL -XAwtq -c "SELECT * FROM public.sensor_systems_migrate" \
     | gzip -f -c \
-    | aws s3 cp - "${BUCKET}/sensor_systems_v1.csv.gz"
+    | aws s3 cp - "${BUCKET}/metadata/sensor_systems_v1.csv.gz"
 
 psql $URL -XAwtq -c "SELECT * FROM public.sensors_migrate" \
     | gzip -f -c \
-    | aws s3 cp - "${BUCKET}/sensors_v1.csv.gz"
+    | aws s3 cp - "${BUCKET}/metadata/sensors_v1.csv.gz"
+
+psql $URL -XAwtq -c "SELECT * FROM public.sensor_nodes_map" \
+    | gzip -f -c \
+    | aws s3 cp - "${BUCKET}/metadata/sensor_nodes_map_v1.csv.gz"
+
+psql $URL -XAwtq -c "SELECT * FROM public.sensors_map" \
+    | gzip -f -c \
+    | aws s3 cp - "${BUCKET}/metadata/sensors_map_v1.csv.gz"
+
+psql $URL -XAwtq -c "SELECT * FROM public.export_logs_migrate" \
+    | gzip -f -c \
+    | aws s3 cp - "${BUCKET}/metadata/export_logs_v1.csv.gz"
 
 
 
@@ -85,7 +122,7 @@ GROUP BY 1,2,4,5;
 EOF
    )
     #CMD="SELECT * FROM ${TABLE} WHERE datetime > '${STARTS}'::timestamptz AND datetime <= '${ENDS}'::timestamptz"
-    FILE="${BUCKET}/measurements_v1_${FORMATTED_START}_${FORMATTED_END}.csv.gz"
+    FILE="${BUCKET}/measurements/measurements_v1_${FORMATTED_START}_${FORMATTED_END}.csv.gz"
     # -------------------------------
     exists=$(aws s3 ls $FILE)
     if [ -z "$exists" ]; then

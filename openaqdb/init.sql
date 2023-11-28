@@ -6,6 +6,7 @@ CREATE EXTENSION IF NOT EXISTS btree_gist;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS dblink;
+CREATE EXTENSION IF NOT EXISTS "unaccent"; -- used in slugify
 --END;
 
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
@@ -55,9 +56,11 @@ GRANT ALL ON FUNCTIONS to :DATABASE_WRITE_USER;
 \i tables/deployments.sql
 \i idempotent/util_functions.sql
 \i locations/locations.sql
+\i tables/timezones_views.sql
 \i tables/countries_views.sql
 \i tables/providers_views.sql
 \i tables/parameters_views.sql
+\i tables/versions.sql
 COMMIT;
 
 -- Load immutable views/functions

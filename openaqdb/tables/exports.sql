@@ -12,9 +12,47 @@ CREATE TABLE IF NOT EXISTS open_data_export_logs (
   , queued_on timestamptz                  -- when did we last queue up a change
   , exported_on timestamptz                -- and when did we last finish exporting
   , has_error boolean DEFAULT 'f'
+  , key text
+  , version int
   , metadata json
   , UNIQUE(sensor_nodes_id, day)
 );
+
+
+-- CREATE INDEX IF NOT EXISTS export_logs_exported_on_idx
+-- ON open_data_export_logs USING btree (exported_on);
+
+-- CREATE INDEX IF NOT EXISTS export_logs_queued_on_idx
+-- ON open_data_export_logs USING btree (queued_on);
+
+-- CREATE INDEX IF NOT EXISTS export_logs_modified_on_idx
+-- ON open_data_export_logs USING btree (modified_on);
+
+-- CREATE INDEX IF NOT EXISTS export_logs_day_idx
+-- ON open_data_export_logs USING btree (day);
+
+-- CREATE INDEX IF NOT EXISTS export_logs_exported_on_is_null
+-- ON open_data_export_logs (day) WHERE exported_on IS NULL;
+
+-- CREATE INDEX IF NOT EXISTS export_logs_queued_on_is_null
+-- ON open_data_export_logs (day) WHERE queued_on IS NULL;
+
+-- CREATE INDEX IF NOT EXISTS export_logs_nodes_exported_on_is_null
+-- ON open_data_export_logs (sensor_nodes_id) WHERE exported_on IS NULL;
+
+-- CREATE INDEX IF NOT EXISTS export_logs_nodes_queued_on_is_null
+-- ON open_data_export_logs (sensor_nodes_id) WHERE queued_on IS NULL;
+
+
+-- DROP INDEX IF EXISTS export_logs_exported_on_idx
+-- , export_logs_queued_on_idx
+-- , export_logs_modified_on_idx
+-- , export_logs_day_idx
+-- , export_logs_exported_on_is_null
+-- , export_logs_queued_on_is_null
+-- , export_logs_nodes_exported_on_is_null
+-- , export_logs_nodes_queued_on_is_null
+-- ;
 
 
 CREATE TABLE IF NOT EXISTS export_stats (
@@ -86,3 +124,11 @@ CREATE TABLE IF NOT EXISTS providers (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS providers_source_name_idx ON providers(source_name);
+
+CREATE OR REPLACE FUNCTION get_providers_id(p text)
+RETURNS int LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
+SELECT providers_id
+FROM providers
+WHERE source_name = p
+LIMIT 1;
+$$;
