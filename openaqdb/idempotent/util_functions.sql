@@ -18,7 +18,7 @@ SELECT array_agg(
 ) FROM j;
 $$ LANGUAGE SQL STRICT IMMUTABLE;
 
-CREATE FUNCTION array_distinct(
+CREATE OR REPLACE FUNCTION array_distinct(
       anyarray, -- input array
       boolean DEFAULT false -- flag to ignore nulls
 ) RETURNS anyarray AS $$
@@ -71,38 +71,12 @@ RETURNS anyarray LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
             END;
 $$;
 
+DROP AGGREGATE IF EXISTS public.array_merge_agg (anyarray);
 CREATE AGGREGATE array_merge_agg(
     sfunc = array_merge,
     basetype = anyarray,
     stype = anyarray
 );
-
-CREATE OR REPLACE FUNCTION timezone(g geography)
-RETURNS text LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
-SELECT tzid from timezones WHERE st_intersects(g, geog) LIMIT 1;
-$$;
-CREATE OR REPLACE FUNCTION timezone(g geometry)
-RETURNS text LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
-SELECT tzid from timezones WHERE st_intersects(g::geography, geog) LIMIT 1;
-$$;
-CREATE OR REPLACE FUNCTION country(g geography)
-RETURNS text LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
-SELECT iso from countries WHERE st_intersects(g::geometry, geom) LIMIT 1;
-$$;
-CREATE OR REPLACE FUNCTION country(g geometry)
-RETURNS text LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
-SELECT iso from countries WHERE st_intersects(g, geom) LIMIT 1;
-$$;
-
-CREATE OR REPLACE FUNCTION countries(nodes int[])
-RETURNS text[] AS
-$$
-WITH t AS (
-        SELECT DISTINCT country
-        FROM sensor_nodes WHERE
-        sensor_nodes_id = ANY(nodes)
-) SELECT array_agg(country) FROM t;
-$$ LANGUAGE SQL;
 
 
 CREATE OR REPLACE FUNCTION format_timestamp(tstz timestamptz, tz text DEFAULT 'UTC') returns text AS $$
@@ -116,7 +90,46 @@ SELECT replace(format(
 ;
 $$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
 
-CREATE EXTENSION IF NOT EXISTS "unaccent";
+CREATE OR REPLACE FUNCTION truncate_timestamp(tstz timestamptz, period text)
+RETURNS timestamptz AS $$
+SELECT date_trunc(period, tstz + '11sec'::interval);
+$$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
+
+--DROP FUNCTION IF EXISTS truncate_timestamp(timestamptz, text, text);
+CREATE OR REPLACE FUNCTION truncate_timestamp(tstz timestamptz, period text, tz text)
+RETURNS timestamptz AS $$
+SELECT timezone(tz, date_trunc(period, timezone(tz, tstz + '-1sec'::interval)));
+$$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
+
+--DROP FUNCTION IF EXISTS truncate_timestamp(timestamptz, text, text, interval);
+CREATE OR REPLACE FUNCTION truncate_timestamp(tstz timestamptz, period text, tz text, _offset interval)
+RETURNS timestamptz AS $$
+SELECT timezone(tz, date_trunc(period, timezone(tz, tstz + ('-1sec'::interval + _offset))));
+$$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION truncate_timestamp(tstz timestamptz, period text, _offset interval)
+RETURNS timestamptz AS $$
+SELECT date_trunc(period, tstz + ('-1sec'::interval + _offset));
+$$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION get_datetime_object(tstz timestamptz, tz text DEFAULT 'UTC')
+RETURNS json AS $$
+SELECT json_build_object(
+       'utc', format_timestamp(tstz, 'UTC')
+     , 'local', format_timestamp(tstz, tz)
+     );
+$$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
+
+-- assume that its in the right timezone but not timestamptz
+-- this would happen if we used timezone(tz, timestamptz) to convert something
+CREATE OR REPLACE FUNCTION get_datetime_object(tstz timestamp, tz text DEFAULT 'UTC')
+RETURNS json AS $$
+SELECT json_build_object(
+       'utc', format_timestamp(tstz AT TIME ZONE tz, 'UTC')
+     , 'local', format_timestamp(tstz AT TIME ZONE tz, tz)
+     , 'timezone', tz
+     );
+$$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
 
 CREATE OR REPLACE FUNCTION slugify("value" TEXT)
 RETURNS TEXT AS $$
@@ -147,36 +160,6 @@ RETURNS TEXT AS $$
   SELECT "value" FROM "trimmed";
 $$ LANGUAGE SQL STRICT IMMUTABLE;
 
-CREATE OR REPLACE FUNCTION sources_jsonb(s sources)
-RETURNS jsonb AS $$
-SELECT jsonb_strip_nulls(jsonb_build_object(
-    'id', "slug",
-    'name', name,
-    'readme',
-        case when readme is not null then
-        '/v2/sources/readme/' || slug
-        else null end
-) || coalesce(metadata,'{}'::jsonb)) FROM (SELECT s.*) as row;
-$$ LANGUAGE SQL;
-
-CREATE OR REPLACE FUNCTION sources(s int)
-RETURNS jsonb AS $$
-SELECT jsonb_agg(sources_jsonb(sources))
-FROM
-sensor_nodes_sources
-LEFT JOIN sources USING (sources_id)
-WHERE sensor_nodes_id=$1;
-$$ LANGUAGE SQL;
-
-CREATE OR REPLACE FUNCTION sources(s int[])
-RETURNS jsonb AS $$
-SELECT jsonb_agg(distinct sources_jsonb(sources))
-FROM
-sensor_nodes_sources
-LEFT JOIN sources USING (sources_id)
-WHERE sensor_nodes_id= ANY($1);
-$$ LANGUAGE SQL;
-
 CREATE OR REPLACE FUNCTION mfr(sensor_systems_metadata jsonb) RETURNS JSONB AS $$
 WITH t AS (
         SELECT
@@ -193,19 +176,19 @@ WITH t AS (
 $$ LANGUAGE SQL;
 
 
-CREATE OR REPLACE FUNCTION manufacturers(_sensor_nodes_id int)
-RETURNS jsonb AS $$
-WITH t AS (
-        SELECT
-        metadata->>'manufacturer_name' as "manufacturerName",
-        metadata->>'model_name' as "modelName"
-        FROM
-        sensor_systems
-        WHERE
-        sensor_nodes_id=$1
-) SELECT jsonb_strip_nulls(jsonb_agg(to_jsonb(t)))
-FROM t;
-$$ LANGUAGE SQL;
+-- CREATE OR REPLACE FUNCTION manufacturers(_sensor_nodes_id int)
+-- RETURNS jsonb AS $$
+-- WITH t AS (
+--         SELECT
+--         metadata->>'manufacturer_name' as "manufacturerName",
+--         metadata->>'model_name' as "modelName"
+--         FROM
+--         sensor_systems
+--         WHERE
+--         sensor_nodes_id=$1
+-- ) SELECT jsonb_strip_nulls(jsonb_agg(to_jsonb(t)))
+-- FROM t;
+-- $$ LANGUAGE SQL;
 
 CREATE OR REPLACE FUNCTION node_from_sensor(int) returns int AS $$
 WITH ids AS (
@@ -251,6 +234,10 @@ $$ LANGUAGE SQL;
 
 CREATE OR REPLACE FUNCTION bounds(float, float, float, float) RETURNS geometry AS $$
 SELECT st_setsrid(st_makebox2d(st_makepoint($1,$2),st_makepoint($3,$4)),4326);
+$$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION bbox(geom geometry) RETURNS double precision[] AS $$
+SELECT ARRAY[st_x(geom),st_y(geom),st_x(geom),st_y(geom)];
 $$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
 
 CREATE OR REPLACE FUNCTION pt3857(float, float) RETURNS geometry AS $$
@@ -321,3 +308,248 @@ FROM measurements WHERE sensors_id=(
 ORDER BY datetime DESC LIMIT 1
 ;
 $$ LANGUAGE SQL PARALLEL SAFE;
+
+
+-- From
+-- https://stackoverflow.com/questions/48900936/postgresql-rounding-to-significant-figures
+CREATE OR REPLACE FUNCTION sig_digits(n anyelement, digits int)
+RETURNS numeric
+AS $$
+    SELECT CASE
+        WHEN n=0 THEN 0
+        ELSE round(n::numeric, digits - 1 - floor(log(abs(n)))::int)
+    END
+$$ LANGUAGE sql IMMUTABLE STRICT;
+
+-- need to add the timestamps
+CREATE OR REPLACE FUNCTION calculate_coverage(
+  obs int
+, averaging numeric DEFAULT 3600
+, logging numeric DEFAULT 3600
+, dur numeric DEFAULT 3600
+) RETURNS jsonb AS $$
+SELECT jsonb_build_object(
+       'observed_count', obs
+       , 'observed_interval', make_interval(secs => averaging * obs)
+       , 'expected_count', ROUND(dur/logging)
+       , 'expected_interval', make_interval(secs => (dur/logging) * averaging)
+       , 'percent_complete', ROUND((obs/(dur/logging))*100.0)
+       , 'percent_coverage', ROUND((obs/(dur/averaging))*100.0)
+       );
+$$ LANGUAGE SQL PARALLEL SAFE;
+
+-- A function that will calculate the expected number of hours
+-- for a given period, grouping and factor
+-- this is used when calculating the coverage for the trends
+-- so for two years of data we should expect
+-- 2 years * 31 days * 24 hours for january (MM=01)
+CREATE OR REPLACE FUNCTION expected_hours(
+  sd timestamptz -- start date + hour
+  , ed timestamptz -- end date + hour
+  , tp text -- type interval (e.g. month, day, hour)
+  , gp text -- group/factor value to use in filter
+) RETURNS int AS $$
+DECLARE
+  wf text; -- format to use for filtering
+  sp interval; -- the expected step interval
+  n int;
+  dt text; -- how to truncate sd/ed
+BEGIN
+  IF tp = 'hour' THEN
+    wf := 'HH24';
+    sp := '1day -1sec'::interval;
+    dt := 'day';
+  ELSIF tp = 'day' THEN
+    wf := 'ID';
+    sp := '1day -1sec'::interval;
+    dt := 'day';
+  ELSIF tp = 'month' THEN
+    wf := 'MM';
+    sp := '1month -1sec'::interval;
+    dt := 'month';
+  END IF;
+  SELECT COUNT(1) INTO n
+  FROM generate_series(date_trunc(dt, sd), date_trunc(dt, ed - '1sec'::interval) + sp, '1hour'::interval) d
+  WHERE to_char(d, wf) = gp;
+  RETURN n;
+END
+$$ LANGUAGE plpgsql;
+
+
+-- generates 256 bit UUID v4 based token for api key and validation tokens
+CREATE OR REPLACE FUNCTION generate_token()
+RETURNS text AS $$
+SELECT encode(digest(uuid_generate_v4():: text, 'sha256'), 'hex');
+$$ LANGUAGE SQL;
+
+
+-- a function to create a new user account adding a record into the
+-- users table, entities table and user_entities table
+CREATE OR REPLACE FUNCTION create_user(
+  full_name text
+  , email_address text
+  , password_hash text
+  , ip_address text
+  , entity_type text
+) RETURNS text AS $$
+DECLARE
+  users_id integer;
+  entities_id integer;
+  verification_token text;
+BEGIN
+  INSERT INTO
+    users (email_address, password_hash, added_on, verification_code, expires_on, ip_address, is_active)
+  VALUES
+    (email_address, password_hash, NOW(), generate_token(), (timestamptz (NOW() + INTERVAL '30min') AT TIME ZONE 'UTC') AT TIME ZONE 'UTC', ip_address::cidr, FALSE)
+  RETURNING users.users_id, verification_code INTO users_id, verification_token;
+
+  INSERT INTO
+    entities (full_name, entity_type, added_on)
+  VALUES
+    (full_name, entity_type::entity_type, NOW())
+  RETURNING entities.entities_id INTO entities_id;
+
+  INSERT INTO
+    users_entities (users_id, entities_id)
+  VALUES
+    (users_id, entities_id);
+  RETURN verification_token;
+END
+$$ LANGUAGE plpgsql;
+
+-- a function to generate a user token
+CREATE OR REPLACE FUNCTION get_user_token(
+  _users_id integer
+  , _label text DEFAULT 'general'
+) RETURNS text AS $$
+DECLARE
+  _token text;
+BEGIN
+  UPDATE
+      users
+  SET
+      verified_on = NOW(),
+      is_active = TRUE
+  WHERE
+      users_id = _users_id;
+
+  INSERT INTO
+    user_keys (users_id, token, label, added_on)
+  VALUES
+    (_users_id, generate_token(), _label, NOW())
+  ON CONFLICT (users_id, label) DO UPDATE
+  SET token = EXCLUDED.token
+  RETURNING token INTO _token;
+  RETURN _token;
+END
+$$ LANGUAGE plpgsql;
+
+-- a function to verify a user based on email and verification code
+-- and generate an API key in the user_keys table
+CREATE OR REPLACE FUNCTION verify_email(
+  _email_address text
+  , _verification_code text
+) RETURNS text AS $$
+DECLARE
+  _users_id int;
+  _token text;
+BEGIN
+
+  UPDATE users
+  SET verified_on = NOW()
+  WHERE email_address = _email_address
+  AND verification_code = _verification_code
+  RETURNING users_id INTO _users_id;
+
+  IF _users_id IS NULL THEN
+     RAISE EXCEPTION 'Verification code could not be matched for %', _email_address;
+  END IF;
+  SELECT get_user_token(_users_id) INTO _token;
+  RETURN _token;
+END
+$$ LANGUAGE plpgsql;
+
+
+-- from
+-- https://stackoverflow.com/questions/7943233/fast-way-to-discover-the-row-count-of-a-table-in-postgresql
+CREATE OR REPLACE FUNCTION row_count_estimate(ftn text) RETURNS bigint AS $$
+SELECT (CASE WHEN c.reltuples < 0 THEN NULL       -- never vacuumed
+             WHEN c.relpages = 0 THEN float8 '0'  -- empty table
+             ELSE c.reltuples / c.relpages END
+     * (pg_catalog.pg_relation_size(c.oid)
+      / pg_catalog.current_setting('block_size')::int)
+       )::bigint
+FROM   pg_catalog.pg_class c
+WHERE  c.oid = ftn::regclass;
+$$ LANGUAGE SQL;
+
+
+-- adapted from
+--	https://www.tangramvision.com/blog/how-to-benchmark-postgresql-queries-well#logging-options
+CREATE OR REPLACE FUNCTION bench(query TEXT, iterations INTEGER = 100)
+RETURNS TABLE(
+	avg_n NUMERIC,
+	sd_n NUMERIC,
+	r FLOAT,
+	avg FLOAT,
+	sd FLOAT,
+	 min FLOAT,
+	q1 FLOAT,
+	median FLOAT,
+	q3 FLOAT,
+	p95 FLOAT,
+	max FLOAT
+	) AS $$
+DECLARE
+  _start TIMESTAMPTZ;
+  _end TIMESTAMPTZ;
+  _delta DOUBLE PRECISION;
+	_records INT;
+BEGIN
+  CREATE TEMP TABLE IF NOT EXISTS _bench_results (
+      elapsed DOUBLE PRECISION,
+		  n INT
+  );
+  -- Warm the cache
+  FOR i IN 1..5 LOOP
+    EXECUTE query;
+  END LOOP;
+  -- Run test and collect elapsed time into _bench_results table
+  FOR i IN 1..iterations LOOP
+    _start = clock_timestamp();
+    EXECUTE query INTO _records;
+    _end = clock_timestamp();
+    _delta = 1000 * ( extract(epoch from _end) - extract(epoch from _start) );
+		--GET DIAGNOSTICS _records = ROW_COUNT;
+    INSERT INTO _bench_results VALUES (_delta, _records);
+  END LOOP;
+
+  RETURN QUERY SELECT
+	  avg(n),
+	  stddev(n),
+		corr(n::float, elapsed),
+    avg(elapsed),
+	  stddev(elapsed),
+    min(elapsed),
+    percentile_cont(0.25) WITHIN GROUP (ORDER BY elapsed),
+    percentile_cont(0.5) WITHIN GROUP (ORDER BY elapsed),
+    percentile_cont(0.75) WITHIN GROUP (ORDER BY elapsed),
+    percentile_cont(0.95) WITHIN GROUP (ORDER BY elapsed),
+    max(elapsed)
+    FROM _bench_results;
+  DROP TABLE IF EXISTS _bench_results;
+
+END
+$$
+LANGUAGE plpgsql;
+
+
+SELECT row_count_estimate('_measurements_internal.hourly_data_202112');
+
+
+SELECT expected_hours('2021-01-01 00:00:00', '2023-01-01 00:00:00', 'month', '01'); -- 1488
+SELECT expected_hours('2022-01-01 00:00:00', '2023-01-01 00:00:00', 'month', '01'); -- 744
+SELECT expected_hours('2022-01-01 00:00:00', '2023-01-01 00:00:00', 'hour', '01'); -- 365
+SELECT expected_hours('2022-01-01 00:00:00', '2023-01-01 00:00:00', 'day', '1'); -- 1248
+
+SELECT expected_hours('2021-01-01 00:00:00', '2023-01-01 00:00:00', 'month', '01') * 3600;

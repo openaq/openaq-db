@@ -37,8 +37,6 @@ CREATE OR REPLACE FUNCTION update_sources() RETURNS VOID AS $$
     ;
 
 
-
-
     -- OpenAQ
     WITH t AS (
         select distinct jsonb_array_elements(metadata->'attribution') as j
@@ -114,7 +112,9 @@ CREATE OR REPLACE FUNCTION update_groups() RETURNS VOID AS $$
 
     -- Each sensor_node
     INSERT INTO groups (type, name, subtitle)
-    SELECT 'node', sensor_nodes_id::text, site_name
+    SELECT 'node'
+    , sensor_nodes_id::text
+    , site_name
     FROM sensor_nodes
     ON CONFLICT (type, name) DO
     UPDATE
@@ -158,14 +158,15 @@ CREATE OR REPLACE FUNCTION update_groups() RETURNS VOID AS $$
 
     -- each aqdc organization
     INSERT INTO groups(type, name, subtitle)
-    SELECT DISTINCT 'organization', slugify(sources.metadata->>'organization'), sources.metadata->>'organization'
+    SELECT DISTINCT 'organization'
+    , slugify(sources.metadata->>'organization')
+    , sources.metadata->>'organization'
     FROM sources
     JOIN sensor_nodes_sources USING (sources_id)
     JOIN sensor_nodes USING (sensor_nodes_id)
     WHERE origin='AQDC' and sources.metadata ? 'organization'
     ON CONFLICT DO NOTHING
     ;
-
 
     --add country sensors
     INSERT INTO groups_sensors (groups_id, sensors_id)
@@ -175,7 +176,7 @@ CREATE OR REPLACE FUNCTION update_groups() RETURNS VOID AS $$
     FROM sensor_nodes
     JOIN sensor_systems USING (sensor_nodes_id)
     JOIN sensors s USING (sensor_systems_id)
-    JOIN groups ON (country=name)
+    JOIN groups ON (country=name AND groups.type = 'country')
     ON CONFLICT DO NOTHING
     ;
 
@@ -229,7 +230,6 @@ CREATE OR REPLACE FUNCTION update_groups() RETURNS VOID AS $$
 $$ LANGUAGE SQL;
 
 
-
 CREATE OR REPLACE FUNCTION rollups_daily(
     _start timestamptz = now()
 )
@@ -242,15 +242,15 @@ _st timestamptz := date_trunc('day', _start);
 _et timestamptz := date_trunc('day', _start) + '1 day'::interval - '1 second'::interval;
 BEGIN
 RAISE NOTICE 'Updating daily Rollups  %  --- %', _start, clock_timestamp();
-RAISE NOTICE '% %', _st, _et;
-RAISE NOTICE 'Deleting %', clock_timestamp();
+--RAISE NOTICE '% %', _st, _et;
+--RAISE NOTICE 'Deleting %', clock_timestamp();
     DELETE FROM rollups
     WHERE
         rollup='day'
         AND
         st=_st
     ;
-RAISE NOTICE 'Creating temp table by sensor %', clock_timestamp();
+--RAISE NOTICE 'Creating temp table by sensor %', clock_timestamp();
 CREATE TEMP TABLE dailyrolluptemp_by_sensor AS
 SELECT
         sensors_id,
@@ -270,11 +270,13 @@ SELECT
     FROM measurements
     JOIN groups_sensors USING (sensors_id)
     JOIN sensors USING (sensors_id)
-    WHERE
-        datetime >= _st and datetime <= _et
+    WHERE datetime >= _st
+    AND datetime <= _et
     GROUP BY 1,2,3,4
         ;
-RAISE NOTICE 'Creating temp table by group %', clock_timestamp();
+
+--RAISE NOTICE 'Created temp table by sensor from % to % - %: %', _st, _et, clock_timestamp(), (SELECT COUNT(1) FROM dailyrolluptemp_by_sensor);
+--RAISE NOTICE 'Creating temp table by group %', clock_timestamp();
 
     CREATE TEMP TABLE dailyrolluptemp AS
     SELECT
@@ -301,7 +303,7 @@ RAISE NOTICE 'Creating temp table by group %', clock_timestamp();
         ;
 
 
-    RAISE NOTICE 'inserting %', clock_timestamp();
+    RAISE NOTICE 'inserting % records - %', (SELECT COUNT(1) FROM dailyrolluptemp), clock_timestamp();
 
     INSERT INTO rollups (
         groups_id,
@@ -328,6 +330,17 @@ RAISE NOTICE 'Creating temp table by group %', clock_timestamp();
 END;
 $$;
 
+-- Added just to make it easier to rebuild the daily rollups during dev
+DROP FUNCTION IF EXISTS rollups_daily_full();
+CREATE OR REPLACE FUNCTION rollups_daily_full() RETURNS VOID AS $$
+WITH days AS (
+  SELECT date_trunc('day', datetime - '1sec'::interval) as day
+  FROM measurements
+  GROUP BY date_trunc('day', datetime - '1sec'::interval)
+)
+SELECT rollups_daily(day)
+FROM days;
+$$ LANGUAGE SQL;
 
 
 CREATE OR REPLACE FUNCTION rollups_monthly(
@@ -517,37 +530,49 @@ DECLARE
 _st timestamptz;
 _et timestamptz;
 t timestamptz;
+st timestamptz;
 BEGIN
+
+    SELECT current_timestamp INTO st;
+
     SELECT (config->>'start')::timestamptz INTO STRICT _st;
     SELECT (config->>'end')::timestamptz INTO STRICT _et;
 
-    _st:=coalesce(_st, now() - '1 days'::interval);
-    _et:=coalesce(_et, now());
+    _st:=date_trunc('day',coalesce(_st, now() - '1 days'::interval));
+    _et:=date_trunc('day',coalesce(_et, now()));
 
     RAISE NOTICE 'updating timezones';
-    update sensor_nodes
-    set metadata = metadata || jsonb_build_object('timezone',timezone(geom))
-    where not metadata ? 'timezone' and geom is not null;
+    UPDATE sensor_nodes
+    SET timezones_id = get_timezones_id(geom)
+    WHERE geom IS NOT NULL
+    AND timezones_id IS NULL;
 
-    update sensor_nodes
-    set metadata = metadata || jsonb_build_object('timezone',timezone(sn_lastpoint(sensor_nodes_id)))
-    where not metadata ? 'timezone' and geom is null and ismobile;
+    -- sn_lastpoint pulls directly from measurements at the moment
+    UPDATE sensor_nodes
+    SET timezones_id = get_timezones_id(sn_lastpoint(sensor_nodes_id))
+    WHERE geom IS NULL
+    AND ismobile
+    AND timezones_id IS NULL;
+
+    SELECT log_performance('update-timezone', st) INTO st;
 
     RAISE NOTICE 'updating countries';
-    update sensor_nodes set country = country(geom) where country is null and geom is not null;
+    update sensor_nodes set country = country(geom)
+    where (country is null OR country = '99') and geom is not null;
     update sensor_nodes set country = country(sn_lastpoint(sensor_nodes_id))
     where country is null and geom is null and ismobile;
     COMMIT;
-
-
+    SELECT log_performance('update-countries', st) INTO st;
 
     RAISE NOTICE 'Updating sources Tables';
     PERFORM update_sources();
     COMMIT;
+    SELECT log_performance('update-sources', st) INTO st;
 
     RAISE NOTICE 'Updating Groups Tables';
     PERFORM update_groups();
     COMMIT;
+    SELECT log_performance('update-groups', st) INTO st;
 
     FOR t IN
         (SELECT g FROM generate_series(_st, _et, '1 day'::interval) as g)
@@ -557,12 +582,16 @@ BEGIN
         COMMIT;
     END LOOP;
 
+    SELECT log_performance('update-daily-rollups', st) INTO st;
+
     FOR t IN
         (SELECT g FROM generate_series(_st, _et, '1 month'::interval) as g)
     LOOP
         PERFORM rollups_monthly(t);
         COMMIT;
     END LOOP;
+
+    SELECT log_performance('update-monthly-rollups', st) INTO st;
 
     FOR t IN
         (SELECT g FROM generate_series(_st, _et, '1 year'::interval) as g)
@@ -571,37 +600,273 @@ BEGIN
         COMMIT;
     END LOOP;
 
+    SELECT log_performance('update-yearly-rollups', st) INTO st;
+
     PERFORM rollups_total();
     COMMIT;
+    SELECT log_performance('update-total-rollups', st) INTO st;
 
     RAISE NOTICE 'REFRESHING sensors_first_last';
     REFRESH MATERIALIZED VIEW sensors_first_last;
     COMMIT;
+    SELECT log_performance('update-sensors-first-last', st) INTO st;
 
     RAISE NOTICE 'REFRESHING sensor_nodes_json';
     REFRESH MATERIALIZED VIEW sensor_nodes_json;
     COMMIT;
+    SELECT log_performance('update-sensor-nodes-json', st) INTO st;
 
     RAISE NOTICE 'REFRESHING groups_view';
     REFRESH MATERIALIZED VIEW groups_view;
     COMMIT;
+    SELECT log_performance('update-groups-view', st) INTO st;
 
     RAISE NOTICE 'REFRESHING sensor_stats';
     REFRESH MATERIALIZED VIEW sensor_stats;
     COMMIT;
+    SELECT log_performance('update-sensor-stats', st) INTO st;
+
+    RAISE NOTICE 'REFRESHING city_stats';
+    REFRESH MATERIALIZED VIEW city_stats;
+    COMMIT;
+    SELECT log_performance('update-city-stats', st) INTO st;
+
+    RAISE NOTICE 'REFRESHING country_stats';
+    REFRESH MATERIALIZED VIEW country_stats;
+    COMMIT;
+    SELECT log_performance('update-country-stats', st) INTO st;
 
     RAISE NOTICE 'REFRESHING locations_base_v2';
     REFRESH MATERIALIZED VIEW locations_base_v2;
     COMMIT;
+    SELECT log_performance('update-locations-base', st) INTO st;
 
     RAISE NOTICE 'REFRESHING locations';
     REFRESH MATERIALIZED VIEW locations;
     COMMIT;
+    SELECT log_performance('update-locations', st) INTO st;
 
     RAISE NOTICE 'REFRESHING measurements_fastapi_base';
     REFRESH MATERIALIZED VIEW measurements_fastapi_base;
     COMMIT;
-
+    SELECT log_performance('update-measurements-base', st) INTO st;
 
 END;
 $$;
+
+
+DROP PROCEDURE IF EXISTS run_updates_full();
+CREATE OR REPLACE PROCEDURE run_updates_full() AS $$
+DECLARE
+_start timestamptz;
+BEGIN
+SELECT MIN(datetime) INTO _start FROM measurements;
+CALL run_updates(NULL, jsonb_build_object('start', _start));
+END;
+$$ LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE PROCEDURE update_cached_tables() AS $$
+DECLARE
+BEGIN
+    RAISE NOTICE 'REFRESHING locations_view_cached';
+    REFRESH MATERIALIZED VIEW locations_view_cached;
+    COMMIT;
+    PERFORM log_performance('update-locations-view', CURRENT_TIMESTAMP);
+    ----------------------------------------
+    RAISE NOTICE 'REFRESHING locations_manufacturers_cached';
+    REFRESH MATERIALIZED VIEW locations_manufacturers_cached;
+    COMMIT;
+    PERFORM log_performance('update-locations-manufacturers', CURRENT_TIMESTAMP);
+    ----------------------------------------
+    RAISE NOTICE 'REFRESHING locations_latest_measurements_cached';
+    REFRESH MATERIALIZED VIEW locations_latest_measurements_cached;
+    COMMIT;
+    PERFORM log_performance('update-locations-latest-measurements-view', CURRENT_TIMESTAMP);
+    ----------------------------------------
+    RAISE NOTICE 'REFRESHING countries_view_cached';
+    REFRESH MATERIALIZED VIEW countries_view_cached;
+    COMMIT;
+    PERFORM log_performance('update-countries-view', CURRENT_TIMESTAMP);
+    ----------------------------------------
+    RAISE NOTICE 'REFRESHING providers_view_cached';
+    REFRESH MATERIALIZED VIEW providers_view_cached;
+    COMMIT;
+    PERFORM log_performance('update-providers-view', CURRENT_TIMESTAMP);
+    ----------------------------------------
+    RAISE NOTICE 'REFRESHING parameters_view_cached';
+    REFRESH MATERIALIZED VIEW parameters_view_cached;
+    COMMIT;
+    PERFORM log_performance('update-parameters-view', CURRENT_TIMESTAMP);
+END;
+$$ LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE PROCEDURE update_daily_cached_tables() AS $$
+DECLARE
+BEGIN
+    RAISE NOTICE 'REFRESHING sensor_node_daily_exceedances';
+    REFRESH MATERIALIZED VIEW CONCURRENTLY sensor_node_daily_exceedances;
+    COMMIT;
+    PERFORM log_performance('update-daily-exceedances', CURRENT_TIMESTAMP);
+    ----------------------------------------
+    RAISE NOTICE 'REFRESHING sensor_node_range_exceedances';
+    REFRESH MATERIALIZED VIEW CONCURRENTLY sensor_node_range_exceedances;
+    COMMIT;
+    PERFORM log_performance('update-range-exceedances', CURRENT_TIMESTAMP);
+END;
+$$ LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE PROCEDURE check_metadata() AS $$
+DECLARE
+BEGIN
+    ----------------------------------------
+    ----------------------------------------
+    RAISE NOTICE 'UPDATING missing providers';
+    UPDATE sensor_nodes
+    SET providers_id = providers.providers_id
+    FROM providers
+    WHERE lower(sensor_nodes.source_name) = lower(providers.source_name)
+    AND sensor_nodes.providers_id IS NULL;
+    ----------------------------------------
+    ----------------------------------------
+    RAISE NOTICE 'UPDATING missing averaging periods';
+    UPDATE sensors
+    SET data_averaging_period_seconds = ROUND((metadata->>'data_averaging_period_seconds')::numeric)::int
+    , data_logging_period_seconds = ROUND((metadata->>'data_averaging_period_seconds')::numeric)::int
+    WHERE data_averaging_period_seconds IS NULL
+    AND metadata->>'data_averaging_period_seconds' IS NOT NULL;
+    ---------
+    UPDATE sensors
+    SET data_averaging_period_seconds = 60
+    , data_logging_period_seconds = 60
+    WHERE source_id ~* 'senstate'
+    AND data_averaging_period_seconds IS NULL;
+    ---------
+    UPDATE sensors
+    SET data_averaging_period_seconds = 120
+    , data_logging_period_seconds = 120
+    WHERE source_id ~* 'purple'
+    AND data_averaging_period_seconds IS NULL;
+    -----------
+    UPDATE sensors
+    SET data_averaging_period_seconds = 90
+    , data_logging_period_seconds = 300
+    WHERE source_id ~* 'clarity';
+    -----------
+    UPDATE sensors
+    SET data_averaging_period_seconds = 3600
+    , data_logging_period_seconds = 3600
+    WHERE source_id ~* 'airgradient';
+    -----------
+    UPDATE sensors
+    SET data_averaging_period_seconds = 1
+    , data_logging_period_seconds = 1
+    WHERE source_id ~* 'habitatmap';
+END;
+$$ LANGUAGE plpgsql;
+
+
+-- run after you have just imported data outside of the fetcher
+CREATE OR REPLACE PROCEDURE intialize_sensors_rollup() AS $$
+DECLARE
+BEGIN
+  CREATE TEMP TABLE sensors_missing_from_rollup AS
+  -- Get a list of all sensors missing data
+  WITH missing AS (
+    SELECT sensors_id
+    FROM sensors
+    LEFT JOIN sensors_rollup s USING (sensors_id)
+    WHERE s.sensors_id IS NULL
+  ), data AS (
+  -- use that list to aggregate based on the measurements
+    SELECT m.sensors_id
+    , MIN(datetime) as datetime_first
+    , MAX(datetime) as datetime_last
+    , COUNT(1) as value_count
+    , AVG(value) as value_avg
+    , STDDEV(value) as value_sd
+    , MIN(value) as value_min
+    , MAX(value) as value_max
+    FROM missing m
+    JOIN measurements USING (sensors_id)
+    GROUP BY 1)
+  -- now get the latest value
+  SELECT d.sensors_id
+  , d.datetime_first
+  , d.datetime_last
+  , d.value_count
+  , d.value_avg
+  , d.value_sd
+  , d.value_min
+  , d.value_max
+  , m.value as value_latest
+  FROM data d
+  JOIN measurements m ON (d.datetime_last = m.datetime AND d.sensors_id = m.sensors_id);
+  -- Now add those to the rollups
+  INSERT INTO sensors_rollup (
+  sensors_id
+  , datetime_first
+  , datetime_last
+  , value_count
+  , value_avg
+  , value_sd
+  , value_min
+  , value_max
+  , value_latest)
+  SELECT
+  sensors_id
+  , datetime_first
+  , datetime_last
+  , value_count
+  , value_avg
+  , value_sd
+  , value_min
+  , value_max
+  , value_latest
+  FROM sensors_missing_from_rollup
+  ON CONFLICT DO NOTHING;
+END;
+$$ LANGUAGE plpgsql;
+
+
+SELECT sensors_id
+, MIN(first_datetime) as first_datetime
+, MAX(last_datetime) as last_datetime
+, COUNT(1) as value_count
+, STDDEV(value_avg) as value_sd
+, AVG(value_avg) as value_avg
+INTO TEMP sensors_temp_table
+FROM hourly_data
+GROUP BY 1;
+
+
+CREATE OR REPLACE FUNCTION reset_hourly_stats(
+  st timestamptz DEFAULT '-infinity'
+  , et timestamptz DEFAULT 'infinity'
+  )
+RETURNS bigint AS $$
+WITH first_and_last AS (
+SELECT MIN(datetime) as datetime_first
+, MAX(datetime) as datetime_last
+FROM measurements
+WHERE datetime >= st
+AND datetime <= et
+), datetimes AS (
+SELECT generate_series(
+   date_trunc('hour', datetime_first)
+   , date_trunc('hour', datetime_last)
+   , '1hour'::interval) as datetime
+FROM first_and_last
+), inserts AS (
+INSERT INTO hourly_stats (datetime, modified_on)
+SELECT datetime
+, now()
+FROM datetimes
+WHERE has_measurement(datetime)
+ON CONFLICT (datetime) DO UPDATE
+SET modified_on = GREATEST(EXCLUDED.modified_on, hourly_stats.modified_on)
+RETURNING 1)
+SELECT COUNT(1) FROM inserts;
+$$ LANGUAGE SQL;

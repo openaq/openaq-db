@@ -6,8 +6,8 @@ CREATE TABLE  IF NOT EXISTS sensor_systems (
     source_id text
 );
 
-CREATE INDEX sensor_systems_sensor_nodes_id_idx ON sensor_systems USING btree (sensor_nodes_id);
-CREATE UNIQUE INDEX sensor_systems_sensor_nodes_id_source_id_idx ON sensor_systems USING btree (sensor_nodes_id, source_id);
+CREATE INDEX IF NOT EXISTS  sensor_systems_sensor_nodes_id_idx ON sensor_systems USING btree (sensor_nodes_id);
+CREATE UNIQUE INDEX IF NOT EXISTS  sensor_systems_sensor_nodes_id_source_id_idx ON sensor_systems USING btree (sensor_nodes_id, source_id);
 
 ALTER TABLE sensor_systems ADD CONSTRAINT sn_ss_fkey
     FOREIGN KEY (sensor_nodes_id)

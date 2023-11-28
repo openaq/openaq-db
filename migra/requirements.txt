@@ -1,0 +1,2 @@
+migra[pg]
+pydantic[dotenv]

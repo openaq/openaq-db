@@ -1,0 +1,8 @@
+.env*
+cdk.out/
+cdk.context.json
+__pycache__/
+/openaqdb/lookups/sensor_nodes.sql
+migra/env/
+migra/migrate.sql
+/cdk/venv/
