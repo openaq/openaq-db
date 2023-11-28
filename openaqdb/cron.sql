@@ -90,6 +90,14 @@ SELECT cron.schedule_in_database(
   , 'openaq'
 );
 
+SELECT cron.schedule_in_database(
+  'update-providers-stats'
+  , '0 1 * * *'
+  , $$SELECT update_providers_stats()$$
+  , 'openaq'
+  );
+
+
 WITH jobs AS (
 	SELECT jobid
 	, start_time::date as day
