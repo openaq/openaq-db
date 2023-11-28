@@ -60,6 +60,7 @@ GRANT ALL ON FUNCTIONS to :DATABASE_WRITE_USER;
 \i tables/countries_views.sql
 \i tables/providers_views.sql
 \i tables/parameters_views.sql
+\i tables/versions.sql
 COMMIT;
 
 -- Load immutable views/functions
