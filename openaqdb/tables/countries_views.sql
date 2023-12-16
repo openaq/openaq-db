@@ -62,6 +62,7 @@ WITH countries_locations AS (
         , 'units', m.units
         )
     ) as parameters
+	, array_agg(DISTINCT m.measurands_id) AS parameter_ids
   FROM countries_parameters cp
   JOIN measurands m USING (measurands_id)
   JOIN countries_locations l USING (countries_id)

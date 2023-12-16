@@ -36,6 +36,7 @@ WITH providers_locations AS (
         , 'units', m.units
         )
     ) as parameters
+	, array_agg(DISTINCT m.measurands_id) AS parameter_ids
   FROM providers_parameters cp
   JOIN measurands m USING (measurands_id)
   JOIN providers_locations l USING (providers_id)
