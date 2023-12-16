@@ -47,13 +47,14 @@ WITH providers_locations AS (
   , description
   , source_name
   , export_prefix
-  , datetime_first
-  , datetime_last
+  , pr.datetime_first
+  , pr.datetime_last
   , added_on as datetime_added
-  , measurements_count
-  , locations_count
-  , countries_count
-  , parameters
+  , pr.measurements_count
+  , pl.locations_count
+  , pl.countries_count
+  , pr.parameters
+  , pr.parameter_ids
   , jsonb_build_object(
     'id', p.owner_entities_id
     , 'name', e.full_name
@@ -61,8 +62,8 @@ WITH providers_locations AS (
   , license
   , extent
   FROM providers p
-  JOIN providers_rollup USING (providers_id)
-  JOIN providers_locations USING (providers_id)
+  JOIN providers_rollup pr USING (providers_id)
+  JOIN providers_locations pl USING (providers_id)
   JOIN entities e ON (p.owner_entities_id = e.entities_id);
 
 

@@ -71,16 +71,16 @@ WITH countries_locations AS (
   SELECT countries_id as id
   , name
   , iso as code
-  , datetime_first
-  , datetime_last
-  , measurements_count
-  , locations_count
-  , providers_count
-  , parameters
-  --, geojson(geom) as geojson
+  , cr.datetime_first
+  , cr.datetime_last
+  , cr.measurements_count
+  , cl.locations_count
+  , cl.providers_count
+  , cr.parameters
+  , cr.parameter_ids
   FROM countries
-  JOIN countries_rollup USING (countries_id)
-  JOIN countries_locations USING (countries_id);
+  JOIN countries_rollup cr USING (countries_id)
+  JOIN countries_locations cl USING (countries_id);
 
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS countries_view_cached AS
