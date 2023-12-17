@@ -30,6 +30,22 @@ WITH nodes_instruments AS (
   JOIN instruments i USING (instruments_id)
   JOIN entities mc ON (mc.entities_id = i.manufacturer_entities_id)
   GROUP BY sn.sensor_nodes_id
+-----------------------------
+), nodes_provider_license AS (
+-----------------------------
+	SELECT sn.sensor_nodes_id
+	, l.licenses_id
+	, l.name
+	, l.url
+	, l.attribution_required
+	, l.share_alike_required
+	, l.commercial_use_allowed
+	, l.redistribution_allowed
+	, l.modification_allowed
+	FROM sensor_nodes sn
+	JOIN providers USING (providers_id)
+	LEFT JOIN providers_licenses pl USING (providers_id)
+	LEFT JOIN licenses l USING (licenses_id)
   -----------------------------
 ), nodes_sensors AS (
 -----------------------------
@@ -92,13 +108,24 @@ SELECT
   , oc.entity_type::text~*'research' as is_analysis
   , ni.manufacturers
   , ni.manufacturer_ids
+  , CASE
+      WHEN npl.licenses_id IS NO NULL
+      THEN jsonb_build_object('id', npl.licenses_id, 'name', npl.name, 'url', npl.url)
+    ELSE NULL
+	END as license,
+	, npl.attribution_required
+	, npl.share_alike_required
+	, npl.commercial_use_allowed
+	, npl.redistribution_allowed
+	, npl.modification_allowed
 FROM sensor_nodes l
 JOIN timezones t ON (l.timezones_id = t.gid)
 JOIN countries c ON (c.countries_id = l.countries_id)
 JOIN entities oc ON (oc.entities_id = l.owner_entities_id)
 JOIN providers p ON (p.providers_id = l.providers_id)
 JOIN nodes_instruments ni USING (sensor_nodes_id)
-JOIN nodes_sensors ns USING (sensor_nodes_id);
+JOIN nodes_sensors ns USING (sensor_nodes_id)
+JOIN nodes_provider_license npl USING (sensor_nodes_id);
 
 DROP MATERIALIZED VIEW IF EXISTS locations_view_cached;
 CREATE MATERIALIZED VIEW locations_view_cached AS
