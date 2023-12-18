@@ -6,3 +6,4 @@ __pycache__/
 migra/env/
 migra/migrate.sql
 /cdk/venv/
+.DS_Store
