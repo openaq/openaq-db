@@ -7,6 +7,8 @@ services:
     ports:
       - "5777:5432"
     restart: always
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust
     networks:
       openaq_net:
         ipv4_address: 174.25.0.11
