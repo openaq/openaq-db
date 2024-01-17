@@ -10,7 +10,7 @@ CREATE TYPE visibility_type AS ENUM (
 -- users_id is the single lists owner
 CREATE TABLE IF NOT EXISTS lists (
     lists_id int PRIMARY KEY DEFAULT nextval('lists_sq')
-    , users_id int NOT NULL REFERENCES users
+    , users_id int NOT NULL REFERENCES users -- users_id represents the list owner
     , label text NOT NULL
     , description text
     , visibility visibility_type NOT NULL DEFAULT 'private'
@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS sensor_nodes_list (
     , sensor_nodes_id int NOT NULL REFERENCES sensor_nodes
     , lists_id int NOT NULL REFERENCES lists
     , description text NOT NULL
-    , UNIQUE(sensor_nodes_id, lists_id)
+    , UNIQUE(sensor_nodes_id, lists_id) -- a sensor node can only exists once in a list
 );
 
 
