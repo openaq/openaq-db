@@ -147,13 +147,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS entities_path_tgr ON entity_path;
+DROP TRIGGER IF EXISTS entities_path_tgr ON entity_paths;
 CREATE TRIGGER entities_path_tgr
 BEFORE INSERT OR UPDATE ON entity_paths
 FOR EACH ROW EXECUTE PROCEDURE check_entities_path();
 
 -- Grant access to the api user
-GRANT SELECT ON public.users TO apiuser;
-GRANT SELECT ON public.entities TO apiuser;
-GRANT SELECT ON public.user_keys TO apiuser;
-GRANT SELECT ON public.users_entities TO apiuser;
+GRANT SELECT ON public.users TO :DATABASE_READ_USER;
+GRANT SELECT ON public.entities TO :DATABASE_READ_USER;
+GRANT SELECT ON public.user_keys TO :DATABASE_READ_USER;
+GRANT SELECT ON public.users_entities TO :DATABASE_READ_USER;

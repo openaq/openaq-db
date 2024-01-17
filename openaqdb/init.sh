@@ -35,6 +35,7 @@ set -e
 psql --single-transaction \
      -v ON_ERROR_STOP=1 \
      -v DATABASE_WRITE_USER="${DATABASE_WRITE_USER}" \
+     -v DATABASE_READ_USER="${DATABASE_READ_USER}" \
      -f init.sql
 
 psql --single-transaction -v ON_ERROR_STOP=1 -f lookups/measurands.sql
