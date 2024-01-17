@@ -176,7 +176,7 @@ CREATE OR REPLACE FUNCTION update_groups() RETURNS VOID AS $$
     FROM sensor_nodes
     JOIN sensor_systems USING (sensor_nodes_id)
     JOIN sensors s USING (sensor_systems_id)
-    JOIN groups ON (country=name AND groups.type = 'country')
+    JOIN groups g ON (country=g.name AND g.type = 'country')
     ON CONFLICT DO NOTHING
     ;
 

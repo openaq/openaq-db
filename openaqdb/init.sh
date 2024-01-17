@@ -1,7 +1,9 @@
 #!/bin/bash
-# cd $( dirname "${BASH_SOURCE[0]}")
-# pg_ctl -D $PGDATA -o "-c listen_addresses='*' -p 5432" -m fast -w restart
-# sleep 3
+cd $( dirname "${BASH_SOURCE[0]}")
+# must restart the service or the install fails
+pg_ctl -D $PGDATA -o "-c listen_addresses='*' -p 5432" -m fast -w restart
+sleep 3
+echo "Installing ${DATABASE_DB}/${DATABASE_READ_USER} at localhost"
 
 createdb $DATABASE_DB
 export PGDATABASE=$DATABASE_DB
@@ -33,6 +35,7 @@ set -e
 psql --single-transaction \
      -v ON_ERROR_STOP=1 \
      -v DATABASE_WRITE_USER="${DATABASE_WRITE_USER}" \
+     -v DATABASE_READ_USER="${DATABASE_READ_USER}" \
      -f init.sql
 
 psql --single-transaction -v ON_ERROR_STOP=1 -f lookups/measurands.sql

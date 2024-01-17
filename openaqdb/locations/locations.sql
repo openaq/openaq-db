@@ -43,6 +43,8 @@ WITH nodes_instruments AS (
         'id', m.measurands_id
         , 'name', m.measurand
         , 'units', m.units
+        , 'value_last', sl.value_latest
+        , 'datetime_last', sl.datetime_last
         , 'display_name', m.display
         )
     )) as sensors
