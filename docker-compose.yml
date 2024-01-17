@@ -1,0 +1,21 @@
+version: "3"
+services:
+  db:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5777:5432"
+    restart: always
+    networks:
+      openaq_net:
+        ipv4_address: 174.25.0.11
+
+networks:
+  openaq_net:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 174.25.0.0/25
+          gateway: 174.25.0.1
