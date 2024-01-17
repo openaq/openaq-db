@@ -101,6 +101,11 @@ RETURNS timestamptz AS $$
 SELECT timezone(tz, date_trunc(period, timezone(tz, tstz + '-1sec'::interval)));
 $$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
 
+CREATE OR REPLACE FUNCTION as_date(tstz timestamptz, tz text)
+RETURNS date AS $$
+SELECT date_trunc('day', timezone(tz, tstz + '-1sec'::interval))::date;
+$$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
+
 --DROP FUNCTION IF EXISTS truncate_timestamp(timestamptz, text, text, interval);
 CREATE OR REPLACE FUNCTION truncate_timestamp(tstz timestamptz, period text, tz text, _offset interval)
 RETURNS timestamptz AS $$

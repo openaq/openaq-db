@@ -9,9 +9,44 @@ CREATE OR REPLACE FUNCTION utc_offset(tz text) RETURNS interval AS $$
 SELECT timezone(tz, now()) - timezone('UTC', now());
 $$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
 
-
+-- get the offset for a specific date/time
 CREATE OR REPLACE FUNCTION utc_offset(dt timestamptz, tz text) RETURNS interval AS $$
 SELECT timezone(tz, dt) - timezone('UTC', dt);
+$$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
+
+-- same but supplying the sensor_nodes_id
+CREATE OR REPLACE FUNCTION utc_offset(dt timestamptz, sn int) RETURNS interval AS $$
+SELECT utc_offset(dt, t.tzid)
+FROM sensor_nodes n
+	JOIN timezones t ON (t.gid = n.timezones_id)
+	WHERE sensor_nodes_id = sn;
+$$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION utc_offset(sn int) RETURNS interval AS $$
+SELECT utc_offset(t.tzid)
+FROM sensor_nodes n
+	JOIN timezones t ON (t.gid = n.timezones_id)
+	WHERE sensor_nodes_id = sn;
+$$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION as_utc(dt timestamp, tz text) RETURNS timestamptz AS $$
+SELECT timezone(tz, dt);
+$$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION as_utc(dt timestamptz, tz text) RETURNS timestamptz AS $$
+SELECT timezone(tz, timezone('UTC', dt));
+$$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION as_local_hour(dt timestamptz, tz text) RETURNS timestamptz AS $$
+SELECT timezone(tz, date_trunc('hour', dt));
+$$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION as_local_hour(tz text) RETURNS timestamptz AS $$
+SELECT timezone(tz, date_trunc('hour', now()));
+$$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION as_local_hour_int(tz text) RETURNS int AS $$
+SELECT date_part('hour', timezone(tz, current_time));
 $$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
 
 -- A view to pull the data from. This can be modified as needed
@@ -142,32 +177,21 @@ AND (exported_on IS NULL OR l.modified_on > exported_on)
 -- Has not been queued OR was queued over an hour ago
 AND (queued_on IS NULL OR age(now(), queued_on) > '1hour'::interval)
 -- No error
-AND NOT has_error
+AND (has_error IS NULL OR NOT has_error)
 ;
 
-
-CREATE OR REPLACE VIEW pending_location_days2 AS
-SELECT l.sensor_nodes_id
-, day
-, records
-, measurands
-, l.modified_on
-, queued_on
-, exported_on
-, utc_offset(sn.metadata->>'timezone') as utc_offset
+CREATE OR REPLACE VIEW pending_location_days_check AS
+SELECT
+	day < (now() AT TIME ZONE tz.tzid - '72hours'::interval)::date as old_enough
+	, (exported_on IS NULL OR l.modified_on > exported_on) as needs_exporting
+	, (queued_on IS NULL OR age(now(), queued_on) > '1hour'::interval) as not_queued
+	, (has_error IS NULL OR NOT has_error) as error_free
+	, COUNT(1) as n
 FROM public.open_data_export_logs l
 JOIN public.sensor_nodes sn ON (l.sensor_nodes_id = sn.sensor_nodes_id)
-WHERE
--- older than 72 hours to give us time to collect data
-day < (now() AT TIME ZONE (sn.metadata->>'timezone')::text - '72hours'::interval)::date
--- it has not been exported OR modified after being exported
-AND (exported_on IS NULL OR l.modified_on > exported_on)
--- Has not been queued OR was queued over an hour ago
-AND (queued_on IS NULL OR age(now(), queued_on) > '20min'::interval)
--- No error
-AND (l.metadata->>'error' IS NULL)
-ORDER BY day ASC
-;
+JOIN public.timezones tz ON (sn.timezones_id = tz.gid)
+	GROUP BY 1,2,3,4
+	ORDER BY 1,2,3,4;
 
 
 
@@ -239,7 +263,8 @@ CREATE OR REPLACE FUNCTION get_pending(lmt int = 100) RETURNS TABLE(
 WITH pending AS (
   SELECT *
   FROM pending_location_days
-  LIMIT lmt)
+  LIMIT lmt
+	FOR UPDATE SKIP LOCKED)
 UPDATE public.open_data_export_logs
 SET queued_on = now()
 FROM pending
@@ -249,27 +274,6 @@ RETURNING pending.*;
 $$ LANGUAGE SQL;
 
 
-CREATE OR REPLACE FUNCTION get_pending2(lmt int = 100) RETURNS TABLE(
-   sensor_nodes_id int
- , day date
- , records int
- , measurands int
- , modified_on timestamptz
- , queued_on timestamptz
- , exported_on timestamptz
- , utc_offset interval
- ) AS $$
-WITH pending AS (
-  SELECT *
-  FROM pending_location_days2
-  LIMIT lmt)
-UPDATE public.open_data_export_logs
-SET queued_on = now()
-FROM pending
-WHERE pending.day = open_data_export_logs.day
-AND pending.sensor_nodes_id = open_data_export_logs.sensor_nodes_id
-RETURNING pending.*;
-$$ LANGUAGE SQL;
 
 
 -- used to make the entry as finished
@@ -292,11 +296,13 @@ WHERE day = dy AND sensor_nodes_id = id
 RETURNING exported_on - queued_on;
 $$ LANGUAGE SQL;
 
-	--DROP VIEW IF EXISTS  open_data_export_status;
+
+DROP VIEW IF EXISTS  open_data_export_status;
 CREATE OR REPLACE VIEW open_data_export_status AS
 	SELECT exported_on IS NOT NULL as exported
 	, checked_on IS NOT NULL as checked
 	, has_error
+	, queued_on IS NOT NULL as queued
 	, SUBSTRING(metadata->>'message' from 0 for 30) as message
 	, COUNT(1) as n
 	, MIN(day) as first_day
@@ -306,7 +312,7 @@ CREATE OR REPLACE VIEW open_data_export_status AS
 	, MIN(checked_on) as first_checked
 	, MAX(checked_on) as last_checked
 FROM open_data_export_logs
-	GROUP BY 1,2,3,4;
+	GROUP BY 1,2,3,4, 5;
 
 
 	SELECT exported_on::date

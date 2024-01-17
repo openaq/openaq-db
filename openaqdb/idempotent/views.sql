@@ -629,7 +629,9 @@ SELECT sn.sensor_nodes_id
 , sn.origin
 , COALESCE(p.label, 'Not found') as provider
 , st_astext(COALESCE(l.geom_latest, sn.geom)) as location
-, sy.sensor_systems_id
+, tz.tzid as timezone
+, utc_offset(tz.tzid) as utc_offset
+--, sy.sensor_systems_id
 , sn.added_on
 , s.sensors_id
 , COALESCE(m.measurand, 'Not found') as parameter
@@ -641,6 +643,7 @@ SELECT sn.sensor_nodes_id
 , s.added_on as sensor_added_on
 , sn.added_on as node_added_on
 FROM sensor_nodes sn
+LEFT JOIN timezones tz ON (sn.timezones_id = tz.gid)
 LEFT JOIN providers p ON (sn.providers_id = p.providers_id)
 LEFT JOIN sensor_systems sy USING (sensor_nodes_id)
 LEFT JOIN sensors s USING (sensor_systems_id)
