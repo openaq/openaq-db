@@ -12,5 +12,3 @@ COPY public.licenses (licenses_id, name, description, url, attribution_required,
 33	US Public Domain	Declaration that a work is free of known copyright restrictions and can be freely used.	http://www.usa.gov/publicdomain/label/1.0/	f	f	t	t	t	{}
 39	Japan Terms of Use v2	\N	https://www.env.go.jp/kanbo/koho/opendata.html	t	f	t	t	t	{}
 \.
-ON CONFLICT DO NOTHING
-;

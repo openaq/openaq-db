@@ -45,16 +45,6 @@ COPY public.providers_licenses (providers_licenses_id, licenses_id, providers_id
 138	41	224	[2017-08-22,)	https://podatki.gov.si/pogoji-uporabe	\N	\N
 \.
 
-ON CONFLICT DO NOTHING
-
--- pull datetime_first from locations_view_cached
-UPDATE public.providers_licenses pl
-SET active_period = daterange(min(lvc.datetime_first), 'infinity')
-FROM (
-    SELECT
-        provider_id,
-        MIN(datetime_first) AS earliest_date
-    FROM locations_view_cached
-    GROUP BY provider_id
-) AS lvc
-WHERE pl.providers_id = lvc.provider_id;
+-- updating those dates above
+UPDATE providers_licenses
+SET active_period = '[-infinity, infinity)';
