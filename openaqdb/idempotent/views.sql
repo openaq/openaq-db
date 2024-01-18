@@ -1039,7 +1039,56 @@ GROUP BY 1
 ORDER BY lower(p.label);
 
 
-
+-- a convenience view to aid in querying a all lists a user has permissions to
+CREATE OR REPLACE VIEW user_lists_view AS
+WITH owner_users AS (
+    SELECT DISTINCT
+        lists_id
+        , users_id 
+		, 'owner' AS role
+    FROM 
+        lists 
+),
+list_users AS (
+	SELECT lists_id
+	,users_id
+	, role::text
+	FROM users_lists
+	UNION 
+	SELECT lists_id
+	,users_id
+	, role::text
+	FROM owner_users
+),
+user_count AS (
+    SELECT lists_id 
+    , COUNT(*) AS user_count
+	FROM 
+	lists
+    JOIN 
+    	list_users lu USING (lists_id)
+	GROUP BY lists_id
+)
+SELECT 
+    l.lists_id
+    , l.users_id AS owner_id
+    , lu.users_id
+	, lu.role
+    , l.label
+    , l.description
+    , visibility
+    , uc.count as user_count
+    , COUNT(*) as locations_count
+FROM    
+    lists l
+JOIN 
+    sensor_nodes_list snl USING (lists_id)
+JOIN 
+    list_users lu USING (lists_id)
+JOIN 
+    user_count uc USING (lists_id)
+GROUP BY
+    1,2,3,4,5,6
 
 
 
