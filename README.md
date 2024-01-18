@@ -18,19 +18,8 @@ Rather than tracking version to version migration files, it is recommended to ma
 docker compose up --build
 ```
 
-# Install DB
-The `docker compose` method should stand it up and build the database but in case you need to rebuild you can run something like this:
+# Connecting to DB
 ```shell
-HOST=xxxx
-PORT=xxxx
-USER=xxxx
-psql -h $HOST -U $USER -p $PORT -d postgres \
-    -v ON_ERROR_STOP=1 \
-    -c 'DROP DATABASE IF EXISTS openaq' \
-    -c 'CREATE DATABASE openaq'
-
-psql -h $HOST -U $USER -p $PORT -d openaq \
-    -v ON_ERROR_STOP=1 \
-    -v DATABASE_WRITE_USER=rwuser \
-    -f init.sql
+## if using the defaults
+psql -h localhost -U postgres -p 5777 -d openaq
 ```
