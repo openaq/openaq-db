@@ -1,9 +1,8 @@
 # OpenAQ V2 Database
 
 The OpenAQ V2 Database requires
-- PostgreSQL v12+
-- TimeScaleDB v2+
-- PostGIS v3.1+
+- PostgreSQL v14+
+- PostGIS v3.4+
 
 All scripts in the [openaqdb/idempotent](openaqdb/idempotent/) directory are designed so that updates can be made in place by just rerunning the SQL over the top of an existing database. As there may be dependencies in the changes, each .sql script should be run in full within a transaction.
 
@@ -16,25 +15,11 @@ Rather than tracking version to version migration files, it is recommended to ma
 ```
 ## change names/passwords as needed
 ## from the repo root directory
-## you may or may not need the sudo
-sudo docker build -t openaq-dev-db -f docker/Dockerfile .
-sudo docker run --name openaq-testing -e POSTGRES_PASSWORD=postgres -t openaq-dev-db:latest
-## to determine the IP address of the container use
-sudo docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' openaq-testing
+docker compose up --build
 ```
 
-# Install DB
+# Connecting to DB
 ```shell
-HOST=xxxx
-PORT=xxxx
-USER=xxxx
-psql -h $HOST -U $USER -p $PORT -d postgres \
-    -v ON_ERROR_STOP=1 \
-    -c 'DROP DATABASE IF EXISTS openaq' \
-    -c 'CREATE DATABASE openaq'
-
-psql -h $HOST -U $USER -p $PORT -d openaq \
-    -v ON_ERROR_STOP=1 \
-    -v DATABASE_WRITE_USER=rwuser \
-    -f init.sql
+## if using the defaults
+psql -h localhost -U postgres -p 5777 -d openaq
 ```
