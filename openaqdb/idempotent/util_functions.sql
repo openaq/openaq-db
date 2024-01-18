@@ -444,6 +444,17 @@ BEGIN
 END
 $$ LANGUAGE plpgsql;
 
+
+-- regenerates a user's api key token 
+CREATE OR REPLACE FUNCTION regenerate_token(
+  _users_id integer
+)
+RETURNS void AS $$
+UPDATE user_keys 
+SET token = encode(digest(uuid_generate_v4():: text, 'sha256'), 'hex')
+WHERE users_id = _users_id
+$$ LANGUAGE SQL;
+
 -- a function to verify a user based on email and verification code
 -- and generate an API key in the user_keys table
 CREATE OR REPLACE FUNCTION verify_email(
