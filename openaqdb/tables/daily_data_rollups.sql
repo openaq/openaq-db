@@ -1,15 +1,31 @@
-DROP TABLE IF EXISTS daily_stats;
+	-- The purpose of this set of tables and methods
+	-- is to keep daily summaries for each sensor along with
+	-- a table to track stats for each day. One of the challenges here is to
+	-- deal with the timezones across the different sensor nodes.
 
-	-- Start by pulling from the hourly data which days need to be updated
-	-- and/or, when we calculate the
+	-- Notes:
+	-- * Each record is a day in that timezone.
+	-- * Days are always stored time begining
+	-- * The first and last hours are in UTC and stored time ending (like the hourly data)
+	-- * Unlike the hourly_data, the daily_stats table is not updated first
+	-- and then used as a queue for the filling/updating of the daily_data table.
+	-- Instead we calculate the current day every hour, we do the whole day even though
+	-- the day will only be complete in 1-2 timezones at a time. And after we run the
+	-- daily_data method we update the daily_stats table.
+	-- * We also have an update method that will update any day that may have changed
+	-- after first being calculated or was never run in the first place.
+	-- * This set of methods current runs pretty independently from the hourly_methods
 
+
+	-- Daily stats will store data for each day, across all sensors
+	-- It should only be populated AFTER the daily data is summarized for a given day
 	DROP TABLE IF EXISTS daily_stats;
 	CREATE TABLE IF NOT EXISTS daily_stats (
    day date PRIMARY KEY
  , added_on timestamptz NOT NULL DEFAULT now()
- , modified_on timestamptz
+ , modified_on timestamptz 											-- last time the hourly data was modified
  , calculated_count int NOT NULL DEFAULT 0
- , updated_on timestamptz
+ , updated_on timestamptz												--
  , calculated_on timestamptz
  , sensor_nodes_count int
  , measurements_count int
@@ -17,23 +33,8 @@ DROP TABLE IF EXISTS daily_stats;
  , sensors_count int
  );
 
-
--- initialize
-
-  WITH days AS (
-	SELECT MIN(datetime) as datetime_min
-	, MAX(datetime) as datetime_max
-	FROM hourly_data)
-	INSERT INTO daily_stats (day)
-	SELECT generate_series(
-   datetime_min::date
-	, datetime_max::date
-  , '1day'::interval)::date
-	FROM days
-	ON CONFLICT DO NOTHING;
-
-
-
+-- The daily data will be similar to the hourly data and include
+-- summary data for that day in the appropriate timezone
 CREATE TABLE IF NOT EXISTS daily_data (
   sensors_id int NOT NULL --REFERENCES sensors ON DELETE CASCADE
 , day date NOT NULL
@@ -67,7 +68,7 @@ CREATE INDEX IF NOT EXISTS daily_data_day_idx
 ON daily_data
 USING btree (day);
 
-
+-- This can be used to check our method without writing anything
 DROP FUNCTION IF EXISTS daily_data_check(sd date, ed date, sids int[]);
 CREATE OR REPLACE FUNCTION daily_data_check(sd date, ed date, sids int[]) RETURNS TABLE (
 	sensors_id int
@@ -106,8 +107,11 @@ HAVING COUNT(1) > 0;
 $$ LANGUAGE SQL;
 
 
-
-
+-- This is the primary method for getting daily data
+	-- It will only do one offset at a time which would be 1-2 timezones at a time
+	-- this is because doing an entire day in one method is too much data to aggregate efficiently
+	-- see the next method for a way to run a whole day
+	-- NOTE: this method does not update the stats table
 CREATE OR REPLACE FUNCTION calculate_daily_data(dy date DEFAULT current_date - 1, lag int DEFAULT 2) RETURNS TABLE (
 	sensor_nodes_count bigint
 , sensors_count bigint
@@ -217,6 +221,7 @@ SET first_datetime = EXCLUDED.first_datetime
 $$ LANGUAGE SQL;
 
 
+	-- this is just a helper method
 CREATE OR REPLACE FUNCTION calculate_daily_data(lag int DEFAULT 2) RETURNS TABLE (
 	sensor_nodes_count bigint
 , sensors_count bigint
@@ -226,16 +231,14 @@ CREATE OR REPLACE FUNCTION calculate_daily_data(lag int DEFAULT 2) RETURNS TABLE
 SELECT * FROM calculate_daily_data(current_date - 1, lag);
 $$ LANGUAGE SQL;
 
-
-
-
-
-SELECT *
-	FROM calculate_daily_data_full('2022-07-24');
-
-
-	CREATE OR REPLACE FUNCTION upsert_daily_stats(dt date) RETURNS json AS $$
-WITH daily_data_summary AS (
+-- This is the method that is used to update the stats table based on the
+	-- daily data table
+	-- NOTE: running this alone could lead to misleading data. Ideally we
+	--  would run this only after we have calculated a FULL days data
+	-- NOTE: the method is written so that even a day with no daily data
+	-- will get added to the stats table with zeros
+CREATE OR REPLACE FUNCTION upsert_daily_stats(dt date) RETURNS json AS $$
+	WITH daily_data_summary AS (
 	SELECT day
 	, SUM(value_count) as measurements_count
 	, SUM(value_raw_count) as measurements_raw_count
@@ -260,15 +263,16 @@ WITH daily_data_summary AS (
 	, calculated_count
 	, added_on)
 	SELECT day
-	, sensor_nodes_count
-	, sensors_count
-	, measurements_count
-	, measurements_raw_count
+	, COALESCE(sensor_nodes_count, 0)
+	, COALESCE(sensors_count, 0)
+	, COALESCE(measurements_count, 0)
+	, COALESCE(measurements_raw_count, 0)
 	, calculated_on
 	, updated_on
-	, calculated_count
+	, COALESCE(calculated_count, 1)
 	, now() as added_on
-	FROM daily_data_summary
+	FROM (SELECT dt as day) d
+	LEFT JOIN daily_data_summary USING (day)
 	ON CONFLICT (day) DO UPDATE
 	SET sensor_nodes_count = EXCLUDED.sensor_nodes_count
 	, sensors_count = EXCLUDED.sensors_count
@@ -277,32 +281,111 @@ WITH daily_data_summary AS (
 	, calculated_on = EXCLUDED.calculated_on
 	, calculated_count = EXCLUDED.calculated_count
 	, updated_on = EXCLUDED.updated_on
-	, modified_on = EXCLUDED.added_on
 	RETURNING json_build_object(day, measurements_raw_count);
 $$ LANGUAGE SQL;
 
 
-CREATE OR REPLACE FUNCTION calculate_daily_data_full(dt date) RETURNS TABLE (
-	tz_offset int
-, sensor_nodes_count bigint
-, sensors_count bigint
-, measurements_hourly_count bigint
-, measurements_count bigint
-) AS $$
-WITH offsets AS (
-	SELECT generate_series(0,23,1) as tz_offset
-	), calculated AS (
-	SELECT tz_offset, f.*
-	FROM offsets o, calculate_daily_data(dt, o.tz_offset) f
-	), stats AS (
-	SELECT upsert_daily_stats(dt)
-	;
+-- this is the function that should be run each hour
+-- it will
+-- CREATE OR REPLACE FUNCTION calculate_daily_data_full(dt date DEFAULT current_date) RETURNS TABLE (
+-- 	tz_offset int
+-- , sensor_nodes_count bigint
+-- , sensors_count bigint
+-- , measurements_hourly_count bigint
+-- , measurements_count bigint
+-- ) AS $$
+-- WITH offsets AS (
+-- 	SELECT generate_series(0,23,1) as tz_offset
+-- 	), calculated AS (
+-- 	SELECT tz_offset, f.*
+-- 	FROM offsets o, calculate_daily_data(dt, o.tz_offset) f
+-- ), stats AS (
+-- 	SELECT upsert_daily_stats(dt)
+-- ) SELECT * FROM calculated;
+-- $$ LANGUAGE SQL;
+
+	-- The following method will calculate a FULL day and then update the stats table
+	-- It runs the normal method for each hour in a 24h series which is
+	-- considerable faster (<~2m) then running a whole day in one statement (~1.5h)
+	-- NOTE: the commented out method above failed to update the stats table correctly for some reason
+DROP FUNCTION IF EXISTS calculate_daily_data_full(date);
+CREATE OR REPLACE FUNCTION calculate_daily_data_full(dt date DEFAULT current_date) RETURNS json AS $$
+	DECLARE
+	 o record;
+	 obj json;
+	BEGIN
+  FOR o IN SELECT generate_series(0,23,1) as tz_offset
+	LOOP
+		PERFORM calculate_daily_data(dt, o.tz_offset);
+	END LOOP;
+	-- update the stats table
+	SELECT upsert_daily_stats(dt) INTO obj;
+	RETURN obj;
+	END;
+$$ LANGUAGE plpgsql;
+
+-- A view to help find days that have not been summarized
+CREATE OR REPLACE VIEW missing_daily_summaries AS
+  WITH days AS (
+	SELECT MIN(datetime) as datetime_min
+	, MAX(datetime) as datetime_max
+	FROM hourly_data
+	), available_days AS (
+	SELECT generate_series(
+   datetime_min::date
+	, datetime_max::date
+  , '1day'::interval)::date as day
+	FROM days)
+	SELECT a.day
+	FROM available_days a
+	LEFT JOIN daily_stats s ON (a.day = s.day)
+	WHERE s.day IS NULL
+	ORDER BY a.day ASC;
+
+
+-- this is a helper method that will calcluated the next available
+	-- day that needs to be calculated, working from the last day forward.
+DROP FUNCTION IF EXISTS calculate_next_available_day();
+CREATE OR REPLACE FUNCTION calculate_next_available_day() RETURNS json AS $$
+  WITH days AS (
+	SELECT MIN(datetime) as datetime_min
+	, MAX(datetime) as datetime_max
+	FROM hourly_data
+	), available_days AS (
+	SELECT generate_series(
+   datetime_min::date
+	, datetime_max::date
+  , '1day'::interval)::date as day
+	FROM days
+	), selected_day AS (
+	SELECT a.day
+	FROM available_days a
+	LEFT JOIN daily_stats s ON (a.day = s.day)
+	WHERE s.day IS NULL
+	ORDER BY a.day ASC
+	LIMIT 1
+	) SELECT calculate_daily_data_full(day)
+	FROM selected_day;
 $$ LANGUAGE SQL;
 
 
-	SELECT
-SELECT *
-FROM hourly_data
-WHERE sensors_id = 391223
-AND  datetime > date_trunc('hour', :st)
-AND datetime <= date_trunc('hour', :et);
+-- and now a method to take care of updating the days that have changed
+CREATE OR REPLACE FUNCTION recalculate_modified_days(lmt int DEFAULT 10) RETURNS int AS $$
+DECLARE
+	d record;
+	days int := 0;
+BEGIN
+	FOR d IN SELECT day
+		FROM daily_stats
+		WHERE day < current_date
+		AND modified_on IS NOT NULL
+		AND modified_on > calculated_on
+		LIMIT lmt
+	  LOOP
+	    RAISE NOTICE 'Running % of %', d.day, lmt;
+	 		PERFORM calculate_daily_data_full(d.day);
+	  	days := days+1;
+	END LOOP;
+	RETURN days;
+END;
+$$ LANGUAGE plpgsql;

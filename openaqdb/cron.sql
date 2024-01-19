@@ -19,6 +19,15 @@ SELECT cron.schedule_in_database(
   , 'openaq'
   );
 
+-- every hour on the 1/2 hour
+SELECT cron.schedule_in_database(
+  'update-daily-data'
+  , '30 * * * *'
+  , $$SELECT calculate_daily_data_full()$$
+  , 'openaq'
+  );
+
+
 -- at quarter past each hour calculate
 -- the latest 10 hours that need updating
 SELECT cron.schedule_in_database(
@@ -98,13 +107,15 @@ SELECT cron.schedule_in_database(
   );
 
 
+
+
 WITH jobs AS (
 	SELECT jobid
 	, start_time::date as day
 	, age(end_time, start_time) as duration
 	FROM cron.job_run_details
 	WHERE start_time > current_date - 14
-	AND jobid = 4
+	AND jobid = 14
 	)
 	SELECT jobid
 	, day
