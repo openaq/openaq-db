@@ -1048,8 +1048,8 @@ WITH owner_users AS (
 		, 'owner' AS role
     FROM 
         lists 
-),
-list_users AS (
+)
+, list_users AS (
 	SELECT lists_id
 	,users_id
 	, role::text
@@ -1059,15 +1059,37 @@ list_users AS (
 	,users_id
 	, role::text
 	FROM owner_users
-),
-user_count AS (
-    SELECT lists_id 
-    , COUNT(*) AS user_count
+)
+, user_count AS (
+    SELECT 
+		lists_id 
+    	, COUNT(*) AS user_count
 	FROM 
-	lists
+		lists
     JOIN 
     	list_users lu USING (lists_id)
 	GROUP BY lists_id
+)
+, sensor_nodes_group AS (
+    SELECT 
+		lists_id
+		, COUNT(sn.sensor_nodes_id) AS locations_count
+		, array_agg(snl.sensor_nodes_id) AS sensor_nodes_ids
+    	, ST_Collect(sn.geom) AS sensor_nodes_multi_point
+	FROM    
+		lists l
+	LEFT JOIN 
+		sensor_nodes_list snl USING (lists_id)
+	LEFT JOIN 
+		sensor_nodes sn USING (sensor_nodes_id)
+	GROUP BY lists_id
+)
+, list_bounds AS (
+	SELECT 
+		sng.lists_id,
+		ST_Envelope(sng.sensor_nodes_multi_point) as bounds
+	FROM 
+		sensor_nodes_group sng
 )
 SELECT 
     l.lists_id
@@ -1077,18 +1099,33 @@ SELECT
     , l.label
     , l.description
     , visibility
-    , uc.count as user_count
-    , COUNT(*) as locations_count
+    , uc.user_count
+    , sng.locations_count
+	, sng.sensor_nodes_ids AS sensor_nodes_ids
+	, (ST_AsGeoJSON(lb.bounds)::json)->'coordinates' AS bounds
+	, CASE
+		WHEN 
+			ST_GeometryType(lb.bounds) = 'ST_Point' 
+		THEN
+			(ST_AsGeoJSON(ST_MakePolygon(ST_MakeLine(ARRAY[lb.bounds,lb.bounds,lb.bounds,lb.bounds,lb.bounds])))::json)->'coordinates'->0 
+		WHEN
+			ST_GeometryType(lb.bounds) = 'ST_Polygon' 
+		THEN 
+			(ST_AsGeoJSON(lb.bounds)::json)->'coordinates'->0 
+		ELSE 
+			(ST_AsGeoJSON(ST_MakePolygon(ST_MakeLine(ARRAY[ST_Point(-180, -90),ST_Point(-180, 90),ST_Point(180, 90),ST_Point(180, -90),ST_Point(-180, -90)])))::json)->'coordinates'->0 
+
+	 END AS bbox
 FROM    
     lists l
-JOIN 
-    sensor_nodes_list snl USING (lists_id)
 JOIN 
     list_users lu USING (lists_id)
 JOIN 
     user_count uc USING (lists_id)
-GROUP BY
-    1,2,3,4,5,6
+JOIN 
+	sensor_nodes_group sng USING (lists_id)
+JOIN 
+	list_bounds lb USING (lists_id)
 
 
 
