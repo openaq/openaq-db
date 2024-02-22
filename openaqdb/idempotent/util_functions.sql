@@ -480,6 +480,44 @@ BEGIN
 END
 $$ LANGUAGE plpgsql;
 
+-- a function to create a new a list for a user
+CREATE OR REPLACE FUNCTION create_list(
+  _users_id integer
+  , _label text DEFAULT 'My first list'
+  , _description text DEFAULT 'A custom list of AQ monitoring sites.'
+) RETURNS text AS $$
+DECLARE
+  _lists_id int;
+BEGIN
+  INSERT INTO
+      lists (users_id, label, description)
+  VALUE
+      (_users_id, _label, _description)
+  SELECT currval('lists_sq') INTO _lists_id;
+  RETURN _lists_id;
+END
+$$ LANGUAGE plpgsql;
+
+-- a function to delete a list and a foreign keyed rows in other tables
+CREATE OR REPLACE FUNCTION delete_list(
+  _lists_id integer
+) RETURNS void AS $$
+BEGIN
+  DELETE FROM
+    sensor_nodes_list
+  WHERE
+    lists_id = _lists_id;
+  DELETE FROM
+    users_lists
+  WHERE
+    lists_id = _lists_id;
+  DELETE FROM
+    lists
+  WHERE
+    lists_id = _lists_id;
+END
+$$ LANGUAGE plpgsql;
+
 
 -- from
 -- https://stackoverflow.com/questions/7943233/fast-way-to-discover-the-row-count-of-a-table-in-postgresql

@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE SEQUENCE IF NOT EXISTS user_keys_sq START 10;
 CREATE TABLE IF NOT EXISTS user_keys (
   user_keys_id int PRIMARY KEY DEFAULT nextval('user_keys_sq')
-  , users_id int NOT NULL REFERENCES users
+  , users_id int NOT NULL REFERENCES users ON DELETE CASCADE 
   -- uncomment if using the key_types method
   --, key_types_id int NOT NULL REFERENCES key_types
   , label varchar(100) NOT NULL
