@@ -82,6 +82,7 @@ CREATE TYPE entity_type AS ENUM (
   'Person'
 , 'Organization'
 , 'Governmental Organization'
+, 'Non-Governmental Organization'
 , 'Research Organization'
 , 'Community Organization'
 , 'Private Organization'

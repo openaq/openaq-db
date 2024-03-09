@@ -54,11 +54,17 @@ CREATE TABLE IF NOT EXISTS daily_data (
 , value_raw_count double precision
 , value_raw_min double precision
 , value_raw_max double precision
+, error_count int
+, error_raw_count int
 , updated_on timestamptz -- last time the sensor data was updated
 , calculated_on timestamptz-- last time the row rollup was calculated
 , calculated_count int DEFAULT 1
 , UNIQUE(sensors_id, day)
 )
+
+--ALTER TABLE daily_data
+--  ADD COLUMN error_count int NOT NULL DEFAULT 0
+--, ADD COLUMN error_raw_count int NOT NULL DEFAULT 0;
 
 CREATE INDEX IF NOT EXISTS daily_data_sensors_id_idx
 ON daily_data
@@ -141,6 +147,8 @@ SELECT
 , PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY value_avg) as value_p50
 , PERCENTILE_CONT(0.75) WITHIN GROUP(ORDER BY value_avg) as value_p75
 , PERCENTILE_CONT(0.98) WITHIN GROUP(ORDER BY value_avg) as value_p98
+, SUM(error_count) as error_raw_count
+, SUM((value_avg IS NULL)::int) as error_count
 FROM hourly_data m
 JOIN sensors s ON (m.sensors_id = s.sensors_id)
 JOIN sensor_systems sy ON (s.sensor_systems_id = sy.sensor_systems_id)
@@ -173,6 +181,8 @@ INSERT INTO daily_data (
 , value_p50
 , value_p75
 , value_p98
+, error_count
+, error_raw_count
 , calculated_on)
 	SELECT sensors_id
 , day
@@ -193,6 +203,8 @@ INSERT INTO daily_data (
 , value_p50
 , value_p75
 , value_p98
+, error_count
+, error_raw_count
 , current_timestamp as calculated_on
 	FROM sensors_rollup
 ON CONFLICT (sensors_id, day) DO UPDATE
@@ -212,6 +224,126 @@ SET first_datetime = EXCLUDED.first_datetime
 , value_p50 = EXCLUDED.value_p50
 , value_p75 = EXCLUDED.value_p75
 , value_p98 = EXCLUDED.value_p98
+, error_count = EXCLUDED.error_count
+, error_raw_count = EXCLUDED.error_raw_count
+, calculated_on = EXCLUDED.calculated_on
+	) SELECT COUNT(DISTINCT sensors_id) as sensors_count
+	, COUNT(DISTINCT sensor_nodes_id) as sensor_nodes_count
+	, SUM(value_count) as measurements_hourly_count
+	, SUM(value_raw_count) as measurements_count
+	FROM sensors_rollup;
+$$ LANGUAGE SQL;
+
+
+
+CREATE OR REPLACE FUNCTION calculate_sensor_daily_data(id int, sd date, ed date) RETURNS TABLE (
+	sensor_nodes_count bigint
+, sensors_count bigint
+, measurements_hourly_count bigint
+, measurements_count bigint
+) AS $$
+SET LOCAL work_mem = '512MB';
+WITH sensors_rollup AS (
+SELECT
+  m.sensors_id
+, sn.sensor_nodes_id
+, as_date(m.datetime, t.tzid)  as day
+, MAX(m.updated_on) as updated_on
+, MIN(first_datetime) as first_datetime
+, MAX(last_datetime) as last_datetime
+, COUNT(1) AS value_count
+, AVG(value_avg) as value_avg
+, STDDEV(value_avg) as value_sd
+, MIN(value_avg) as value_min
+, MAX(value_avg) as value_max
+, SUM(value_count) as value_raw_count
+, SUM(value_avg*value_count)/SUM(value_count) as value_raw_avg
+, MIN(value_min) as value_raw_min
+, MAX(value_max) as value_raw_max
+, PERCENTILE_CONT(0.02) WITHIN GROUP(ORDER BY value_avg) as value_p02
+, PERCENTILE_CONT(0.25) WITHIN GROUP(ORDER BY value_avg) as value_p25
+, PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY value_avg) as value_p50
+, PERCENTILE_CONT(0.75) WITHIN GROUP(ORDER BY value_avg) as value_p75
+, PERCENTILE_CONT(0.98) WITHIN GROUP(ORDER BY value_avg) as value_p98
+, SUM(error_count) as error_raw_count
+, SUM((value_avg IS NULL)::int) as error_count
+FROM hourly_data m
+JOIN sensors s ON (m.sensors_id = s.sensors_id)
+JOIN sensor_systems sy ON (s.sensor_systems_id = sy.sensor_systems_id)
+JOIN sensor_nodes sn ON (sy.sensor_nodes_id = sn.sensor_nodes_id)
+JOIN timezones t ON (sn.timezones_id = t.gid)
+WHERE value_count > 0
+AND datetime > as_utc(sd, t.tzid)
+AND datetime <= as_utc(ed, t.tzid)
+AND m.sensors_id = id
+GROUP BY 1,2,3
+HAVING COUNT(1) > 0
+	), inserted AS (
+INSERT INTO daily_data (
+  sensors_id
+, day
+, updated_on
+, first_datetime
+, last_datetime
+, value_count
+, value_avg
+, value_sd
+, value_min
+, value_max
+, value_raw_count
+, value_raw_avg
+, value_raw_min
+, value_raw_max
+, value_p02
+, value_p25
+, value_p50
+, value_p75
+, value_p98
+, error_count
+, error_raw_count
+, calculated_on)
+	SELECT sensors_id
+, day
+, updated_on
+, first_datetime
+, last_datetime
+, value_count
+, value_avg
+, value_sd
+, value_min
+, value_max
+, value_raw_count
+, value_raw_avg
+, value_raw_min
+, value_raw_max
+, value_p02
+, value_p25
+, value_p50
+, value_p75
+, value_p98
+, error_count
+, error_raw_count
+, current_timestamp as calculated_on
+	FROM sensors_rollup
+ON CONFLICT (sensors_id, day) DO UPDATE
+SET first_datetime = EXCLUDED.first_datetime
+, last_datetime = EXCLUDED.last_datetime
+, updated_on = EXCLUDED.updated_on
+, value_avg = EXCLUDED.value_avg
+, value_min = EXCLUDED.value_min
+, value_max = EXCLUDED.value_max
+, value_count = EXCLUDED.value_count
+, value_raw_avg = EXCLUDED.value_raw_avg
+, value_raw_min = EXCLUDED.value_raw_min
+, value_raw_max = EXCLUDED.value_raw_max
+, value_raw_count = EXCLUDED.value_raw_count
+, value_p02 = EXCLUDED.value_p02
+, value_p25 = EXCLUDED.value_p25
+, value_p50 = EXCLUDED.value_p50
+, value_p75 = EXCLUDED.value_p75
+, value_p98 = EXCLUDED.value_p98
+, error_count = EXCLUDED.error_count
+, error_raw_count = EXCLUDED.error_raw_count
 , calculated_on = EXCLUDED.calculated_on
 	) SELECT COUNT(DISTINCT sensors_id) as sensors_count
 	, COUNT(DISTINCT sensor_nodes_id) as sensor_nodes_count
@@ -389,3 +521,69 @@ BEGIN
 	RETURN days;
 END;
 $$ LANGUAGE plpgsql;
+
+
+SELECT *
+	FROM daily_stats
+	ORDER BY day DESC
+	LIMIT 3;
+
+
+
+SELECT sensor_nodes_count
+	, sensors_count
+	, measurements_count as hourly_count
+	, measurements_raw_count as raw_count
+	, calculated_on
+	FROM daily_stats
+	ORDER BY day DESC
+	LIMIT 30;
+
+	WITH days AS (
+	SELECT day
+	FROM (VALUES
+	  (date '2022-01-01')
+	, (date '2022-01-02')
+	, (date '2022-01-03')
+	, (date '2022-01-08')
+	, (date '2022-01-09')
+	, (date '2022-01-10')
+	, (date '2022-02-03')
+	, (date '2022-02-02')
+	, (date '2022-02-03')
+	, (date '2022-04-02')
+	, (date '2022-04-03')
+	) a(day)
+	), first_days_marked AS (
+	SELECT day
+	, CASE WHEN age(day, lag(day) OVER (ORDER BY day)) <= '1day'::interval
+		THEN NULL ELSE 1 END as idx
+	FROM days
+	), groups_identified AS (
+	SELECT day
+	, SUM(idx) OVER (ORDER BY day) as grp
+	FROM first_days_marked)
+	SELECT MIN(day) as day_first
+	, MAX(day) as day_last
+	FROM groups_identified
+	GROUP BY grp;
+
+
+
+
+ WITH first_days_marked AS (
+	SELECT day
+	, CASE WHEN age(day, lag(day) OVER (ORDER BY day)) <= '1day'::interval
+		THEN NULL ELSE 1 END as idx
+	FROM daily_data
+	WHERE value_count > 0
+	AND sensors_id = 2257208
+	), groups_identified AS (
+	SELECT day
+	, SUM(idx) OVER (ORDER BY day) as grp
+	FROM first_days_marked)
+	SELECT MIN(day) as day_first
+	, MAX(day) as day_last
+	FROM groups_identified
+	GROUP BY grp
+	ORDER BY grp;

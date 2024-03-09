@@ -918,6 +918,31 @@ GROUP BY 1
 ORDER BY 1 DESC;
 
 
+SELECT init_datetime::date as added_on
+, MIN(age(completed_datetime, init_datetime)) as ingest_time_min
+, MAX(age(completed_datetime, init_datetime)) as ingest_time_max
+, AVG(age(completed_datetime, init_datetime)) as ingest_time_avg
+--, MIN(age(completed_datetime, loaded_datetime)) as load_time_min
+--, MAX(age(completed_datetime, loaded_datetime)) as load_time_max
+--, AVG(age(completed_datetime, loaded_datetime)) as load_time_avg
+, COUNT(1) as files_added
+, SUM((completed_datetime IS NULL)::int) as files_pending
+, ROUND(AVG(jobs)) as jobs_avg
+, SUM((has_error)::int) as errors
+, ROUND(AVG(records)::int) as records_avg
+, MAX(records) as records_max
+, SUM(records) as records
+, SUM(inserted) as inserted
+, SUM(file_size) as total_size
+, ROUND(AVG(file_size)) as avg_size
+, ROUND(SUM(inserted)::numeric/SUM(records)::numeric * 100, 1) as pct
+FROM fetchlogs
+WHERE init_datetime::date >= current_date - 14
+AND key ~* 'airgradient'
+GROUP BY 1
+ORDER BY 1 DESC;
+
+
 CREATE OR REPLACE VIEW fetchlogs_hourly_summary AS
 SELECT date_trunc('hour', init_datetime) as added_on
 , MIN(age(completed_datetime, init_datetime)) as ingest_time_min
@@ -934,9 +959,10 @@ SELECT date_trunc('hour', init_datetime) as added_on
 , SUM(inserted) as inserted
 , SUM(file_size) as total_size
 , ROUND(AVG(file_size)) as avg_size
-, ROUND(SUM(inserted)::numeric/SUM(records)::numeric * 100, 1) as pct
+	-- fix div by zero issue which happens at the first of each hour
+, ROUND(SUM(inserted)::numeric/(SUM(records)::numeric + 0.001) * 100, 1) as pct
 FROM fetchlogs
-WHERE init_datetime::date >= current_date - 1
+WHERE init_datetime::date >= current_date - 2
 GROUP BY 1
 ORDER BY 1 DESC;
 
@@ -1042,34 +1068,43 @@ GROUP BY 1
 ORDER BY lower(p.label);
 
 
+ CREATE OR REPLACE VIEW provider_licenses_view AS
+	SELECT p.providers_id
+	, json_agg(json_build_object(
+	  'id', p.licenses_id
+	, 'url', COALESCE(p.url, l.url)
+	, 'description', COALESCE(p.notes, l.description)
+	, 'date_from', lower(active_period)
+	, 'date_to', upper(active_period)
+	)) as licenses
+	FROM providers_licenses p
+	JOIN licenses l ON (l.licenses_id = p.licenses_id)
+	GROUP BY providers_id;
 
 
-
-
-SELECT * FROM records_inserted('day', current_date - 8, 'realtime')
-UNION ALL
-SELECT * FROM records_inserted('day', current_date - 8, 'purple')
-UNION ALL
-SELECT * FROM records_inserted('day', current_date - 8, 'clarity')
-UNION ALL
-SELECT * FROM records_inserted('day', current_date - 8, 'senstate');
-
-
---SELECT * FROM parse_ingest_id('CMU-Technology Center-pm25');
-
--- SELECT *
--- FROM sensor_nodes_check
--- WHERE sensor_nodes_id = 23642;
-
--- SELECT *
--- FROM sensor_nodes_check
--- WHERE sensors_id = 1152;
-
--- SELECT r->>'ingest_id' as key
--- , COUNT(1) as n
--- FROM rejects
--- GROUP BY 1
--- LIMIT 1000;
-
+	CREATE OR REPLACE FUNCTION remove_sensor_data(id int, delete_sensor bool DEFAULT FALSE)
+	RETURNS bool AS $$
+	BEGIN
+		-- annual data
+		DELETE FROM annual_data WHERE sensors_id = id;
+		-- daily data
+		DELETE FROM daily_data WHERE sensors_id = id;
+		--- hourly data
+		DELETE FROM hourly_data WHERE sensors_id = id;
+		-- latest
+		DELETE FROM sensors_rollup WHERE sensors_id = id;
+		-- exceedances
+		DELETE FROM sensor_exceedances WHERE sensors_id = id;
+		-- sensors_history
+		DELETE FROM sensors_history WHERE sensors_id = id;
+		-- measurements
+		DELETE FROM measurements WHERE sensors_id = id;
+			-- sensors
+		IF delete_sensor THEN
+		  DELETE FROM sensors WHERE sensors_id = id;
+		END IF;
+	  RETURN (SELECT EXISTS(SELECT 1 FROM sensors WHERE sensors_id = id) != delete_sensor);
+	END;
+	$$ LANGUAGE plpgsql;
 
 COMMIT;
