@@ -62,6 +62,7 @@ WITH countries_locations AS (
         , 'units', m.units
         )
     ) as parameters
+	, array_agg(DISTINCT m.measurands_id) AS parameter_ids
   FROM countries_parameters cp
   JOIN measurands m USING (measurands_id)
   JOIN countries_locations l USING (countries_id)
@@ -70,16 +71,16 @@ WITH countries_locations AS (
   SELECT countries_id as id
   , name
   , iso as code
-  , datetime_first
-  , datetime_last
-  , measurements_count
-  , locations_count
-  , providers_count
-  , parameters
-  --, geojson(geom) as geojson
+  , cr.datetime_first
+  , cr.datetime_last
+  , cr.measurements_count
+  , cl.locations_count
+  , cl.providers_count
+  , cr.parameters
+  , cr.parameter_ids
   FROM countries
-  JOIN countries_rollup USING (countries_id)
-  JOIN countries_locations USING (countries_id);
+  JOIN countries_rollup cr USING (countries_id)
+  JOIN countries_locations cl USING (countries_id);
 
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS countries_view_cached AS

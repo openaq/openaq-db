@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE SEQUENCE IF NOT EXISTS user_keys_sq START 10;
 CREATE TABLE IF NOT EXISTS user_keys (
   user_keys_id int PRIMARY KEY DEFAULT nextval('user_keys_sq')
-  , users_id int NOT NULL REFERENCES users
+  , users_id int NOT NULL REFERENCES users ON DELETE CASCADE 
   -- uncomment if using the key_types method
   --, key_types_id int NOT NULL REFERENCES key_types
   , label varchar(100) NOT NULL
@@ -148,13 +148,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS entities_path_tgr ON entity_path;
+DROP TRIGGER IF EXISTS entities_path_tgr ON entity_paths;
 CREATE TRIGGER entities_path_tgr
 BEFORE INSERT OR UPDATE ON entity_paths
 FOR EACH ROW EXECUTE PROCEDURE check_entities_path();
 
 -- Grant access to the api user
-GRANT SELECT ON public.users TO apiuser;
-GRANT SELECT ON public.entities TO apiuser;
-GRANT SELECT ON public.user_keys TO apiuser;
-GRANT SELECT ON public.users_entities TO apiuser;
+GRANT SELECT ON public.users TO :DATABASE_READ_USER;
+GRANT SELECT ON public.entities TO :DATABASE_READ_USER;
+GRANT SELECT ON public.user_keys TO :DATABASE_READ_USER;
+GRANT SELECT ON public.users_entities TO :DATABASE_READ_USER;

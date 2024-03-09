@@ -481,6 +481,17 @@ BEGIN
 END
 $$ LANGUAGE plpgsql;
 
+
+-- regenerates a user's api key token 
+CREATE OR REPLACE FUNCTION regenerate_token(
+  _users_id integer
+)
+RETURNS void AS $$
+UPDATE user_keys 
+SET token = encode(digest(uuid_generate_v4():: text, 'sha256'), 'hex')
+WHERE users_id = _users_id
+$$ LANGUAGE SQL;
+
 -- a function to verify a user based on email and verification code
 -- and generate an API key in the user_keys table
 CREATE OR REPLACE FUNCTION verify_email(
@@ -503,6 +514,44 @@ BEGIN
   END IF;
   SELECT get_user_token(_users_id) INTO _token;
   RETURN _token;
+END
+$$ LANGUAGE plpgsql;
+
+-- a function to create a new a list for a user
+CREATE OR REPLACE FUNCTION create_list(
+  _users_id integer
+  , _label text DEFAULT 'My first list'
+  , _description text DEFAULT 'A custom list of AQ monitoring sites.'
+) RETURNS text AS $$
+DECLARE
+  _lists_id int;
+BEGIN
+  INSERT INTO
+      lists (users_id, label, description)
+  VALUE
+      (_users_id, _label, _description)
+  SELECT currval('lists_sq') INTO _lists_id;
+  RETURN _lists_id;
+END
+$$ LANGUAGE plpgsql;
+
+-- a function to delete a list and a foreign keyed rows in other tables
+CREATE OR REPLACE FUNCTION delete_list(
+  _lists_id integer
+) RETURNS void AS $$
+BEGIN
+  DELETE FROM
+    sensor_nodes_list
+  WHERE
+    lists_id = _lists_id;
+  DELETE FROM
+    users_lists
+  WHERE
+    lists_id = _lists_id;
+  DELETE FROM
+    lists
+  WHERE
+    lists_id = _lists_id;
 END
 $$ LANGUAGE plpgsql;
 

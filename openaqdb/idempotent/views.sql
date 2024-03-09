@@ -1082,6 +1082,94 @@ ORDER BY lower(p.label);
 	GROUP BY providers_id;
 
 
+-- a convenience view to aid in querying a all lists a user has permissions to
+CREATE OR REPLACE VIEW user_lists_view AS
+WITH owner_users AS (
+    SELECT DISTINCT
+        lists_id
+        , users_id
+		, 'owner' AS role
+    FROM
+        lists
+)
+, list_users AS (
+	SELECT lists_id
+	, users_id
+	, role::text
+	FROM users_lists
+	UNION
+	SELECT lists_id
+	, users_id
+	, role::text
+	FROM owner_users
+)
+, user_count AS (
+    SELECT
+		lists_id
+    , COUNT(*) AS user_count
+	FROM
+		lists
+    JOIN
+    	list_users lu USING (lists_id)
+	GROUP BY lists_id
+)
+, sensor_nodes_group AS (
+    SELECT
+		lists_id
+		, COUNT(sn.sensor_nodes_id) AS locations_count
+		, array_agg(snl.sensor_nodes_id) AS sensor_nodes_ids
+    	, ST_Collect(sn.geom) AS sensor_nodes_multi_point
+	FROM
+		lists l
+	LEFT JOIN
+		sensor_nodes_list snl USING (lists_id)
+	LEFT JOIN
+		sensor_nodes sn USING (sensor_nodes_id)
+	GROUP BY lists_id
+)
+, list_bounds AS (
+	SELECT
+		sng.lists_id,
+		ST_Envelope(sng.sensor_nodes_multi_point) as bounds
+	FROM
+		sensor_nodes_group sng
+)
+SELECT
+    l.lists_id
+    , l.users_id AS owner_id
+    , lu.users_id
+	, lu.role
+    , l.label
+    , l.description
+    , visibility
+    , uc.user_count
+    , sng.locations_count
+	, sng.sensor_nodes_ids AS sensor_nodes_ids
+	, (ST_AsGeoJSON(lb.bounds)::json)->'coordinates' AS bounds
+	, CASE
+		WHEN
+			ST_GeometryType(lb.bounds) = 'ST_Point'
+		THEN
+			(ST_AsGeoJSON(ST_MakePolygon(ST_MakeLine(ARRAY[lb.bounds,lb.bounds,lb.bounds,lb.bounds,lb.bounds])))::json)->'coordinates'->0
+		WHEN
+			ST_GeometryType(lb.bounds) = 'ST_Polygon'
+		THEN
+			(ST_AsGeoJSON(lb.bounds)::json)->'coordinates'->0
+		ELSE
+			(ST_AsGeoJSON(ST_MakePolygon(ST_MakeLine(ARRAY[ST_Point(-180, -90),ST_Point(-180, 90),ST_Point(180, 90),ST_Point(180, -90),ST_Point(-180, -90)])))::json)->'coordinates'->0
+	 END AS bbox
+FROM
+    lists l
+JOIN
+    list_users lu USING (lists_id)
+JOIN
+    user_count uc USING (lists_id)
+JOIN
+	sensor_nodes_group sng USING (lists_id)
+JOIN
+	list_bounds lb USING (lists_id);
+
+
 	CREATE OR REPLACE FUNCTION remove_sensor_data(id int, delete_sensor bool DEFAULT FALSE)
 	RETURNS bool AS $$
 	BEGIN
@@ -1106,5 +1194,6 @@ ORDER BY lower(p.label);
 	  RETURN (SELECT EXISTS(SELECT 1 FROM sensors WHERE sensors_id = id) != delete_sensor);
 	END;
 	$$ LANGUAGE plpgsql;
+
 
 COMMIT;
