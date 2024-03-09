@@ -101,6 +101,11 @@ RETURNS timestamptz AS $$
 SELECT timezone(tz, date_trunc(period, timezone(tz, tstz + '-1sec'::interval)));
 $$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
 
+CREATE OR REPLACE FUNCTION as_date(tstz timestamptz, tz text)
+RETURNS date AS $$
+SELECT date_trunc('day', timezone(tz, tstz + '-1sec'::interval))::date;
+$$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
+
 --DROP FUNCTION IF EXISTS truncate_timestamp(timestamptz, text, text, interval);
 CREATE OR REPLACE FUNCTION truncate_timestamp(tstz timestamptz, period text, tz text, _offset interval)
 RETURNS timestamptz AS $$
@@ -111,6 +116,22 @@ CREATE OR REPLACE FUNCTION truncate_timestamp(tstz timestamptz, period text, _of
 RETURNS timestamptz AS $$
 SELECT date_trunc(period, tstz + ('-1sec'::interval + _offset));
 $$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
+
+
+CREATE OR REPLACE FUNCTION as_timestamptz(tstz timestamptz, tz text) RETURNS timestamptz AS $$
+SELECT tstz;
+$$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
+
+
+CREATE OR REPLACE FUNCTION as_timestamptz(tstz timestamp, tz text) RETURNS timestamptz AS $$
+SELECT timezone(tz, tstz);
+$$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
+
+
+CREATE OR REPLACE FUNCTION as_timestamptz(tstz date, tz text) RETURNS timestamptz AS $$
+SELECT timezone(tz, tstz::timestamp);
+$$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
+
 
 CREATE OR REPLACE FUNCTION get_datetime_object(tstz timestamptz, tz text DEFAULT 'UTC')
 RETURNS json AS $$
@@ -337,6 +358,22 @@ SELECT jsonb_build_object(
        , 'percent_coverage', ROUND((obs/(dur/averaging))*100.0)
        );
 $$ LANGUAGE SQL PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION calculate_coverage(
+  obs int
+, averaging numeric
+, logging numeric
+, dt_first timestamptz
+, dt_last timestamptz
+) RETURNS jsonb AS $$
+SELECT calculate_coverage(
+	obs
+	, averaging
+	, logging
+	, EXTRACT(EPOCH FROM dt_last - dt_first)
+	);
+$$ LANGUAGE SQL PARALLEL SAFE;
+
 
 -- A function that will calculate the expected number of hours
 -- for a given period, grouping and factor

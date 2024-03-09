@@ -718,6 +718,32 @@ END;
 $$ LANGUAGE plpgsql;
 
 
+CREATE OR REPLACE FUNCTION update_instruments(sn text, eid int, iid int, force bool DEFAULT 'f') RETURNS bigint AS $$
+DECLARE
+	n bigint := 0;
+BEGIN
+		UPDATE sensor_nodes
+		SET owner_entities_id = eid
+		WHERE (lower(origin) = lower(sn) OR lower(source_name) = lower(sn))
+		AND (owner_entities_id = 1 OR force);
+	  ------------
+	  WITH updates AS (
+		UPDATE sensor_systems
+		SET instruments_id = iid
+		WHERE (instruments_id = 1 OR force)
+		AND sensor_nodes_id IN (
+			SELECT sensor_nodes_id
+			FROM sensor_nodes
+			WHERE owner_entities_id = eid
+	    AND (lower(origin) = lower(sn) OR lower(source_name) = lower(sn))
+			)
+	  RETURNING 1)
+	  SELECT COUNT(1) INTO n FROM updates;
+	 RETURN n;
+END;
+$$ LANGUAGE plpgsql;
+
+
 CREATE OR REPLACE PROCEDURE check_metadata() AS $$
 DECLARE
 BEGIN
@@ -753,19 +779,32 @@ BEGIN
     UPDATE sensors
     SET data_averaging_period_seconds = 90
     , data_logging_period_seconds = 300
-    WHERE source_id ~* 'clarity';
+    WHERE source_id ~* 'clarity'
+    AND data_averaging_period_seconds IS NULL;
     -----------
     UPDATE sensors
     SET data_averaging_period_seconds = 3600
     , data_logging_period_seconds = 3600
-    WHERE source_id ~* 'airgradient';
+    WHERE source_id ~* 'airgradient'
+    AND data_averaging_period_seconds IS NULL;
     -----------
     UPDATE sensors
     SET data_averaging_period_seconds = 1
     , data_logging_period_seconds = 1
-    WHERE source_id ~* 'habitatmap';
+	    WHERE source_id ~* 'habitatmap'
+    AND data_averaging_period_seconds IS NULL;
+		------------ make all openaq origin data gov
+	  --- source_name, entities_id, instruments_id
+	  PERFORM update_instruments('openaq', 4, 2);
+		PERFORM update_instruments('airgradient', 12, 7);
+		PERFORM update_instruments('clarity', 9, 4);
+		PERFORM update_instruments('purpleair', 8, 3);
+		PERFORM update_instruments('habitatmap', 11, 5);
+		PERFORM update_instruments('senstate', 10, 6);
 END;
 $$ LANGUAGE plpgsql;
+
+
 
 
 -- run after you have just imported data outside of the fetcher

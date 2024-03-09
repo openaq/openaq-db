@@ -11,7 +11,7 @@ function setenv() {
 }
 
 # get prod version with `SELECT version()`
-# setting them this way so that they are avaiable globally 
+# setting them this way so that they are avaiable globally
 # and for future reference in scripts
 setenv PG_VERSION 15 # current production version
 setenv PROJ_VERSION 9.2.0
@@ -97,7 +97,8 @@ export PATH=$PATH:/usr/local/bin
 
 # Build PostGIS
 cd /tmp
-wget https://postgis.net/stuff/postgis-$PGIS_VERSION.tar.gz
+https://download.osgeo.org/postgis/source/postgis-
+wget https://download.osgeo.org/postgis/source/postgis-$PGIS_VERSION.tar.gz
 tar -xvf postgis-$PGIS_VERSION.tar.gz
 cd postgis-$PGIS_VERSION
 ./configure \

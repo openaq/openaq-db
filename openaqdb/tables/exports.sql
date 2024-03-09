@@ -12,8 +12,8 @@ CREATE TABLE IF NOT EXISTS open_data_export_logs (
   , queued_on timestamptz                  -- when did we last queue up a change
   , exported_on timestamptz                -- and when did we last finish exporting
   , has_error boolean DEFAULT 'f'
-  , key text
-  , version int
+  , key text -- file location
+  , version int -- file schema ??
 	, checked_on timestamptz
   , metadata json
   , UNIQUE(sensor_nodes_id, day)

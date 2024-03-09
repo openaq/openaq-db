@@ -94,13 +94,16 @@ SELECT
   , oc.entity_type::text~*'research' as is_analysis
   , ni.manufacturers
   , ni.manufacturer_ids
+	, pl.licenses
+	, l.providers_id
 FROM sensor_nodes l
 JOIN timezones t ON (l.timezones_id = t.gid)
 JOIN countries c ON (c.countries_id = l.countries_id)
 JOIN entities oc ON (oc.entities_id = l.owner_entities_id)
 JOIN providers p ON (p.providers_id = l.providers_id)
 JOIN nodes_instruments ni USING (sensor_nodes_id)
-JOIN nodes_sensors ns USING (sensor_nodes_id);
+JOIN nodes_sensors ns USING (sensor_nodes_id)
+LEFT JOIN provider_licenses_view pl ON (pl.providers_id = l.providers_id);
 
 DROP MATERIALIZED VIEW IF EXISTS locations_view_cached;
 CREATE MATERIALIZED VIEW locations_view_cached AS

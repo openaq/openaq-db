@@ -19,6 +19,22 @@ SELECT cron.schedule_in_database(
   , 'openaq'
   );
 
+-- every hour on the 1/2 hour
+SELECT cron.schedule_in_database(
+  'update-daily-data-leading'
+  , '30 * * * *'
+  , $$SELECT calculate_daily_data_full((now() + '15h'::interval)::date)$$
+  , 'openaq'
+  );
+
+SELECT cron.schedule_in_database(
+  'update-daily-data-trailing'
+  , '10 * * * *'
+  , $$SELECT calculate_daily_data_full((now() - '13h'::interval)::date)$$
+  , 'openaq'
+  );
+
+
 -- at quarter past each hour calculate
 -- the latest 10 hours that need updating
 SELECT cron.schedule_in_database(
@@ -72,14 +88,14 @@ SELECT cron.schedule_in_database(
 SELECT cron.schedule_in_database(
   'create-measurements-partition'
   , '* * 1 * *'
-  , $$SELECT create_measurements_partition(current_date + '1month'::interval)$$
+  , $$SELECT create_measurements_partition((current_date + '1month'::interval)::date)$$
   , 'openaq'
 );
 
 SELECT cron.schedule_in_database(
   'create-hourly-data-partition'
   , '* * 1 * *'
-  , $$SELECT create_hourly_data_partition(current_date + '1month'::interval)$$
+  , $$SELECT create_hourly_data_partition((current_date + '1month'::interval)::date)$$
   , 'openaq'
 );
 
@@ -98,13 +114,22 @@ SELECT cron.schedule_in_database(
   );
 
 
+	SELECT jobid
+	, start_time
+	, age(end_time, start_time) as duration
+	FROM cron.job_run_details
+	WHERE start_time > current_date
+	AND jobid = 2
+	ORDER BY start_time DESC
+	LIMIT 30;
+
 WITH jobs AS (
 	SELECT jobid
 	, start_time::date as day
 	, age(end_time, start_time) as duration
 	FROM cron.job_run_details
 	WHERE start_time > current_date - 14
-	AND jobid = 4
+	AND jobid = 2
 	)
 	SELECT jobid
 	, day
@@ -114,5 +139,5 @@ WITH jobs AS (
 	, COUNT(1)
 	FROM jobs
 	GROUP BY jobid, day
-	ORDER BY 1,2
+	ORDER BY 1,2 DESC
 	LIMIT 30;

@@ -629,7 +629,9 @@ SELECT sn.sensor_nodes_id
 , sn.origin
 , COALESCE(p.label, 'Not found') as provider
 , st_astext(COALESCE(l.geom_latest, sn.geom)) as location
-, sy.sensor_systems_id
+, tz.tzid as timezone
+, utc_offset(tz.tzid) as utc_offset
+--, sy.sensor_systems_id
 , sn.added_on
 , s.sensors_id
 , COALESCE(m.measurand, 'Not found') as parameter
@@ -641,6 +643,7 @@ SELECT sn.sensor_nodes_id
 , s.added_on as sensor_added_on
 , sn.added_on as node_added_on
 FROM sensor_nodes sn
+LEFT JOIN timezones tz ON (sn.timezones_id = tz.gid)
 LEFT JOIN providers p ON (sn.providers_id = p.providers_id)
 LEFT JOIN sensor_systems sy USING (sensor_nodes_id)
 LEFT JOIN sensors s USING (sensor_systems_id)
@@ -915,6 +918,31 @@ GROUP BY 1
 ORDER BY 1 DESC;
 
 
+SELECT init_datetime::date as added_on
+, MIN(age(completed_datetime, init_datetime)) as ingest_time_min
+, MAX(age(completed_datetime, init_datetime)) as ingest_time_max
+, AVG(age(completed_datetime, init_datetime)) as ingest_time_avg
+--, MIN(age(completed_datetime, loaded_datetime)) as load_time_min
+--, MAX(age(completed_datetime, loaded_datetime)) as load_time_max
+--, AVG(age(completed_datetime, loaded_datetime)) as load_time_avg
+, COUNT(1) as files_added
+, SUM((completed_datetime IS NULL)::int) as files_pending
+, ROUND(AVG(jobs)) as jobs_avg
+, SUM((has_error)::int) as errors
+, ROUND(AVG(records)::int) as records_avg
+, MAX(records) as records_max
+, SUM(records) as records
+, SUM(inserted) as inserted
+, SUM(file_size) as total_size
+, ROUND(AVG(file_size)) as avg_size
+, ROUND(SUM(inserted)::numeric/SUM(records)::numeric * 100, 1) as pct
+FROM fetchlogs
+WHERE init_datetime::date >= current_date - 14
+AND key ~* 'airgradient'
+GROUP BY 1
+ORDER BY 1 DESC;
+
+
 CREATE OR REPLACE VIEW fetchlogs_hourly_summary AS
 SELECT date_trunc('hour', init_datetime) as added_on
 , MIN(age(completed_datetime, init_datetime)) as ingest_time_min
@@ -931,9 +959,10 @@ SELECT date_trunc('hour', init_datetime) as added_on
 , SUM(inserted) as inserted
 , SUM(file_size) as total_size
 , ROUND(AVG(file_size)) as avg_size
-, ROUND(SUM(inserted)::numeric/SUM(records)::numeric * 100, 1) as pct
+	-- fix div by zero issue which happens at the first of each hour
+, ROUND(SUM(inserted)::numeric/(SUM(records)::numeric + 0.001) * 100, 1) as pct
 FROM fetchlogs
-WHERE init_datetime::date >= current_date - 1
+WHERE init_datetime::date >= current_date - 2
 GROUP BY 1
 ORDER BY 1 DESC;
 
@@ -1039,59 +1068,73 @@ GROUP BY 1
 ORDER BY lower(p.label);
 
 
+ CREATE OR REPLACE VIEW provider_licenses_view AS
+	SELECT p.providers_id
+	, json_agg(json_build_object(
+	  'id', p.licenses_id
+	, 'url', COALESCE(p.url, l.url)
+	, 'description', COALESCE(p.notes, l.description)
+	, 'date_from', lower(active_period)
+	, 'date_to', upper(active_period)
+	)) as licenses
+	FROM providers_licenses p
+	JOIN licenses l ON (l.licenses_id = p.licenses_id)
+	GROUP BY providers_id;
+
+
 -- a convenience view to aid in querying a all lists a user has permissions to
 CREATE OR REPLACE VIEW user_lists_view AS
 WITH owner_users AS (
     SELECT DISTINCT
         lists_id
-        , users_id 
+        , users_id
 		, 'owner' AS role
-    FROM 
-        lists 
+    FROM
+        lists
 )
 , list_users AS (
 	SELECT lists_id
-	,users_id
+	, users_id
 	, role::text
 	FROM users_lists
-	UNION 
+	UNION
 	SELECT lists_id
-	,users_id
+	, users_id
 	, role::text
 	FROM owner_users
 )
 , user_count AS (
-    SELECT 
-		lists_id 
-    	, COUNT(*) AS user_count
-	FROM 
+    SELECT
+		lists_id
+    , COUNT(*) AS user_count
+	FROM
 		lists
-    JOIN 
+    JOIN
     	list_users lu USING (lists_id)
 	GROUP BY lists_id
 )
 , sensor_nodes_group AS (
-    SELECT 
+    SELECT
 		lists_id
 		, COUNT(sn.sensor_nodes_id) AS locations_count
 		, array_agg(snl.sensor_nodes_id) AS sensor_nodes_ids
     	, ST_Collect(sn.geom) AS sensor_nodes_multi_point
-	FROM    
+	FROM
 		lists l
-	LEFT JOIN 
+	LEFT JOIN
 		sensor_nodes_list snl USING (lists_id)
-	LEFT JOIN 
+	LEFT JOIN
 		sensor_nodes sn USING (sensor_nodes_id)
 	GROUP BY lists_id
 )
 , list_bounds AS (
-	SELECT 
+	SELECT
 		sng.lists_id,
 		ST_Envelope(sng.sensor_nodes_multi_point) as bounds
-	FROM 
+	FROM
 		sensor_nodes_group sng
 )
-SELECT 
+SELECT
     l.lists_id
     , l.users_id AS owner_id
     , lu.users_id
@@ -1104,55 +1147,53 @@ SELECT
 	, sng.sensor_nodes_ids AS sensor_nodes_ids
 	, (ST_AsGeoJSON(lb.bounds)::json)->'coordinates' AS bounds
 	, CASE
-		WHEN 
-			ST_GeometryType(lb.bounds) = 'ST_Point' 
-		THEN
-			(ST_AsGeoJSON(ST_MakePolygon(ST_MakeLine(ARRAY[lb.bounds,lb.bounds,lb.bounds,lb.bounds,lb.bounds])))::json)->'coordinates'->0 
 		WHEN
-			ST_GeometryType(lb.bounds) = 'ST_Polygon' 
-		THEN 
-			(ST_AsGeoJSON(lb.bounds)::json)->'coordinates'->0 
-		ELSE 
-			(ST_AsGeoJSON(ST_MakePolygon(ST_MakeLine(ARRAY[ST_Point(-180, -90),ST_Point(-180, 90),ST_Point(180, 90),ST_Point(180, -90),ST_Point(-180, -90)])))::json)->'coordinates'->0 
-
+			ST_GeometryType(lb.bounds) = 'ST_Point'
+		THEN
+			(ST_AsGeoJSON(ST_MakePolygon(ST_MakeLine(ARRAY[lb.bounds,lb.bounds,lb.bounds,lb.bounds,lb.bounds])))::json)->'coordinates'->0
+		WHEN
+			ST_GeometryType(lb.bounds) = 'ST_Polygon'
+		THEN
+			(ST_AsGeoJSON(lb.bounds)::json)->'coordinates'->0
+		ELSE
+			(ST_AsGeoJSON(ST_MakePolygon(ST_MakeLine(ARRAY[ST_Point(-180, -90),ST_Point(-180, 90),ST_Point(180, 90),ST_Point(180, -90),ST_Point(-180, -90)])))::json)->'coordinates'->0
 	 END AS bbox
-FROM    
+FROM
     lists l
-JOIN 
+JOIN
     list_users lu USING (lists_id)
-JOIN 
+JOIN
     user_count uc USING (lists_id)
-JOIN 
+JOIN
 	sensor_nodes_group sng USING (lists_id)
-JOIN 
-	list_bounds lb USING (lists_id)
+JOIN
+	list_bounds lb USING (lists_id);
 
 
-
-SELECT * FROM records_inserted('day', current_date - 8, 'realtime')
-UNION ALL
-SELECT * FROM records_inserted('day', current_date - 8, 'purple')
-UNION ALL
-SELECT * FROM records_inserted('day', current_date - 8, 'clarity')
-UNION ALL
-SELECT * FROM records_inserted('day', current_date - 8, 'senstate');
-
-
---SELECT * FROM parse_ingest_id('CMU-Technology Center-pm25');
-
--- SELECT *
--- FROM sensor_nodes_check
--- WHERE sensor_nodes_id = 23642;
-
--- SELECT *
--- FROM sensor_nodes_check
--- WHERE sensors_id = 1152;
-
--- SELECT r->>'ingest_id' as key
--- , COUNT(1) as n
--- FROM rejects
--- GROUP BY 1
--- LIMIT 1000;
+	CREATE OR REPLACE FUNCTION remove_sensor_data(id int, delete_sensor bool DEFAULT FALSE)
+	RETURNS bool AS $$
+	BEGIN
+		-- annual data
+		DELETE FROM annual_data WHERE sensors_id = id;
+		-- daily data
+		DELETE FROM daily_data WHERE sensors_id = id;
+		--- hourly data
+		DELETE FROM hourly_data WHERE sensors_id = id;
+		-- latest
+		DELETE FROM sensors_rollup WHERE sensors_id = id;
+		-- exceedances
+		DELETE FROM sensor_exceedances WHERE sensors_id = id;
+		-- sensors_history
+		DELETE FROM sensors_history WHERE sensors_id = id;
+		-- measurements
+		DELETE FROM measurements WHERE sensors_id = id;
+			-- sensors
+		IF delete_sensor THEN
+		  DELETE FROM sensors WHERE sensors_id = id;
+		END IF;
+	  RETURN (SELECT EXISTS(SELECT 1 FROM sensors WHERE sensors_id = id) != delete_sensor);
+	END;
+	$$ LANGUAGE plpgsql;
 
 
 COMMIT;

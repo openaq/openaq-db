@@ -85,10 +85,15 @@ CREATE TABLE IF NOT EXISTS hourly_data (
 , value_p75 double precision
 , value_p98 double precision
 , threshold_values jsonb
+, error_count int NOT NULL DEFAULT 0
 , updated_on timestamptz -- last time the sensor was updated
 , calculated_on timestamptz-- last time the row rollup was calculated
 , UNIQUE(sensors_id, measurands_id, datetime)
 ) PARTITION BY RANGE (datetime);
+
+--ALTER TABLE hourly_data
+--ADD COLUMN error_count int NOT NULL DEFAULT 0;
+
 
 CREATE INDEX IF NOT EXISTS hourly_data_sensors_id_idx
 ON hourly_data
@@ -431,12 +436,25 @@ $$ LANGUAGE SQL;
 --\set et '''2023-01-19 16:00:00+00'''::timestamptz
 --\set st '''2023-01-19 15:00:00+00'''::timestamptz
 
-
+-- The following methods include a CASE statement for the purpose
+-- of removing errant values BUT still keeping the record. This ensures
+--	that we are summarizing hourly data for all hours that we have data for
 CREATE OR REPLACE FUNCTION calculate_hourly_data(st timestamptz, et timestamptz) RETURNS TABLE (
   sensors_count bigint
 , measurements_count bigint
 ) AS $$
-WITH inserted AS (
+SET LOCAL work_mem = '512MB';
+WITH measurements_filtered AS (
+	SELECT
+  	m.sensors_id
+	, measurands_id
+	, date_trunc('hour', datetime - '1sec'::interval) + '1hour'::interval as datetime
+	, CASE WHEN value < -900 THEN NULL ELSE value END as value
+	FROM measurements m
+	JOIN sensors s ON (m.sensors_id = s.sensors_id)
+	WHERE datetime > date_trunc('hour', st)
+	AND datetime <= date_trunc('hour', et)
+), inserted AS (
 INSERT INTO hourly_data (
   sensors_id
 , measurands_id
@@ -453,11 +471,12 @@ INSERT INTO hourly_data (
 , value_p50
 , value_p75
 , value_p98
-, calculated_on)
-SELECT
-  m.sensors_id
+, error_count
+, calculated_on
+) SELECT
+  sensors_id
 , measurands_id
-, date_trunc('hour', datetime - '1sec'::interval) + '1hour'::interval as datetime
+, datetime
 , MIN(datetime) as first_datetime
 , MAX(datetime) as last_datetime
 , COUNT(1) as value_count
@@ -470,11 +489,9 @@ SELECT
 , PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY value) as value_p50
 , PERCENTILE_CONT(0.75) WITHIN GROUP(ORDER BY value) as value_p75
 , PERCENTILE_CONT(0.98) WITHIN GROUP(ORDER BY value) as value_p98
+, SUM((value IS NULL)::int)
 , current_timestamp as calculated_on
-FROM measurements m
-JOIN sensors s ON (m.sensors_id = s.sensors_id)
-WHERE datetime > date_trunc('hour', st)
-AND datetime <= date_trunc('hour', et)
+FROM measurements_filtered m
 GROUP BY 1,2,3
 HAVING COUNT(1) > 0
 ON CONFLICT (sensors_id, measurands_id, datetime) DO UPDATE
@@ -489,6 +506,7 @@ SET first_datetime = EXCLUDED.first_datetime
 , value_p50 = EXCLUDED.value_p50
 , value_p75 = EXCLUDED.value_p75
 , value_p98 = EXCLUDED.value_p98
+, error_count = EXCLUDED.error_count
 , calculated_on = EXCLUDED.calculated_on
 RETURNING value_count)
 SELECT COUNT(1) as sensors_count
@@ -506,7 +524,18 @@ CREATE OR REPLACE FUNCTION calculate_hourly_data(
   sensors_count bigint
 , measurements_count bigint
 ) AS $$
-WITH inserted AS (
+WITH measurements_filtered AS (
+	SELECT
+  	m.sensors_id
+	, measurands_id
+	, date_trunc('hour', datetime - '1sec'::interval) + '1hour'::interval as datetime
+	, CASE WHEN value < -900 THEN NULL ELSE value END as value
+	FROM measurements m
+	JOIN sensors s ON (m.sensors_id = s.sensors_id)
+	WHERE m.sensors_id = id
+	AND datetime > date_trunc('hour', st)
+	AND datetime <= date_trunc('hour', et)
+), inserted AS (
 INSERT INTO hourly_data (
   sensors_id
 , measurands_id
@@ -523,11 +552,12 @@ INSERT INTO hourly_data (
 , value_p50
 , value_p75
 , value_p98
-, calculated_on)
-SELECT
-  m.sensors_id
+, error_count
+, calculated_on
+) SELECT
+  sensors_id
 , measurands_id
-, date_trunc('hour', datetime - '1sec'::interval) + '1hour'::interval as datetime
+, datetime
 , MIN(datetime) as first_datetime
 , MAX(datetime) as last_datetime
 , COUNT(1) as value_count
@@ -540,12 +570,9 @@ SELECT
 , PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY value) as value_p50
 , PERCENTILE_CONT(0.75) WITHIN GROUP(ORDER BY value) as value_p75
 , PERCENTILE_CONT(0.98) WITHIN GROUP(ORDER BY value) as value_p98
+, SUM((value IS NULL)::int)
 , current_timestamp as calculated_on
-FROM measurements m
-JOIN sensors s ON (m.sensors_id = s.sensors_id)
-WHERE m.sensors_id = id
-AND datetime > date_trunc('hour', st)
-AND datetime <= date_trunc('hour', et)
+FROM measurements_filtered m
 GROUP BY 1,2,3
 HAVING COUNT(1) > 0
 ON CONFLICT (sensors_id, measurands_id, datetime) DO UPDATE
@@ -560,6 +587,7 @@ SET first_datetime = EXCLUDED.first_datetime
 , value_p50 = EXCLUDED.value_p50
 , value_p75 = EXCLUDED.value_p75
 , value_p98 = EXCLUDED.value_p98
+, error_count = EXCLUDED.error_count
 , calculated_on = EXCLUDED.calculated_on
 RETURNING value_count)
 SELECT COUNT(1) as sensors_count
@@ -867,72 +895,3 @@ BEGIN
 	WHERE datetime = st;
 END;
 $$ LANGUAGE plpgsql;
-
-
-SELECT * FROM calculate_hourly_data_partial('2023-05-18 14:00:00+00'::timestamptz);
-
-SELECT * FROM calculate_hourly_data('2023-05-18 15:00:00+00'::timestamptz);
-
-CREATE OR REPLACE FUNCTION calculate_hourly_data(st timestamptz, et timestamptz) RETURNS TABLE (
-  sensors_count bigint
-, measurements_count bigint
-) AS $$
-WITH inserted AS (
-INSERT INTO hourly_data (
-  sensors_id
-, measurands_id
-, datetime
-, first_datetime
-, last_datetime
-, value_count
-, value_avg
-, value_sd
-, value_min
-, value_max
-, value_p02
-, value_p25
-, value_p50
-, value_p75
-, value_p98
-, calculated_on)
-SELECT
-  m.sensors_id
-, measurands_id
-, date_trunc('hour', datetime - '1sec'::interval) + '1hour'::interval as datetime
-, MIN(datetime) as first_datetime
-, MAX(datetime) as last_datetime
-, COUNT(1) as value_count
-, AVG(value) as value_avg
-, STDDEV(value) as value_sd
-, MIN(value) as value_min
-, MAX(value) as value_max
-, PERCENTILE_CONT(0.02) WITHIN GROUP(ORDER BY value) as value_p02
-, PERCENTILE_CONT(0.25) WITHIN GROUP(ORDER BY value) as value_p25
-, PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY value) as value_p50
-, PERCENTILE_CONT(0.75) WITHIN GROUP(ORDER BY value) as value_p75
-, PERCENTILE_CONT(0.98) WITHIN GROUP(ORDER BY value) as value_p98
-, current_timestamp as calculated_on
-FROM measurements m
-JOIN sensors s ON (m.sensors_id = s.sensors_id)
-WHERE datetime > date_trunc('hour', st)
-AND datetime <= date_trunc('hour', et)
-GROUP BY 1,2,3
-HAVING COUNT(1) > 0
-ON CONFLICT (sensors_id, measurands_id, datetime) DO UPDATE
-SET first_datetime = EXCLUDED.first_datetime
-, last_datetime = EXCLUDED.last_datetime
-, value_avg = EXCLUDED.value_avg
-, value_min = EXCLUDED.value_min
-, value_max = EXCLUDED.value_max
-, value_count = EXCLUDED.value_count
-, value_p02 = EXCLUDED.value_p02
-, value_p25 = EXCLUDED.value_p25
-, value_p50 = EXCLUDED.value_p50
-, value_p75 = EXCLUDED.value_p75
-, value_p98 = EXCLUDED.value_p98
-, calculated_on = EXCLUDED.calculated_on
-RETURNING value_count)
-SELECT COUNT(1) as sensors_count
-, SUM(value_count) as measurements_count
-FROM inserted;
-$$ LANGUAGE SQL;
