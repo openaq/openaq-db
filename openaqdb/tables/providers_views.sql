@@ -8,6 +8,7 @@ WITH providers_locations AS (
   , COUNT(DISTINCT countries_id) as countries_count
   , st_extent(geom) as extent
   FROM sensor_nodes
+	WHERE is_public
   GROUP BY providers_id
 -----------------------------------
 ), providers_parameters AS (

@@ -8,8 +8,11 @@ CREATE TABLE  IF NOT EXISTS sensor_nodes (
     country text,
     metadata jsonb,
     source_id text,
-    origin text
+    origin text,
+		is_public boolean DEFAULT 't'
 );
+CREATE INDEX IF NOT EXISTS sensor_nodes_public_idx ON sensor_nodes USING btree (is_public);
+
 CREATE INDEX IF NOT EXISTS sensor_nodes_geom_idx ON sensor_nodes USING gist (geom);
 CREATE INDEX IF NOT EXISTS sensor_nodes_metadata_idx ON sensor_nodes USING gin (metadata);
 CREATE INDEX IF NOT EXISTS sensor_nodes_site_name_source_name_idx ON sensor_nodes USING btree (site_name, source_name);
