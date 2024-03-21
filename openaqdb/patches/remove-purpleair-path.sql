@@ -5,6 +5,9 @@
 	ALTER TABLE sensors
 	ADD COLUMN is_public boolean DEFAULT 't';
 
+	ALTER TABLE providers -- will likly someday be sources
+	ADD COLUMN is_public boolean DEFAULT 't';
+
 -- create an index in the hopes of speeding things up
 CREATE INDEX IF NOT EXISTS sensor_nodes_public_idx ON sensor_nodes USING btree (is_public);
 CREATE INDEX IF NOT EXISTS sensors_public_idx ON sensors USING btree (is_public);
@@ -27,6 +30,11 @@ CREATE INDEX IF NOT EXISTS sensors_public_idx ON sensors USING btree (is_public)
 		JOIN sensor_systems sy USING (sensor_systems_id)
 		JOIN sensor_nodes sn USING (sensor_nodes_id)
 		WHERE sn.source_name ~* 'purpleair');
+
+
+  UPDATE providers
+  SET is_public = FALSE
+  WHERE label ~* 'purpleair';
 
 
 	-- this will take care of the easy stuff

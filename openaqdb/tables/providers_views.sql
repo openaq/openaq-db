@@ -22,6 +22,7 @@ WITH providers_locations AS (
   JOIN sensor_systems ss USING (sensor_nodes_id)
   JOIN sensors s USING (sensor_systems_id)
   JOIN sensors_rollup sl USING (sensors_id)
+  WHERE sn.is_public AND s.is_public
   GROUP BY providers_id
   , measurands_id
 -----------------------------------
@@ -65,7 +66,9 @@ WITH providers_locations AS (
   FROM providers p
   JOIN providers_rollup pr USING (providers_id)
   JOIN providers_locations pl USING (providers_id)
-  JOIN entities e ON (p.owner_entities_id = e.entities_id);
+  JOIN entities e ON (p.owner_entities_id = e.entities_id)
+  WHERE p.is_public
+  ORDER BY lower(p.label) ASC;
 
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS providers_view_cached AS
