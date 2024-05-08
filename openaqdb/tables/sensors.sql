@@ -1,10 +1,11 @@
 DROP TABLE IF EXISTS sensors CASCADE;
 CREATE TABLE IF NOT EXISTS sensors (
-    sensors_id int generated always as identity primary key,
-    sensor_systems_id int not null,
-    measurands_id int not null,
-    source_id text,
-    metadata jsonb
+    sensors_id int generated always as identity primary key
+    , sensor_systems_id int not null
+    , measurands_id int not null
+    , source_id text
+    , metadata jsonb
+		, is_public boolean DEFAULT 't'
     , UNIQUE(sensor_systems_id, measurands_id)
 );
 
@@ -17,6 +18,8 @@ ALTER TABLE sensors ADD CONSTRAINT m_s_fkey
     FOREIGN KEY (measurands_id)
     REFERENCES measurands (measurands_id)
     DEFERRABLE INITIALLY IMMEDIATE;
+
+CREATE INDEX IF NOT EXISTS sensors_public_idx ON sensors USING btree (is_public);
 
 CREATE INDEX IF NOT EXISTS sensors_measurands_id_idx ON sensors USING btree (measurands_id);
 CREATE INDEX IF NOT EXISTS sensors_sensor_systems_id_idx ON sensors USING btree (sensor_systems_id);
@@ -36,7 +39,7 @@ CREATE TABLE  IF NOT EXISTS sensors_history (
 CREATE OR REPLACE FUNCTION sensors_changes() RETURNS TRIGGER AS $$
 DECLARE
 BEGIN
-    INSERT INTO sensors_history
+    INSERT INTO public.sensors_history
         (
             sensors_id,
             sensor_systems_id,

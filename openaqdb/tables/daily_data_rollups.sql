@@ -21,7 +21,7 @@
 	-- It should only be populated AFTER the daily data is summarized for a given day
 	DROP TABLE IF EXISTS daily_stats;
 	CREATE TABLE IF NOT EXISTS daily_stats (
-   day date PRIMARY KEY
+   datetime date PRIMARY KEY
  , added_on timestamptz NOT NULL DEFAULT now()
  , modified_on timestamptz 											-- last time the hourly data was modified
  , calculated_count int NOT NULL DEFAULT 0
@@ -37,7 +37,7 @@
 -- summary data for that day in the appropriate timezone
 CREATE TABLE IF NOT EXISTS daily_data (
   sensors_id int NOT NULL --REFERENCES sensors ON DELETE CASCADE
-, day date NOT NULL
+, datetime date NOT NULL -- keeping the name datetime makes dynamic queries easier
 , first_datetime timestamptz NOT NULL
 , last_datetime timestamptz NOT NULL
 , value_count int NOT NULL
@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS daily_data (
 , updated_on timestamptz -- last time the sensor data was updated
 , calculated_on timestamptz-- last time the row rollup was calculated
 , calculated_count int DEFAULT 1
-, UNIQUE(sensors_id, day)
+, UNIQUE(sensors_id, datetime)
 )
 
 --ALTER TABLE daily_data
@@ -72,14 +72,14 @@ USING btree (sensors_id);
 
 CREATE INDEX IF NOT EXISTS daily_data_day_idx
 ON daily_data
-USING btree (day);
+USING btree (datetime);
 
 -- This can be used to check our method without writing anything
 DROP FUNCTION IF EXISTS daily_data_check(sd date, ed date, sids int[]);
 CREATE OR REPLACE FUNCTION daily_data_check(sd date, ed date, sids int[]) RETURNS TABLE (
 	sensors_id int
 	, sensor_nodes_id int
-	, day date
+	, datetime date
 	, utc_offset interval
 	, datetime_min timestamptz
 	, daettime_max timestamptz
@@ -91,7 +91,7 @@ CREATE OR REPLACE FUNCTION daily_data_check(sd date, ed date, sids int[]) RETURN
 SELECT
   m.sensors_id
 , sn.sensor_nodes_id
-, as_date(m.datetime, t.tzid)  as day
+, as_date(m.datetime, t.tzid) as datetime
 , utc_offset(t.tzid) as utc_offset
 , MIN(datetime) as first_datetime
 , MAX(datetime) as last_datetime
@@ -129,7 +129,7 @@ WITH sensors_rollup AS (
 SELECT
   m.sensors_id
 , sn.sensor_nodes_id
-, as_date(m.datetime, t.tzid)  as day
+, as_date(m.datetime, t.tzid)  as datetime
 , MAX(m.updated_on) as updated_on
 , MIN(first_datetime) as first_datetime
 , MAX(last_datetime) as last_datetime
@@ -163,7 +163,7 @@ HAVING COUNT(1) > 0
 	), inserted AS (
 INSERT INTO daily_data (
   sensors_id
-, day
+, datetime
 , updated_on
 , first_datetime
 , last_datetime
@@ -185,7 +185,7 @@ INSERT INTO daily_data (
 , error_raw_count
 , calculated_on)
 	SELECT sensors_id
-, day
+, datetime
 , updated_on
 , first_datetime
 , last_datetime
@@ -207,7 +207,7 @@ INSERT INTO daily_data (
 , error_raw_count
 , current_timestamp as calculated_on
 	FROM sensors_rollup
-ON CONFLICT (sensors_id, day) DO UPDATE
+ON CONFLICT (sensors_id, datetime) DO UPDATE
 SET first_datetime = EXCLUDED.first_datetime
 , last_datetime = EXCLUDED.last_datetime
 , updated_on = EXCLUDED.updated_on
@@ -247,7 +247,7 @@ WITH sensors_rollup AS (
 SELECT
   m.sensors_id
 , sn.sensor_nodes_id
-, as_date(m.datetime, t.tzid)  as day
+, as_date(m.datetime, t.tzid)  as datetime
 , MAX(m.updated_on) as updated_on
 , MIN(first_datetime) as first_datetime
 , MAX(last_datetime) as last_datetime
@@ -281,7 +281,7 @@ HAVING COUNT(1) > 0
 	), inserted AS (
 INSERT INTO daily_data (
   sensors_id
-, day
+, datetime
 , updated_on
 , first_datetime
 , last_datetime
@@ -303,7 +303,7 @@ INSERT INTO daily_data (
 , error_raw_count
 , calculated_on)
 	SELECT sensors_id
-, day
+, datetime
 , updated_on
 , first_datetime
 , last_datetime
@@ -325,7 +325,7 @@ INSERT INTO daily_data (
 , error_raw_count
 , current_timestamp as calculated_on
 	FROM sensors_rollup
-ON CONFLICT (sensors_id, day) DO UPDATE
+ON CONFLICT (sensors_id, datetime) DO UPDATE
 SET first_datetime = EXCLUDED.first_datetime
 , last_datetime = EXCLUDED.last_datetime
 , updated_on = EXCLUDED.updated_on
@@ -371,7 +371,7 @@ $$ LANGUAGE SQL;
 	-- will get added to the stats table with zeros
 CREATE OR REPLACE FUNCTION upsert_daily_stats(dt date) RETURNS json AS $$
 	WITH daily_data_summary AS (
-	SELECT day
+	SELECT datetime
 	, SUM(value_count) as measurements_count
 	, SUM(value_raw_count) as measurements_raw_count
 	, COUNT(1) as sensors_count
@@ -382,10 +382,10 @@ CREATE OR REPLACE FUNCTION upsert_daily_stats(dt date) RETURNS json AS $$
 	FROM daily_data d
 	JOIN sensors s ON (d.sensors_id = s.sensors_id)
 	JOIN sensor_systems sy ON (s.sensor_systems_id = sy.sensor_systems_id)
-	WHERE day = dt
+	WHERE datetime = dt
 	GROUP BY 1)
 	INSERT INTO daily_stats(
-		day
+		datetime
 	, sensor_nodes_count
 	, sensors_count
 	, measurements_count
@@ -394,7 +394,7 @@ CREATE OR REPLACE FUNCTION upsert_daily_stats(dt date) RETURNS json AS $$
 	, updated_on
 	, calculated_count
 	, added_on)
-	SELECT day
+	SELECT datetime
 	, COALESCE(sensor_nodes_count, 0)
 	, COALESCE(sensors_count, 0)
 	, COALESCE(measurements_count, 0)
@@ -403,9 +403,9 @@ CREATE OR REPLACE FUNCTION upsert_daily_stats(dt date) RETURNS json AS $$
 	, updated_on
 	, COALESCE(calculated_count, 1)
 	, now() as added_on
-	FROM (SELECT dt as day) d
-	LEFT JOIN daily_data_summary USING (day)
-	ON CONFLICT (day) DO UPDATE
+	FROM (SELECT dt as datetime) d
+	LEFT JOIN daily_data_summary USING (datetime)
+	ON CONFLICT (datetime) DO UPDATE
 	SET sensor_nodes_count = EXCLUDED.sensor_nodes_count
 	, sensors_count = EXCLUDED.sensors_count
 	, measurements_count = EXCLUDED.measurements_count
@@ -413,7 +413,7 @@ CREATE OR REPLACE FUNCTION upsert_daily_stats(dt date) RETURNS json AS $$
 	, calculated_on = EXCLUDED.calculated_on
 	, calculated_count = EXCLUDED.calculated_count
 	, updated_on = EXCLUDED.updated_on
-	RETURNING json_build_object(day, measurements_raw_count);
+	RETURNING json_build_object(datetime, measurements_raw_count);
 $$ LANGUAGE SQL;
 
 
@@ -466,13 +466,13 @@ CREATE OR REPLACE VIEW missing_daily_summaries AS
 	SELECT generate_series(
    datetime_min::date
 	, datetime_max::date
-  , '1day'::interval)::date as day
+  , '1day'::interval)::date as datetime
 	FROM days)
-	SELECT a.day
+	SELECT a.datetime
 	FROM available_days a
-	LEFT JOIN daily_stats s ON (a.day = s.day)
-	WHERE s.day IS NULL
-	ORDER BY a.day ASC;
+	LEFT JOIN daily_stats s ON (a.datetime = s.datetime)
+	WHERE s.datetime IS NULL
+	ORDER BY a.datetime ASC;
 
 
 -- this is a helper method that will calcluated the next available
@@ -487,16 +487,16 @@ CREATE OR REPLACE FUNCTION calculate_next_available_day() RETURNS json AS $$
 	SELECT generate_series(
    datetime_min::date
 	, datetime_max::date
-  , '1day'::interval)::date as day
+  , '1day'::interval)::date as datetime
 	FROM days
 	), selected_day AS (
-	SELECT a.day
+	SELECT a.datetime
 	FROM available_days a
-	LEFT JOIN daily_stats s ON (a.day = s.day)
-	WHERE s.day IS NULL
-	ORDER BY a.day ASC
+	LEFT JOIN daily_stats s ON (a.datetime = s.datetime)
+	WHERE s.datetime IS NULL
+	ORDER BY a.datetime ASC
 	LIMIT 1
-	) SELECT calculate_daily_data_full(day)
+	) SELECT calculate_daily_data_full(datetime)
 	FROM selected_day;
 $$ LANGUAGE SQL;
 
@@ -507,15 +507,15 @@ DECLARE
 	d record;
 	days int := 0;
 BEGIN
-	FOR d IN SELECT day
+	FOR d IN SELECT datetime
 		FROM daily_stats
-		WHERE day < current_date
+		WHERE datetime < current_date
 		AND modified_on IS NOT NULL
 		AND modified_on > calculated_on
 		LIMIT lmt
 	  LOOP
-	    RAISE NOTICE 'Running % of %', d.day, lmt;
-	 		PERFORM calculate_daily_data_full(d.day);
+	    RAISE NOTICE 'Running % of %', d.datetime, lmt;
+	 		PERFORM calculate_daily_data_full(d.datetime);
 	  	days := days+1;
 	END LOOP;
 	RETURN days;
@@ -525,7 +525,7 @@ $$ LANGUAGE plpgsql;
 
 SELECT *
 	FROM daily_stats
-	ORDER BY day DESC
+	ORDER BY datetime DESC
 	LIMIT 3;
 
 
@@ -536,11 +536,11 @@ SELECT sensor_nodes_count
 	, measurements_raw_count as raw_count
 	, calculated_on
 	FROM daily_stats
-	ORDER BY day DESC
+	ORDER BY datetime DESC
 	LIMIT 30;
 
 	WITH days AS (
-	SELECT day
+	SELECT datetime
 	FROM (VALUES
 	  (date '2022-01-01')
 	, (date '2022-01-02')
@@ -553,18 +553,18 @@ SELECT sensor_nodes_count
 	, (date '2022-02-03')
 	, (date '2022-04-02')
 	, (date '2022-04-03')
-	) a(day)
+	) a(datetime)
 	), first_days_marked AS (
-	SELECT day
-	, CASE WHEN age(day, lag(day) OVER (ORDER BY day)) <= '1day'::interval
+	SELECT datetime
+	, CASE WHEN age(datetime, lag(datetime) OVER (ORDER BY datetime)) <= '1day'::interval
 		THEN NULL ELSE 1 END as idx
 	FROM days
 	), groups_identified AS (
-	SELECT day
-	, SUM(idx) OVER (ORDER BY day) as grp
+	SELECT datetime
+	, SUM(idx) OVER (ORDER BY datetime) as grp
 	FROM first_days_marked)
-	SELECT MIN(day) as day_first
-	, MAX(day) as day_last
+	SELECT MIN(datetime) as day_first
+	, MAX(datetime) as day_last
 	FROM groups_identified
 	GROUP BY grp;
 
@@ -572,18 +572,18 @@ SELECT sensor_nodes_count
 
 
  WITH first_days_marked AS (
-	SELECT day
-	, CASE WHEN age(day, lag(day) OVER (ORDER BY day)) <= '1day'::interval
+	SELECT datetime
+	, CASE WHEN age(datetime, lag(datetime) OVER (ORDER BY datetime)) <= '1day'::interval
 		THEN NULL ELSE 1 END as idx
 	FROM daily_data
 	WHERE value_count > 0
 	AND sensors_id = 2257208
 	), groups_identified AS (
-	SELECT day
-	, SUM(idx) OVER (ORDER BY day) as grp
+	SELECT datetime
+	, SUM(idx) OVER (ORDER BY datetime) as grp
 	FROM first_days_marked)
-	SELECT MIN(day) as day_first
-	, MAX(day) as day_last
+	SELECT MIN(datetime) as day_first
+	, MAX(datetime) as day_last
 	FROM groups_identified
 	GROUP BY grp
 	ORDER BY grp;

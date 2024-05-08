@@ -5,8 +5,20 @@
 
 -- first/last updated should not be queried directly
 
+--DROP VIEW IF EXISTS locations_view CASCADE;
 
-DROP VIEW IF EXISTS locations_view CASCADE;
+ CREATE OR REPLACE VIEW provider_licenses_view AS
+	SELECT p.providers_id
+	, json_agg(json_build_object(
+	  'id', p.licenses_id
+	, 'url', COALESCE(p.url, l.url)
+	, 'description', COALESCE(p.notes, l.description)
+	, 'date_from', lower(active_period)
+	, 'date_to', upper(active_period)
+	)) as licenses
+	FROM providers_licenses p
+	JOIN licenses l ON (l.licenses_id = p.licenses_id)
+	GROUP BY providers_id;
 
 
 CREATE OR REPLACE VIEW locations_view AS
@@ -103,9 +115,10 @@ JOIN entities oc ON (oc.entities_id = l.owner_entities_id)
 JOIN providers p ON (p.providers_id = l.providers_id)
 JOIN nodes_instruments ni USING (sensor_nodes_id)
 JOIN nodes_sensors ns USING (sensor_nodes_id)
-LEFT JOIN provider_licenses_view pl ON (pl.providers_id = l.providers_id);
+LEFT JOIN provider_licenses_view pl ON (pl.providers_id = l.providers_id)
+WHERE l.is_public;
 
-DROP MATERIALIZED VIEW IF EXISTS locations_view_cached;
+DROP MATERIALIZED VIEW IF EXISTS locations_view_cached CASCADE;
 CREATE MATERIALIZED VIEW locations_view_cached AS
 SELECT *
 FROM locations_view;
@@ -119,7 +132,7 @@ CREATE INDEX locations_view_cached_is_analysis ON locations_view_cached(is_analy
 CREATE INDEX locations_view_cached_entity_onwer ON locations_view_cached((owner->>'type'));
 
 
-DROP VIEW IF EXISTS locations_manufacturers;
+--DROP VIEW IF EXISTS locations_manufacturers;
 CREATE OR REPLACE VIEW locations_manufacturers AS
 WITH locations AS (
  SELECT sn.sensor_nodes_id as id
@@ -131,6 +144,7 @@ WITH locations AS (
   JOIN sensor_systems ss ON (ss.sensor_nodes_id = sn.sensor_nodes_id)
   JOIN instruments i ON (ss.instruments_id = i.instruments_id)
   JOIN entities mc ON (mc.entities_id = i.manufacturer_entities_id)
+	WHERE sn.is_public
   GROUP BY 1,2)
   SELECT id
   , jsonb_agg(manufacturer) as manufacturers
@@ -139,7 +153,7 @@ WITH locations AS (
   ;
 
 
-DROP MATERIALIZED VIEW IF EXISTS locations_manufacturers_cached;
+DROP MATERIALIZED VIEW IF EXISTS locations_manufacturers_cached CASCADE;
 CREATE MATERIALIZED VIEW locations_manufacturers_cached AS
 SELECT *
 FROM locations_manufacturers
@@ -179,9 +193,10 @@ CREATE OR REPLACE VIEW locations_latest_measurements AS
   JOIN sensors s USING (sensor_systems_id)
   JOIN sensors_rollup sl USING (sensors_id)
   JOIN measurands m USING (measurands_id)
+  WHERE sn.is_public
   GROUP BY sensor_nodes_id;
 
-DROP MATERIALIZED VIEW IF EXISTS locations_latest_measurements_cached;
+DROP MATERIALIZED VIEW IF EXISTS locations_latest_measurements_cached CASCADE;
 CREATE MATERIALIZED VIEW locations_latest_measurements_cached AS
 SELECT *
 FROM locations_latest_measurements
@@ -224,53 +239,3 @@ SELECT t.source_name
 FROM t
 LEFT JOIN a ON (t.source_name = a.source_name)
 LEFT JOIN a2 ON (t.source_name = a2.source_name);
-
-
-
-
-	WITH summary AS (
-  SELECT sn.sensor_nodes_id
-  , MIN(sl.datetime_first) as datetime_first
-  , MAX(sl.datetime_last) as datetime_last -- need to change
-	, COUNT(ss.*) as systems
-	, array_agg(s.sensors_id) as sensors
-	, bool_or(i.is_monitor) as is_monitor
-	, MIN(sn.added_on) as added_on
-  FROM sensor_nodes sn
-  LEFT JOIN sensor_systems ss USING (sensor_nodes_id)
-  LEFT JOIN sensors s USING (sensor_systems_id)
-	LEFT JOIN instruments i USING (instruments_id)
-  LEFT JOIN sensors_rollup sl USING (sensors_id)
-  JOIN measurands m USING (measurands_id)
-	WHERE sl.datetime_first IS NULL
-  GROUP BY sensor_nodes_id)
-	SELECT --*
-	COUNT(*), MIN(sensor_nodes_id), MAX(sensor_nodes_id), MIN(added_on), MAX(added_on)
-	FROM summary
-	WHERE datetime_first IS NULL
-	--AND is_monitor
---	AND measurements > 0
-	LIMIT 10;
-
-
-	WITH nodes AS (
-  SELECT sn.sensor_nodes_id
-	, s.sensors_id
-  FROM sensor_nodes sn
-  LEFT JOIN sensor_systems ss USING (sensor_nodes_id)
-  LEFT JOIN sensors s USING (sensor_systems_id)
-  LEFT JOIN sensors_rollup sl USING (sensors_id)
-	WHERE sl IS NULL
-	), sensors_check AS (
-	SELECT sensor_nodes_id
-	, sensors_id
-	, has_measurement(sensors_id) as has
-	FROM nodes
-	--AND is_monitor
---	AND measurements > 0
---	LIMIT 10
-	)
-	SELECT COUNT(DISTINCT sensor_nodes_id)
-	, COUNT(*)
-	FROM sensors_check
-	WHERE has;

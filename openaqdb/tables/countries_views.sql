@@ -48,6 +48,7 @@ WITH countries_locations AS (
   JOIN sensor_systems ss USING (sensor_nodes_id)
   JOIN sensors s USING (sensor_systems_id)
   JOIN sensors_rollup sl USING (sensors_id)
+	WHERE sn.is_public AND s.is_public
   GROUP BY countries_id, measurands_id
 -----------------------------------
 ), countries_rollup AS (
