@@ -7,6 +7,20 @@
 
 --DROP VIEW IF EXISTS locations_view CASCADE;
 
+ CREATE OR REPLACE VIEW provider_licenses_view AS
+	SELECT p.providers_id
+	, json_agg(json_build_object(
+	  'id', p.licenses_id
+	, 'url', COALESCE(p.url, l.url)
+	, 'description', COALESCE(p.notes, l.description)
+	, 'date_from', lower(active_period)
+	, 'date_to', upper(active_period)
+	)) as licenses
+	FROM providers_licenses p
+	JOIN licenses l ON (l.licenses_id = p.licenses_id)
+	GROUP BY providers_id;
+
+
 CREATE OR REPLACE VIEW locations_view AS
 -----------------------------
 WITH nodes_instruments AS (

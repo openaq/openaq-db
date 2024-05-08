@@ -39,7 +39,7 @@ CREATE TABLE  IF NOT EXISTS sensors_history (
 CREATE OR REPLACE FUNCTION sensors_changes() RETURNS TRIGGER AS $$
 DECLARE
 BEGIN
-    INSERT INTO sensors_history
+    INSERT INTO public.sensors_history
         (
             sensors_id,
             sensor_systems_id,

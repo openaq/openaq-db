@@ -90,6 +90,56 @@ SELECT replace(format(
 ;
 $$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
 
+
+-- A method to adjust the time for query purposes
+-- right now the indexing on the measurements table is based off of the
+-- timestamp and does not handle the local time or date very well
+-- and so this is a work around
+CREATE OR REPLACE FUNCTION utc_offset(tz text) RETURNS interval AS $$
+SELECT timezone(tz, now()) - timezone('UTC', now());
+$$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
+
+-- get the offset for a specific date/time
+CREATE OR REPLACE FUNCTION utc_offset(dt timestamptz, tz text) RETURNS interval AS $$
+SELECT timezone(tz, dt) - timezone('UTC', dt);
+$$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
+
+-- same but supplying the sensor_nodes_id
+CREATE OR REPLACE FUNCTION utc_offset(dt timestamptz, sn int) RETURNS interval AS $$
+SELECT utc_offset(dt, t.tzid)
+FROM sensor_nodes n
+	JOIN timezones t ON (t.gid = n.timezones_id)
+	WHERE sensor_nodes_id = sn;
+$$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION utc_offset(sn int) RETURNS interval AS $$
+SELECT utc_offset(t.tzid)
+FROM sensor_nodes n
+	JOIN timezones t ON (t.gid = n.timezones_id)
+	WHERE sensor_nodes_id = sn;
+$$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION as_utc(dt timestamp, tz text) RETURNS timestamptz AS $$
+SELECT timezone(tz, dt);
+$$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION as_utc(dt timestamptz, tz text) RETURNS timestamptz AS $$
+SELECT timezone(tz, timezone('UTC', dt));
+$$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION as_local_hour(dt timestamptz, tz text) RETURNS timestamptz AS $$
+SELECT timezone(tz, date_trunc('hour', dt));
+$$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION as_local_hour(tz text) RETURNS timestamptz AS $$
+SELECT timezone(tz, date_trunc('hour', now()));
+$$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION as_local_hour_int(tz text) RETURNS int AS $$
+SELECT date_part('hour', timezone(tz, current_time));
+$$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
+
+
 CREATE OR REPLACE FUNCTION truncate_timestamp(tstz timestamptz, period text)
 RETURNS timestamptz AS $$
 SELECT date_trunc(period, tstz + '11sec'::interval);
@@ -482,12 +532,12 @@ END
 $$ LANGUAGE plpgsql;
 
 
--- regenerates a user's api key token 
+-- regenerates a user's api key token
 CREATE OR REPLACE FUNCTION regenerate_token(
   _users_id integer
 )
 RETURNS void AS $$
-UPDATE user_keys 
+UPDATE user_keys
 SET token = encode(digest(uuid_generate_v4():: text, 'sha256'), 'hex')
 WHERE users_id = _users_id
 $$ LANGUAGE SQL;
@@ -528,8 +578,8 @@ DECLARE
 BEGIN
   INSERT INTO
       lists (users_id, label, description)
-  VALUE
-      (_users_id, _label, _description)
+  VALUES
+      (_users_id, _label, _description);
   SELECT currval('lists_sq') INTO _lists_id;
   RETURN _lists_id;
 END

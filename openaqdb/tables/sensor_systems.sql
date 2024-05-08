@@ -26,7 +26,7 @@ CREATE TABLE  IF NOT EXISTS sensor_systems_history (
 CREATE OR REPLACE FUNCTION sensor_systems_changes() RETURNS TRIGGER AS $$
 DECLARE
 BEGIN
-        INSERT INTO sensor_systems_history
+        INSERT INTO public.sensor_systems_history
         (sensor_systems_id, sensor_nodes_id, source_id, metadata, created)
         SELECT
             NEW.sensor_systems_id,

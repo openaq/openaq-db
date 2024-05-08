@@ -55,12 +55,13 @@ GRANT ALL ON FUNCTIONS to :DATABASE_WRITE_USER;
 \i tables/metadata.sql
 \i tables/deployments.sql
 \i idempotent/util_functions.sql
+\i tables/licenses.sql
 \i locations/locations.sql
 \i tables/timezones_views.sql
 \i tables/countries_views.sql
 \i tables/providers_views.sql
 \i tables/parameters_views.sql
-\i tables/licenses.sql
+\i tables/lists.sql
 COMMIT;
 
 -- Load immutable views/functions

@@ -115,6 +115,7 @@ CREATE TABLE IF NOT EXISTS providers (
   providers_id int PRIMARY KEY DEFAULT nextval('providers_sq')
   , label text NOT NULL UNIQUE
   , description text
+  , is_public boolean DEFAULT true
   -- relates to the sensor_nodes table
   -- in the future we should link the providers_id directly to sensor_nodes
   , source_name text NOT NULL --REFERENCES sensor_nodes(source_name)

@@ -4,6 +4,7 @@ cdk.context.json
 __pycache__/
 /openaqdb/lookups/sensor_nodes.sql
 migra/env/
+scripts/sensors_dump.sql
 migra/migrate.sql
 /cdk/venv/
 .DS_Store

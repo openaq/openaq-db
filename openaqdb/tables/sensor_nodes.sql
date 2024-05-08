@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS sensor_nodes_harrays (
 CREATE OR REPLACE FUNCTION sensor_node_changes() RETURNS TRIGGER AS $$
 DECLARE
 BEGIN
-    INSERT INTO sensor_nodes_harrays (
+    INSERT INTO public.sensor_nodes_harrays (
         sensor_nodes_id,
         cities,
         source_names,
@@ -60,11 +60,11 @@ BEGIN
     ) ON CONFLICT (sensor_nodes_id)
     DO UPDATE
         SET
-            cities=array_distinct(array_cat(sensor_nodes_harrays.cities, EXCLUDED.cities), true),
-            source_names=array_distinct(array_cat(sensor_nodes_harrays.source_names, EXCLUDED.source_names), true),
-            site_names=array_distinct(array_cat(sensor_nodes_harrays.site_names, EXCLUDED.site_names), true)
+            cities=public.array_distinct(array_cat(sensor_nodes_harrays.cities, EXCLUDED.cities), true),
+            source_names=public.array_distinct(array_cat(sensor_nodes_harrays.source_names, EXCLUDED.source_names), true),
+            site_names=public.array_distinct(array_cat(sensor_nodes_harrays.site_names, EXCLUDED.site_names), true)
     ;
-    INSERT INTO sensor_nodes_history
+    INSERT INTO public.sensor_nodes_history
     SELECT
         OLD.sensor_nodes_id,
         OLD.ismobile,

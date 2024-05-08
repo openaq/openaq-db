@@ -793,15 +793,6 @@ SELECT t.schemaname,
   ORDER BY t.schemaname, t.relname;
 
 
-SELECT l.pid
-       , COUNT(1)
-   FROM pg_locks l
-   JOIN pg_stat_all_tables t ON l.relation = t.relid
-   JOIN pg_stat_activity a ON (l.pid = a.pid)
-  WHERE t.schemaname <> 'pg_toast'::name
-  AND t.schemaname <> 'pg_catalog'::name
-  GROUP BY 1;
-
 
 
 CREATE FUNCTION table_row_estimator(table_name text) RETURNS bigint
@@ -962,7 +953,7 @@ SELECT date_trunc('hour', init_datetime) as added_on
 	-- fix div by zero issue which happens at the first of each hour
 , ROUND(SUM(inserted)::numeric/(SUM(records)::numeric + 0.001) * 100, 1) as pct
 FROM fetchlogs
-WHERE init_datetime::date >= current_date - 2
+WHERE init_datetime::date >= current_date - 7
 GROUP BY 1
 ORDER BY 1 DESC;
 
@@ -1068,18 +1059,6 @@ GROUP BY 1
 ORDER BY lower(p.label);
 
 
- CREATE OR REPLACE VIEW provider_licenses_view AS
-	SELECT p.providers_id
-	, json_agg(json_build_object(
-	  'id', p.licenses_id
-	, 'url', COALESCE(p.url, l.url)
-	, 'description', COALESCE(p.notes, l.description)
-	, 'date_from', lower(active_period)
-	, 'date_to', upper(active_period)
-	)) as licenses
-	FROM providers_licenses p
-	JOIN licenses l ON (l.licenses_id = p.licenses_id)
-	GROUP BY providers_id;
 
 
 -- a convenience view to aid in querying a all lists a user has permissions to
@@ -1194,6 +1173,131 @@ JOIN
 	  RETURN (SELECT EXISTS(SELECT 1 FROM sensors WHERE sensors_id = id) != delete_sensor);
 	END;
 	$$ LANGUAGE plpgsql;
+
+
+    CREATE OR REPLACE FUNCTION rank_duplicates_by_source_geom(src text) RETURNS TABLE (
+  new_sensor_nodes_id int
+  , sensor_nodes_rw int
+  , sensor_nodes_id int
+  , site_name text
+  , sensors_id int
+  , source_id text
+  , new_geom geometry
+  , geom geometry
+  , measurands_id text
+  , sensors_source_id text
+  , sensor_systems_id int
+  , added_on timestamptz
+  , rw int
+  , new_sensors_id int
+  ) AS $$
+  WITH sensor_nodes_ranked AS (
+ SELECT sensor_nodes_id
+  , geom
+  , site_name
+  , source_id
+  , row_number() OVER (PARTITION BY geom ORDER BY source_id) as rw
+  FROM sensor_nodes
+  WHERE source_name = src
+  ), sensor_nodes_duplicates AS (
+    SELECT n1.*
+  , n2.sensor_nodes_id as new_sensor_nodes_id
+  , n2.geom as new_geom
+  FROM sensor_nodes_ranked n1
+  JOIN sensor_nodes_ranked n2 ON (n1.geom = n2.geom AND n2.rw = 1)
+  ), sensors_ranked AS (
+  SELECT new_sensor_nodes_id
+  , sn.rw as sensor_nodes_rw
+  , sn.sensor_nodes_id
+  , sn.site_name
+  , s.sensors_id
+  , sn.source_id
+  , sn.new_geom
+  , sn.geom
+  , s.measurands_id
+  , s.source_id as sensors_source_id
+  , s.sensor_systems_id
+  , s.added_on
+  , row_number() OVER (PARTITION BY new_sensor_nodes_id, measurands_id ORDER BY s.added_on) as rw
+  FROM sensors s
+  JOIN sensor_systems sy USING (sensor_systems_id)
+  JOIN sensor_nodes_duplicates sn USING (sensor_nodes_id)
+  ORDER BY new_sensor_nodes_id, measurands_id)
+  SELECT s1.*
+  , s2.sensors_id as new_sensors_id
+  FROM sensors_ranked s1
+  JOIN sensors_ranked s2 ON (s1.new_sensor_nodes_id = s2.new_sensor_nodes_id AND s1.measurands_id = s2.measurands_id AND s2.rw = 1);
+  $$ LANGUAGE SQL;
+
+
+  DROP FUNCTION IF EXISTS rank_duplicates_by_source(text, text);
+  CREATE OR REPLACE FUNCTION rank_duplicates_by_source(src text, ptrn text) RETURNS TABLE (
+  new_sensor_nodes_id int
+  , new_sensor_systems_id int
+  , sensor_nodes_rw int
+  , sensor_nodes_id int
+  , site_name text
+  , sensors_id int
+  , source_id text
+  , new_geom geometry
+  , geom geometry
+  , measurands_id text
+  , sensors_source_id text
+  , sensor_systems_id int
+  , added_on timestamptz
+  , grouper text
+  , rw int
+  , new_sensors_id int
+  , new_grouper text
+  ) AS $$
+  WITH sensor_nodes_ranked AS (
+ SELECT sensor_nodes_id
+  , geom
+  , site_name
+  , source_id
+  , regexp_replace(source_id, ptrn, '', 'g') as grouper
+  , row_number() OVER (PARTITION BY regexp_replace(source_id, ptrn, '', 'g') ORDER BY source_id) as rw
+  FROM sensor_nodes
+  WHERE source_name = src
+  ), sensor_systems_grouped AS (
+    SELECT sensor_nodes_id
+  , MIN(sensor_systems_id) as new_sensor_systems_id
+  FROM sensor_systems
+  GROUP BY 1
+  ), sensor_nodes_duplicates AS (
+    SELECT n1.*
+  , n2.sensor_nodes_id as new_sensor_nodes_id
+  , n2.geom as new_geom
+  , sy.new_sensor_systems_id
+  FROM sensor_nodes_ranked n1
+  JOIN sensor_nodes_ranked n2 ON (n1.grouper = n2.grouper AND n2.rw = 1)
+  JOIN sensor_systems_grouped sy ON (n2.sensor_nodes_id = sy.sensor_nodes_id)
+  ), sensors_ranked AS (
+  SELECT new_sensor_nodes_id
+  , sn.new_sensor_systems_id
+  , sn.rw as sensor_nodes_rw
+  , sn.sensor_nodes_id
+  , sn.site_name
+  , s.sensors_id
+  , sn.source_id
+  , sn.new_geom
+  , sn.geom
+  , s.measurands_id
+  , s.source_id as sensors_source_id
+  , s.sensor_systems_id
+  , s.added_on
+  , sn.grouper
+  , row_number() OVER (PARTITION BY new_sensor_nodes_id, measurands_id ORDER BY s.added_on) as rw
+  FROM sensors s
+  JOIN sensor_systems sy USING (sensor_systems_id)
+  JOIN sensor_nodes_duplicates sn USING (sensor_nodes_id)
+  ORDER BY new_sensor_nodes_id, measurands_id)
+  SELECT s1.*
+  , s2.sensors_id as new_sensors_id
+  , s2.grouper as new_grouper
+  FROM sensors_ranked s1
+  JOIN sensors_ranked s2 ON (s1.new_sensor_nodes_id = s2.new_sensor_nodes_id AND s1.measurands_id = s2.measurands_id AND s2.rw = 1);
+  $$ LANGUAGE SQL;
 
 
 COMMIT;
