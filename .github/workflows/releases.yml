@@ -1,0 +1,39 @@
+name: New data releases
+on:
+    schedule:
+        - cron: "0 0 * * *" 
+
+jobs:
+  build:
+    name: New data releases
+    runs-on: ubuntu-latest
+    steps:
+      - id: timezone_db
+        uses: pozetroninc/github-action-get-latest-release@master
+        with:
+            repository: evansiroky/timezone-boundary-builder
+       
+      - id: natural_earth_vector
+        uses: pozetroninc/github-action-get-latest-release@master
+        with:
+            repository: nvkelso/natural-earth-vector
+
+      - uses: actions/checkout@v4
+      - name: create an issue - new tzdb
+        if: ${{ steps.timezone_db.outputs.release != '2024a' }}
+        uses: dacbd/create-issue-action@main
+        with:
+           token: ${{ github.token }}
+           title: New tzdb release
+           body: New version of tzdb available- ${{steps.timezone_db.outputs.release}}
+                 see https://github.com/evansiroky/timezone-boundary-builder/releases for new release
+
+      - uses: actions/checkout@v4
+      - name: create an issue - new natural earth
+        if: ${{ steps.natural_earth_vector.outputs.release != 'v5.1.2' }}
+        uses: dacbd/create-issue-action@main
+        with:
+            token: ${{ github.token }}
+            title: New natural earth vectors release
+            body: New version of natural earth vectors available- ${{steps.natural_earth_vector.outputs.release}}
+                  see https://github.com/nvkelso/natural-earth-vector/releases for new release
