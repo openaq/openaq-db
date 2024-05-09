@@ -1,0 +1,31 @@
+name: check for new releases of upstream data
+on:
+    workflow_dispatch:
+
+jobs:
+  build:
+    name: RedisTimeSeries
+    runs-on: ubuntu-latest
+    steps:
+      - id: timezone_db
+        uses: pozetroninc/github-action-get-latest-release@master
+        with:
+            repository: evansiroky/timezone-boundary-builder
+        
+
+      - name: Check variable value
+        if: ${{ steps.timezone_db.outputs.release != '' }}
+        uses: actions/github-script@v4
+        with:
+            github-token: ${{ secrets.GITHUB_TOKEN }}
+            script: |
+                const issue = `New version of timezone polygons value - ${{ steps.timezone_db.outputs.release }}`;
+                const title = 'New version of timezone polygons value - ${{ steps.timezone_db.outputs.release }}';
+                const body = `New version of timezone polygons value - ${{ steps.timezone_db.outputs.release }}`;
+                github.issues.create({
+                    repo: context.repo.repo,
+                    owner: context.repo.owner,
+                    title: title,
+                    body: body
+                });
+
