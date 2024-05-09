@@ -1,31 +1,39 @@
-name: check for new releases of upstream data
+name: New data releases
 on:
-    workflow_dispatch:
+    schedule:
+        - cron: "0 0 * * *" 
 
 jobs:
   build:
-    name: RedisTimeSeries
+    name: New data releases
     runs-on: ubuntu-latest
     steps:
       - id: timezone_db
         uses: pozetroninc/github-action-get-latest-release@master
         with:
             repository: evansiroky/timezone-boundary-builder
-        
-
-      - name: Check variable value
-        if: ${{ steps.timezone_db.outputs.release != '' }}
-        uses: actions/github-script@v4
+       
+      - id: natural_earth_vector
+        uses: pozetroninc/github-action-get-latest-release@master
         with:
-            github-token: ${{ secrets.GITHUB_TOKEN }}
-            script: |
-                const issue = `New version of timezone polygons value - ${{ steps.timezone_db.outputs.release }}`;
-                const title = 'New version of timezone polygons value - ${{ steps.timezone_db.outputs.release }}';
-                const body = `New version of timezone polygons value - ${{ steps.timezone_db.outputs.release }}`;
-                github.issues.create({
-                    repo: context.repo.repo,
-                    owner: context.repo.owner,
-                    title: title,
-                    body: body
-                });
+            repository: nvkelso/natural-earth-vector
 
+      - uses: actions/checkout@v4
+      - name: create an issue - new tzdb
+        if: ${{ steps.timezone_db.outputs.release != '2024a' }}
+        uses: dacbd/create-issue-action@main
+        with:
+           token: ${{ github.token }}
+           title: New tzdb release
+           body: New version of tzdb available- ${{steps.timezone_db.outputs.release}}
+                 see https://github.com/evansiroky/timezone-boundary-builder/releases for new release
+
+      - uses: actions/checkout@v4
+      - name: create an issue - new natural earth
+        if: ${{ steps.natural_earth_vector.outputs.release != 'v5.1.2' }}
+        uses: dacbd/create-issue-action@main
+        with:
+            token: ${{ github.token }}
+            title: New natural earth vectors release
+            body: New version of natural earth vectors available- ${{steps.natural_earth_vector.outputs.release}}
+                  see https://github.com/nvkelso/natural-earth-vector/releases for new release
