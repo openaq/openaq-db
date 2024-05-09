@@ -3,7 +3,7 @@ RETURNS text LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
 	SELECT tzid
 	FROM timezones
 	WHERE st_intersects(g, geog)
-	ORDER BY gid ASC
+	ORDER BY timezones_id ASC
 	LIMIT 1;
 $$;
 
@@ -12,22 +12,22 @@ RETURNS text LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
 	SELECT tzid
 	FROM timezones
 	WHERE st_intersects(g::geography, geog)
-	ORDER BY gid ASC
+	ORDER BY timezones_id ASC
 	LIMIT 1;
 $$;
 
 CREATE OR REPLACE FUNCTION get_timezones_id(g geometry)
 RETURNS int LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
-	SELECT gid
+	SELECT timezones_id
 	FROM timezones
 	WHERE st_intersects(g::geography, geog)
-	ORDER BY gid ASC
+	ORDER BY timezones_id ASC
 	LIMIT 1;
 $$;
 
 CREATE OR REPLACE FUNCTION get_timezones_id(tz text)
 RETURNS int LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
-	SELECT gid
+	SELECT timezones_id
 	FROM timezones
 	WHERE lower(tzid) = lower(tz)
 	LIMIT 1;
@@ -44,9 +44,9 @@ WHERE added_on > current_date
 LIMIT 2)
 	SELECT n.sensor_nodes_id
 	, n.geom
-	, gid
+	, n.timezones_id
 	, tzid
-	, timezones_id
+	, timezones.timezones_id
 	, st_area(geog::geometry)
 	, st_xmin(geog::geometry)
 	, st_xmax(geog::geometry)
@@ -56,7 +56,7 @@ LIMIT 2)
 	WHERE st_intersects(geom::geography, geog);
 
 
-	SELECT gid
+	SELECT timezones_id
 	, tzid
 	, substring(st_astext(geog) from 0 for 100)
 		, substring(st_astext(geog::geometry) from 0 for 100)

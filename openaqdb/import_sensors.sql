@@ -41,7 +41,7 @@ GROUP BY 1;
 
 CREATE TABLE IF NOT EXISTS sensor_nodes_migrate (
     sensor_nodes_id int primary key,
-    timezones_id int REFERENCES timezones(gid),
+    timezones_id int REFERENCES timezones(timezones_id),
     ismobile boolean,
     geom geometry,
     site_name text,
@@ -217,7 +217,7 @@ SELECT n.sensor_nodes_id
 , s.source_id
 , n.site_name
 , st_setsrid(st_makepoint(lon,lat), 4326)
-, t.gid
+, t.timezones_id
 , n.origin
 , CASE WHEN lon IS NULL THEN true ELSE false END
 , json_build_object('imported', 'production')

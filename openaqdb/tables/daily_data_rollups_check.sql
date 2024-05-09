@@ -51,7 +51,7 @@ SELECT m.sensors_id
 	JOIN sensors s ON (m.sensors_id = s.sensors_id)
 	JOIN sensor_systems sy ON (s.sensor_systems_id = sy.sensor_systems_id)
 	JOIN sensor_nodes sn ON (sy.sensor_nodes_id = sn.sensor_nodes_id)
-	JOIN timezones t ON (sn.timezones_id = t.gid)
+	JOIN timezones t ON (sn.timezones_id = t.timezones_id)
 	WHERE m.sensors_id = :sensor
 AND datetime > :day::timestamptz - :hr::interval
 AND datetime <= (:day::date + 1)::timestamptz - :hr::interval

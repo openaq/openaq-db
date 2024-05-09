@@ -103,7 +103,7 @@ FROM hourly_data m
 JOIN sensors s ON (m.sensors_id = s.sensors_id)
 JOIN sensor_systems sy ON (s.sensor_systems_id = sy.sensor_systems_id)
 JOIN sensor_nodes sn ON (sy.sensor_nodes_id = sn.sensor_nodes_id)
-JOIN timezones t ON (sn.timezones_id = t.gid)
+JOIN timezones t ON (sn.timezones_id = t.timezones_id)
 WHERE value_count > 0
 AND datetime > as_utc(sd, t.tzid)
 AND datetime <= as_utc(ed, t.tzid)
@@ -153,7 +153,7 @@ FROM hourly_data m
 JOIN sensors s ON (m.sensors_id = s.sensors_id)
 JOIN sensor_systems sy ON (s.sensor_systems_id = sy.sensor_systems_id)
 JOIN sensor_nodes sn ON (sy.sensor_nodes_id = sn.sensor_nodes_id)
-JOIN timezones t ON (sn.timezones_id = t.gid)
+JOIN timezones t ON (sn.timezones_id = t.timezones_id)
 WHERE value_count > 0
 AND datetime > as_utc(dy, t.tzid)
 AND datetime <= as_utc(dy + 1, t.tzid)
@@ -271,7 +271,7 @@ FROM hourly_data m
 JOIN sensors s ON (m.sensors_id = s.sensors_id)
 JOIN sensor_systems sy ON (s.sensor_systems_id = sy.sensor_systems_id)
 JOIN sensor_nodes sn ON (sy.sensor_nodes_id = sn.sensor_nodes_id)
-JOIN timezones t ON (sn.timezones_id = t.gid)
+JOIN timezones t ON (sn.timezones_id = t.timezones_id)
 WHERE value_count > 0
 AND datetime > as_utc(sd, t.tzid)
 AND datetime <= as_utc(ed, t.tzid)
