@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS timezones (
-    gid integer primary key,
+    timezones_id int generated always as identity primary key,
     tzid text,
     geog geography
 );

@@ -107,7 +107,7 @@ LIMIT 10;
 
 -- move the timezone data from the metadata to the timezones_id field
 UPDATE sensor_nodes
-SET timezones_id = t.gid
+SET timezones_id = t.timezones_id
 FROM timezones t
 WHERE sensor_nodes.metadata->>'timezone' IS NOT NULL
 AND sensor_nodes.metadata->>'timezone' = t.tzid

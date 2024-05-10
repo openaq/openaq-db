@@ -43,8 +43,8 @@ JOIN measurands p ON (s.measurands_id = p.measurands_id)
 JOIN sensor_systems ss ON (s.sensor_systems_id = ss.sensor_systems_id)
 JOIN sensor_nodes sn ON (ss.sensor_nodes_id = sn.sensor_nodes_id)
 JOIN providers pr ON (sn.source_name = pr.source_name)
-JOIN timezones t ON (sn.timezones_id = t.gid)
-WHERE t.gid IS NOT NULL
+JOIN timezones t ON (sn.timezones_id = t.timezones_id)
+WHERE t.timezones_id IS NOT NULL
 -- once we have versioning we can uncomment this line
 --AND s.sensors_id NOT IN (SELECT sensors_id FROM versions)
 ;
@@ -121,7 +121,7 @@ SELECT l.sensor_nodes_id
 , utc_offset(tz.tzid) as utc_offset
 FROM public.open_data_export_logs l
 JOIN public.sensor_nodes sn ON (l.sensor_nodes_id = sn.sensor_nodes_id)
-JOIN public.timezones tz ON (sn.timezones_id = tz.gid)
+JOIN public.timezones tz ON (sn.timezones_id = tz.timezones_id)
 WHERE
 -- older than 72 hours to give us time to collect data
 day < (now() AT TIME ZONE tz.tzid - '72hours'::interval)::date
@@ -142,7 +142,7 @@ SELECT
 	, COUNT(1) as n
 FROM public.open_data_export_logs l
 JOIN public.sensor_nodes sn ON (l.sensor_nodes_id = sn.sensor_nodes_id)
-JOIN public.timezones tz ON (sn.timezones_id = tz.gid)
+JOIN public.timezones tz ON (sn.timezones_id = tz.timezones_id)
 	GROUP BY 1,2,3,4
 	ORDER BY 1,2,3,4;
 
@@ -312,8 +312,8 @@ COMMIT;
 -- JOIN sensor_systems ss ON (s.sensor_systems_id = ss.sensor_systems_id)
 -- JOIN sensor_nodes sn ON (ss.sensor_nodes_id = sn.sensor_nodes_id)
 -- JOIN providers pr ON (sn.source_name = pr.source_name)
--- JOIN timezones t ON (sn.timezones_id = t.gid)
--- WHERE t.gid IS NOT NULL;
+-- JOIN timezones t ON (sn.timezones_id = t.timezones_id)
+-- WHERE t.timezones_id IS NOT NULL;
 
 -- \timing on
 
