@@ -109,7 +109,7 @@ SELECT
 	, pl.licenses
 	, l.providers_id
 FROM sensor_nodes l
-JOIN timezones t ON (l.timezones_id = t.gid)
+JOIN timezones t ON (l.timezones_id = t.timezones_id)
 JOIN countries c ON (c.countries_id = l.countries_id)
 JOIN entities oc ON (oc.entities_id = l.owner_entities_id)
 JOIN providers p ON (p.providers_id = l.providers_id)

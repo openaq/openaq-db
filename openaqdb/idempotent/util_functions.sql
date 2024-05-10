@@ -108,14 +108,14 @@ $$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
 CREATE OR REPLACE FUNCTION utc_offset(dt timestamptz, sn int) RETURNS interval AS $$
 SELECT utc_offset(dt, t.tzid)
 FROM sensor_nodes n
-	JOIN timezones t ON (t.gid = n.timezones_id)
+	JOIN timezones t ON (t.timezones_id = n.timezones_id)
 	WHERE sensor_nodes_id = sn;
 $$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
 
 CREATE OR REPLACE FUNCTION utc_offset(sn int) RETURNS interval AS $$
 SELECT utc_offset(t.tzid)
 FROM sensor_nodes n
-	JOIN timezones t ON (t.gid = n.timezones_id)
+	JOIN timezones t ON (t.timezones_id = n.timezones_id)
 	WHERE sensor_nodes_id = sn;
 $$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
 

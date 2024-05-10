@@ -33,7 +33,7 @@ BEGIN
   ALTER TABLE sensor_nodes
   ADD COLUMN added_on timestamptz DEFAULT now(),
   ADD COLUMN modified_on timestamptz,
-  ADD COLUMN timezones_id int REFERENCES timezones(gid);
+  ADD COLUMN timezones_id int REFERENCES timezones(timezones_id);
 EXCEPTION WHEN OTHERS THEN
     RAISE NOTICE 'sensors alter error';
     --END;
