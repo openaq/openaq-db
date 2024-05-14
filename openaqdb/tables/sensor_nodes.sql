@@ -5,6 +5,7 @@ CREATE TABLE  IF NOT EXISTS sensor_nodes (
     site_name text,
     source_name text,
     city text,
+    geocoding_result jsonb,
     country text,
     metadata jsonb,
     source_id text,
@@ -26,6 +27,7 @@ CREATE TABLE IF NOT EXISTS sensor_nodes_history (
     site_name text,
     source_name text,
     city text,
+    geocoding_result jsonb,
     country text,
     metadata jsonb,
     source_id text,
@@ -72,6 +74,7 @@ BEGIN
         OLD.site_name,
         OLD.source_name,
         OLD.city,
+        OLD.geocoding_result
         OLD.country,
         OLD.metadata,
         now(),
