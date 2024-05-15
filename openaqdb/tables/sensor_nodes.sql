@@ -74,7 +74,7 @@ BEGIN
         OLD.site_name,
         OLD.source_name,
         OLD.city,
-        OLD.geocoding_result
+        OLD.geocoding_result,
         OLD.country,
         OLD.metadata,
         now(),
