@@ -1,19 +1,19 @@
 CREATE OR REPLACE FUNCTION get_countries_id(g geography)
 RETURNS int LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
-SELECT countries_id from countries WHERE st_intersects(g::geometry, geom) LIMIT 1;
+SELECT countries_id from countries WHERE st_intersects(g, geog) LIMIT 1;
 $$;
 CREATE OR REPLACE FUNCTION get_countries_id(g geometry)
 RETURNS int LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
-SELECT countries_id from countries WHERE st_intersects(g, geom) LIMIT 1;
+SELECT countries_id from countries WHERE st_intersects(g::geography, geog) LIMIT 1;
 $$;
 
 CREATE OR REPLACE FUNCTION country(g geography)
 RETURNS text LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
-SELECT iso from countries WHERE st_intersects(g::geometry, geom) LIMIT 1;
+SELECT iso from countries WHERE st_intersects(g, geog) LIMIT 1;
 $$;
 CREATE OR REPLACE FUNCTION country(g geometry)
 RETURNS text LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
-SELECT iso from countries WHERE st_intersects(g, geom) LIMIT 1;
+SELECT iso from countries WHERE st_intersects(g::geography, geog) LIMIT 1;
 $$;
 
 CREATE OR REPLACE FUNCTION countries(nodes int[])
