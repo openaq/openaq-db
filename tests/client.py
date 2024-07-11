@@ -9,13 +9,10 @@ from psycopg.types.json import Json
 logger = logging.getLogger(__name__)
 
 class DB:
-    def __init__(self):
-        self.response_format = 'Record'
+    def __init__(self, keep_open: bool = False, rollback: bool = False):
         self.conn = None
-        self.writable = False
-        self.user_id = 1
-        self.query_time = 0
-        self.schema = None
+        self.keep_open = keep_open
+        self.rollback = rollback
 
     def get_connection(self):
         cstring = settings.DATABASE_READ_URL
@@ -66,8 +63,8 @@ class DB:
             logger.warning(f"Query error: {e}")
             raise ValueError(f"{e}") from None
 
-        if not keep_open:
-            if rollback:
+        if not (keep_open or self.keep_open):
+            if rollback or self.rollback:
                 self.conn.rollback()
             else:
                 self.conn.commit()
