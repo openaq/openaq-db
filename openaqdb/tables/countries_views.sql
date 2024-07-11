@@ -80,8 +80,8 @@ WITH countries_locations AS (
   , cr.parameters
   , cr.parameter_ids
   FROM countries
-  JOIN countries_rollup cr USING (countries_id)
-  JOIN countries_locations cl USING (countries_id);
+  JOIN countries_locations cl USING (countries_id)
+  LEFT JOIN countries_rollup cr USING (countries_id);
 
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS countries_view_cached AS

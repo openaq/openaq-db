@@ -178,9 +178,10 @@ INSERT INTO data_tables (data_tables_id, table_schema, table_name) VALUES
 
 
 WITH dates AS (
-SELECT generate_series('2016-01-01'::date, '2024-01-01'::date, '1month'::interval) as dt)
+SELECT generate_series('2016-01-01'::date, date_trunc('month', current_date + '1month'::interval), '1month'::interval) as dt)
 SELECT create_hourly_data_partition(dt::date)
 FROM dates;
+
 
 -- use this to keep track of what hours are stale
 -- should be updated on EVERY ingestion
@@ -742,6 +743,8 @@ END;
 $$ LANGUAGE plpgsql;
 
 
+
+
 CREATE OR REPLACE PROCEDURE update_hourly_data_latest(lmt int DEFAULT 1000) AS $$
 DECLARE
 dt timestamptz;
@@ -895,3 +898,12 @@ BEGIN
 	WHERE datetime = st;
 END;
 $$ LANGUAGE plpgsql;
+
+
+
+
+
+SELECT *
+  FROM hourly_stats
+  WHERE calculated_on IS NULL
+  LIMIT 10;

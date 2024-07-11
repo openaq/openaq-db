@@ -13,7 +13,7 @@ fetchlog_stats:
   query: "SELECT COUNT(1) as total_count
          , SUM((loaded_datetime IS NOT NULL)::int) as loaded_count
          , SUM((loaded_datetime > now() - '15min'::interval)::int) as pending_count
-         , SUM((loaded_datetime < now() - '30min'::interval)::int) as failed_count
+         , SUM(has_error::int) as failed_count
          , MAX(ROUND(EXTRACT(EPOCH FROM age(now(), init_datetime))/60)) as oldest_minutes
          FROM public.fetchlogs
          WHERE completed_datetime IS NULL;"
@@ -223,27 +223,3 @@ ingest_stats:
     - ingest_count:
         usage: "COUNTER"
         description: ""
-
-
-
-SELECT status
-	, COUNT(1) as n
-	FROM cron.job_run_details
-	WHERE end_time IS NOT NULL
-	AND end_time > now() - '300s'::interval
-	GROUP BY status;
-
-SELECT j.jobname
-	, EXTRACT(EPOCH FROM age(end_time, start_time)) as secs
-	FROM cron.job_run_details d
-	JOIN cron.job j USING (jobid)
-	WHERE end_time IS NOT NULL
-	AND end_time > now() - '300s'::interval;
-
-
-SELECT j.jobname
-	, 1 as running
-	FROM cron.job_run_details d
-	JOIN cron.job j USING (jobid)
-	WHERE status IS NULL
-	AND end_time IS NULL;

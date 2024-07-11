@@ -34,7 +34,7 @@ SELECT m.measurands_id AS id
 , mm.datetime_last
 FROM measurands m
 JOIN locations_measurands lm USING (measurands_id)
-JOIN measurements_measurands mm USING (measurands_id);
+LEFT JOIN measurements_measurands mm USING (measurands_id);
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS parameters_view_cached AS
 SELECT *
