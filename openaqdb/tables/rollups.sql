@@ -201,7 +201,7 @@ CREATE TABLE IF NOT EXISTS hourly_stats (
 -- we can use the hourly_stats to determine which are outdated
 -- basically check and see which days have either not been exported
 -- or
-CREATE TABLE IF NOT EXISTS daily_stats (
+CREATE TABLE IF NOT EXISTS daily_exported_stats (
   day date NOT NULL UNIQUE
 , sensor_nodes_count bigint NOT NULL
 , sensors_count bigint NOT NULL
@@ -283,7 +283,7 @@ $$ LANGUAGE SQL;
 
 
 
-CREATE OR REPLACE FUNCTION initialize_daily_stats(
+CREATE OR REPLACE FUNCTION initialize_daily_exported_stats(
   sd date DEFAULT '-infinity'
   , ed date DEFAULT 'infinity'
   )
@@ -301,7 +301,7 @@ SELECT generate_series(
    , '1day'::interval) as day
 FROM first_and_last
 ), inserts AS (
-INSERT INTO daily_stats (day, sensor_nodes_count, sensors_count, measurements_count, hours_count)
+INSERT INTO daily_exported_stats (day, sensor_nodes_count, sensors_count, measurements_count, hours_count)
 SELECT day::date, -1, -1, -1, -1
 FROM datetimes
 WHERE has_measurement(day::date)
@@ -388,7 +388,7 @@ CREATE UNIQUE INDEX ON sensor_node_range_exceedances (sensor_nodes_id, measurand
 
 
 -- this is the basic function used to rollup an entire day
-CREATE OR REPLACE FUNCTION calculate_rollup_daily_stats(day date) RETURNS bigint AS $$
+CREATE OR REPLACE FUNCTION calculate_rollup_daily_exported_stats(day date) RETURNS bigint AS $$
 WITH data AS (
    SELECT (datetime - '1sec'::interval)::date as day
    , h.sensors_id
@@ -400,7 +400,7 @@ WITH data AS (
    WHERE datetime > day::timestamp
    AND  datetime <= day + '1day'::interval
 ), inserts AS (
-INSERT INTO daily_stats (
+INSERT INTO daily_exported_stats (
   day
 , sensor_nodes_count
 , sensors_count
