@@ -17,9 +17,12 @@
 	-- * This set of methods current runs pretty independently from the hourly_methods
 
 
+
+
+
 	-- Daily stats will store data for each day, across all sensors
 	-- It should only be populated AFTER the daily data is summarized for a given day
-	DROP TABLE IF EXISTS daily_stats;
+	--DROP TABLE IF EXISTS daily_stats;
 	CREATE TABLE IF NOT EXISTS daily_stats (
    datetime date PRIMARY KEY
  , added_on timestamptz NOT NULL DEFAULT now()
@@ -32,6 +35,95 @@
  , measurements_raw_count int
  , sensors_count int
  );
+
+
+	DROP TABLE IF EXISTS daily_data_queue;
+	CREATE TABLE IF NOT EXISTS daily_data_queue (
+   datetime date NOT NULL
+ , tz_offset int NOT NULL
+ , added_on timestamptz NOT NULL DEFAULT now()
+ , queued_on timestamptz
+ , modified_on timestamptz 											-- last time the hourly data was modified
+ , modified_count int NOT NULL DEFAULT 0
+ , calculated_on timestamptz
+ , calculated_count int NOT NULL DEFAULT 0
+ , sensor_nodes_count int
+ , sensors_count int
+ , measurements_count int
+ , measurements_raw_count int
+ , UNIQUE(datetime, tz_offset)
+ );
+
+
+
+CREATE OR REPLACE FUNCTION update_daily_data_queue() RETURNS bigint AS $$
+ WITH data_min AS (
+  SELECT MIN(datetime) as min_date
+  FROM measurements
+ ), days AS (
+  SELECT generate_series(min_date, current_date, '1day'::interval) as datetime
+  FROM data_min
+ ), daily_inserts AS (
+  INSERT INTO daily_data_queue (datetime, tz_offset)
+  SELECT datetime, generate_series(0,23,1) as tz_offset
+  FROM days
+  ON CONFLICT DO NOTHING
+  RETURNING datetime, tz_offset
+  ) SELECT COUNT(*)
+  FROM daily_inserts;
+  $$ LANGUAGE SQL;
+
+
+
+
+
+DROP FUNCTION IF EXISTS fetch_daily_data_jobs(int, date, date);
+CREATE OR REPLACE FUNCTION fetch_daily_data_jobs(n int, min_day date DEFAULT '-infinity', max_day date DEFAULT 'infinity') RETURNS TABLE(
+    datetime date
+  , tz_offset int
+  , queued_on timestamptz
+  ) AS $$
+  BEGIN
+        RETURN QUERY
+        UPDATE daily_data_queue
+        SET queued_on = CURRENT_TIMESTAMP
+        , calculated_count = calculated_count + 1
+        FROM (
+          SELECT q.datetime
+          , q.tz_offset
+          FROM daily_data_queue q
+          -- Its either not been calculated or its been modified
+          WHERE q.datetime >= COALESCE(min_day, '-infinity'::date)
+          AND q.datetime <= COALESCE(min_day, 'infinity'::date)
+          AND (q.calculated_on IS NULL OR q.modified_on > q.calculated_on)
+          -- either its never been or it was resently modified but not queued
+          AND (q.queued_on IS NULL OR (q.queued_on < q.modified_on AND q.queued_on < now() - '1h'::interval))
+          ORDER BY q.datetime, q.tz_offset
+          LIMIT n
+          FOR UPDATE SKIP LOCKED
+        ) as d
+        WHERE d.datetime = daily_data_queue.datetime
+        AND d.tz_offset = daily_data_queue.tz_offset
+        RETURNING daily_data_queue.datetime
+        , daily_data_queue.tz_offset
+        , daily_data_queue.queued_on;
+  END;
+$$ LANGUAGE plpgsql;
+
+
+
+ -- The following should not pick the same jobs
+--SELECT * FROM fetch_daily_data_jobs(5)
+--UNION ALL
+--SELECT * FROM fetch_daily_data_jobs(5);
+
+--SELECT * FROM fetch_daily_data_jobs(5);
+--SELECT * FROM fetch_daily_data_jobs(5);
+
+
+
+
+
 
 -- The daily data will be similar to the hourly data and include
 -- summary data for that day in the appropriate timezone
@@ -60,7 +152,7 @@ CREATE TABLE IF NOT EXISTS daily_data (
 , calculated_on timestamptz-- last time the row rollup was calculated
 , calculated_count int DEFAULT 1
 , UNIQUE(sensors_id, datetime)
-)
+);
 
 --ALTER TABLE daily_data
 --  ADD COLUMN error_count int NOT NULL DEFAULT 0
@@ -73,6 +165,10 @@ USING btree (sensors_id);
 CREATE INDEX IF NOT EXISTS daily_data_day_idx
 ON daily_data
 USING btree (datetime);
+
+
+INSERT INTO data_tables (data_tables_id, table_schema, table_name) VALUES
+(3, 'public', 'daily_data');
 
 -- This can be used to check our method without writing anything
 DROP FUNCTION IF EXISTS daily_data_check(sd date, ed date, sids int[]);
@@ -436,6 +532,43 @@ $$ LANGUAGE SQL;
 -- ) SELECT * FROM calculated;
 -- $$ LANGUAGE SQL;
 
+
+CREATE OR REPLACE FUNCTION calculate_daily_data_jobs(n int, min_day date DEFAULT '-infinity', max_day date DEFAULT 'infinity') RETURNS interval AS $$
+	DECLARE
+	 rw record;
+   nw timestamptz;
+   nodes bigint;
+   sensors bigint;
+   meas bigint;
+   hours bigint;
+	BEGIN
+  nw = clock_timestamp();
+  FOR rw IN (SELECT datetime, tz_offset FROM fetch_daily_data_jobs(n,min_day,max_day)) LOOP
+    RAISE NOTICE 'Calculating % - %', rw.datetime, rw.tz_offset;
+    -- calculate
+    SELECT sensor_nodes_count
+    , sensors_count
+    , measurements_count
+    , measurements_hourly_count
+    INTO nodes, sensors, meas, hours
+    FROM calculate_daily_data(rw.datetime, rw.tz_offset);
+    -- update queue table
+    UPDATE daily_data_queue
+    SET calculated_on = clock_timestamp()
+    , sensor_nodes_count = nodes
+    , sensors_count = sensors
+    , measurements_count = hours
+    , measurements_raw_count = meas
+    WHERE datetime = rw.datetime
+    AND tz_offset = rw.tz_offset;
+	END LOOP;
+	RETURN clock_timestamp() - nw;
+	END;
+$$ LANGUAGE plpgsql;
+
+
+
+
 	-- The following method will calculate a FULL day and then update the stats table
 	-- It runs the normal method for each hour in a 24h series which is
 	-- considerable faster (<~2m) then running a whole day in one statement (~1.5h)
@@ -521,12 +654,6 @@ BEGIN
 	RETURN days;
 END;
 $$ LANGUAGE plpgsql;
-
-
-SELECT *
-	FROM daily_stats
-	ORDER BY datetime DESC
-	LIMIT 3;
 
 
 

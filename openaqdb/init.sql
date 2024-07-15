@@ -1,4 +1,3 @@
-BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
@@ -61,8 +60,9 @@ GRANT ALL ON FUNCTIONS to :DATABASE_WRITE_USER;
 \i tables/countries_views.sql
 \i tables/providers_views.sql
 \i tables/parameters_views.sql
+\i tables/daily_data_rollups.sql
 \i tables/lists.sql
-COMMIT;
+\i tables/measurements_view.sql
 
 -- Load immutable views/functions
 -- file contains begin/commit

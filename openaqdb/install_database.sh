@@ -3,13 +3,19 @@
 # if we are installing from amazon-linux-extras
 # which we are as of right now
 # db should already be mounted at this point
-PGPATH=/usr/bin
-PGDATA=/db/data # mount point of snapshot
-PGCONFIG=$PGDATA/postgresql.conf
+#PGPATH=/usr/bin
+#PGDATA=/db/data # mount point of snapshot
+#PGCONFIG=$PGDATA/postgresql.conf
 mkdr -p /var/log/openaq # should have already been created but..
 
 # make sure things are updated
 yum update
+
+# make sure that a postgres user exists
+if ! id "postgres" >/dev/null 2>&1; then
+    echo "No postgres user found. Adding now."
+    adduser postgres
+fi
 
 # make sure that postgres owns the $PGDATA directory
 # as long as you are building this from a snapshot they do
@@ -38,6 +44,8 @@ if [ -z "$SNAPSHOT_ID" ]; then
 
     echo "include 'openaq_postgresql.conf'" >> $PGCONFIG
     echo "shared_preload_libraries = 'pg_cron,pg_stat_statements'" >> $PGDATA/openaq_postgresql.conf
+    echo "log_directory = '$PGDATA/log'" >> $PGDATA/openaq_postgresql.conf
+    echo "logging_collector = on" >> $PGDATA/openaq_postgresql.conf
     if [ ! -z "$PG_SHARED_BUFFERS" ]; then echo "shared_buffers = $PG_SHARED_BUFFERS" >> $PGDATA/openaq_postgresql.conf; fi
     if [ ! -z "$PG_WAL_BUFFERS" ]; then echo "wal_buffers = $PG_WAL_BUFFERS" >> $PGDATA/openaq_postgresql.conf; fi
     if [ ! -z "$PG_EFFECTIVE_CACHE_SIZE" ]; then echo "effective_cache_size = $PG_EFFECTIVE_CACHE_SIZE" >> $PGDATA/openaq_postgresql.conf; fi
@@ -53,10 +61,11 @@ if [ -z "$SNAPSHOT_ID" ]; then
     sudo -i -u postgres $PGPATH/pg_ctl -D $PGDATA -o "-c listen_addresses='*' -p 5432" -m fast -w start
 
     # install the database
-    cd /app/openaqdb
-    sudo -u postgres ./init.sh > /var/log/openaq/openaq_install.log 2>&1
+    sudo -i -u postgres /app/openaqdb/init.sh > /var/log/openaq/install_openaq_database.log 2>&1
     # install pg_cron
-    sudo -u postgres psql -d postgres -c 'CREATE EXTENSION pg_cron' -f cron.sql
+    sudo -i -u postgres psql -d postgres -c 'CREATE EXTENSION pg_cron' -f /app/openaqdb/cron.sql
+
+    #./install_pgbouncer.sh
 
 else
 
@@ -78,6 +87,8 @@ work_mem = $PG_WORK_MEM
 maintenance_work_mem = $PG_MAINTENANCE_WORK_MEM
 listen_addresses='*'
 max_connections = 300
+log_directory = '$PGDATA/log'
+logging_collector = on
 
 checkpoint_timeout = 900
 max_wal_size = 95112
@@ -87,23 +98,6 @@ EOF
 echo $INI | tee $PGDATA/openaq_postgresql.conf  > /dev/null
 
     sudo -i -u postgres $PGPATH/pg_ctl -D $PGDATA -o "-c listen_addresses='*' -p 5432" -m fast -w start
-		./install_pgbouncer.sh
-    # PROD_URL=postgres://$DATABASE_READ_USER:$DATABASE_READ_PASSWORD@$DATABASE_HOST:$DATABASE_PORT/$DATABASE_DB
-    # LOCAL_URL=postgres://$DATABASE_WRITE_USER:$DATABASE_WRITE_PASSWORD@localhost:5432/$DATABASE_DB
-    # # now copy the last known fetchlogs id
-    # FETCHLOGS_ID=$(psql $LOCAL_URL -XAwtc "SELECT MAX(fetchlogs_id) FROM fetchlogs")
-    # # save it for refernce later
-    # echo FETCHLOGS_ID=${FETCHLOGS_ID} >> /etc/environment
-    # # use it to load any keys we might have missed and then clean up
-    # psql $PROD_URL -XAwtc "SELECT key FROM fetchlogs WHERE fetchlogs_id > $FETCHLOGS_ID" > '/tmp/fetchlog_keys.csv'
-    # psql $LOCAL_URL \
-    #      -c "BEGIN" \
-    #      -c "DROP TABLE IF EXISTS fetchlog_keys" \
-    #      -c "CREATE TABLE IF NOT EXISTS fetchlog_keys (key varchar)" \
-    #      -c "COPY fetchlog_keys FROM '/tmp/fetchlog_keys.csv' WITH (FORMAT csv)" \
-    #      -c "INSERT INTO fetchlogs (key) SELECT key FROM fetchlog_keys ON CONFLICT DO NOTHING" \
-    #      -c "DROP TABLE IF EXISTS fetchlog_keys" \
-    #      -c "COMMIT"
 
 fi
 
@@ -111,3 +105,9 @@ fi
 #./setup_pgbouncer.sh
 #./setup_prometheus_postgresql_exporter.sh
 #./setup_prometheus_node_exporter.sh
+echo "Installing pgbouncer"
+/app/openaqdb/install_pgbouncer.sh
+echo "Installing node exporter"
+/app/openaqdb/install_prometheus_node_exporter.sh
+echo "Installing postgresql exporter"
+/app/openaqdb/install_prometheus_postgresql_exporter.sh

@@ -1,5 +1,5 @@
-PGBOUNCER_VERSION=1.17.0
-PGBOUNCER_FDW_VERSION=0.3
+PGBOUNCER_VERSION=1.22.1
+PGBOUNCER_FDW_VERSION=1.1.0
 ADMIN_USER=$DATABASE_WRITE_USER
 ADMIN_PASSWORD=$DATABASE_WRITE_PASSWORD
 AUTH_TYPE=md5
@@ -16,7 +16,7 @@ INI=$(cat <<EOF
 [pgbouncer]
 
 logfile = /var/log/pgbouncer/pgbouncer.log
-pidfile = /var/run/pgbouncer/pgbouncer.pid
+pidfile = /etc/pgbouncer/pgbouncer.pid
 listen_addr = *
 listen_port = $PORT
 
@@ -55,14 +55,15 @@ echo $USERS | sudo -i -u postgres tee /etc/pgbouncer/userlist.txt  > /dev/null
 
 # start the server and then disconnect
 # if already running than reboot
-sudo -i -u postgres /usr/local/bin/pgbouncer -Rd /etc/pgbouncer/pgbouncer.ini -v
+sudo -i -u postgres /usr/local/bin/pgbouncer -d /etc/pgbouncer/pgbouncer.ini -v
 
 sudo -i -u postgres \
      psql -d openaq \
      -c "BEGIN;" \
      -c "CREATE SERVER IF NOT EXISTS pgbouncer FOREIGN DATA WRAPPER dblink_fdw OPTIONS (host 'localhost',port '6432', dbname 'pgbouncer')" \
      -c "CREATE USER MAPPING IF NOT EXISTS FOR PUBLIC SERVER pgbouncer OPTIONS (user '$DATABASE_WRITE_USER', password '$DATABASE_WRITE_PASSWORD')" \
-     -c "CREATE EXTENSION IF NOT EXISTS pgbouncer_fdw" \
+     -c "DROP EXTENSION IF EXISTS pgbouncer_fdw" \
+     -c "CREATE EXTENSION pgbouncer_fdw" \
      -c "GRANT USAGE ON FOREIGN SERVER pgbouncer TO $DATABASE_WRITE_USER;" \
      -c "GRANT SELECT ON pgbouncer_clients TO $DATABASE_WRITE_USER;" \
      -c "GRANT SELECT ON pgbouncer_config TO $DATABASE_WRITE_USER;" \

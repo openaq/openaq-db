@@ -124,7 +124,7 @@ INSERT INTO data_tables (data_tables_id, table_schema, table_name) VALUES
 
 -- create some tables
 WITH dates AS (
-SELECT generate_series('2016-01-01'::date, '2024-01-01'::date, '1month'::interval) as dt)
+SELECT generate_series('2016-01-01'::date, date_trunc('month', current_date + '1month'::interval), '1month'::interval) as dt)
 SELECT create_measurements_partition(dt::date)
 FROM dates;
 

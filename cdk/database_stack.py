@@ -28,6 +28,7 @@ class DatabaseStack(Stack):
         rootVolumeIops: int = 2000,
         dataVolumeSize: int = 1000,
         dataVolumeIops: int = 3000,
+        privateIpAddress: str = None,
         elasticIpAllocationId: str = None,
         machineImageName: str = None,
         snapshotId: str = None,
@@ -36,16 +37,18 @@ class DatabaseStack(Stack):
         expose6432: bool = True,
         expose9187: bool = True,
         expose9100: bool = True,
-        httpIpRange: str = '0.0.0.0/0',
-        sshIpRange: str = None,
-        linuxVersion: str = 'amazon_linux_2',
+        httpIpRange: str = '10.0.0.0/16',
+        devSecurityGroup: str = None,
+        transferUri: str = None,
+        linuxVersion: str = 'amazon_linux_2023',
         instanceType: str = "r5.xlarge",
-        databaseReadUser: str = 'postgres',
+        databaseReadUser: str = 'postgres_read',
+        databaseWriteUser: str = 'postgres_write',
+        databaseMonitorUser: str = 'postgres_monitor',
         databaseReadPassword: str = 'postgres',
-        databaseWriteUser: str = 'postgres',
         databaseWritePassword: str = 'postgres',
-        databaseMonitorUser: str = 'postgres',
         databaseMonitorPassword: str = 'postgres',
+        databasePostgresUser: str = 'postgres',
         databasePostgresPassword: str = 'postgres',
         databaseHost: str = 'localhost',
         databasePort: str = '5432',
@@ -79,11 +82,11 @@ class DatabaseStack(Stack):
         )
 
         # add an ingress rule for ssh purposes
-        if sshIpRange is not None:
-            sg.add_ingress_rule(
-                peer=_ec2.Peer.ipv4(sshIpRange),
-                connection=_ec2.Port.tcp(22)
-            )
+        #if sshIpRange is not None:
+        #    sg.add_ingress_rule(
+        #        peer=_ec2.Peer.ipv4(sshIpRange),
+        #        connection=_ec2.Port.tcp(22)
+        #    )
 
         # if we want to expose 5432 on the instance
         if expose5432:
@@ -126,17 +129,19 @@ class DatabaseStack(Stack):
             "DATABASE_WRITE_PASSWORD": databaseWritePassword,
             "DATABASE_MONITOR_USER": databaseMonitorUser,
             "DATABASE_MONITOR_PASSWORD": databaseMonitorPassword,
+            "DATABASE_POSTGRES_USER": databasePostgresUser,
             "DATABASE_POSTGRES_PASSWORD": databasePostgresPassword,
             "DATABASE_HOST": databaseHost,
             "DATABASE_PORT": databasePort,
             "DATABASE_DB": databaseDb,
+            "TRANSFER_URI": transferUri,
             "PG_SHARED_BUFFERS": pgSharedBuffers,
             "PG_WAL_BUFFERS": pgWalBuffers,
             "PG_EFFECTIVE_CACHE_SIZE": pgEffectiveCacheSize,
             "PG_WORK_MEM": pgWorkMem,
             "PG_MAINTENANCE_WORK_MEM": pgMaintenanceWorkMem,
             "SNAPSHOT_ID": snapshotId,
-            "PGPATH": "/usr/bin",
+            "PGPATH": "/usr/local/pgsql/bin",
             "PGDATA": "/db/data",
             "PGCONFIG": "/db/data/postgresql.conf",
         }
@@ -202,7 +207,10 @@ class DatabaseStack(Stack):
                 'cd /app && unzip -o db.zip -d openaqdb'
             ),
             _ec2.InitCommand.shell_command(
-                'mkdir -p /var/log/openaq && /app/openaqdb/install_database.sh > /var/log/openaq/install_database.log 2>&1'
+                'mkdir -p /var/log/openaq && /app/openaqdb/install_database.sh > /var/log/openaq/install_database_server.log 2>&1'
+            ),
+            _ec2.InitCommand.shell_command(
+                'sudo -i -u ec2-user IMPORT_FILE_LIMIT=5 /app/openaqdb/initial_setup.sh > /var/log/openaq/initial_setup.log 2>&1'
             ),
         )
 
@@ -241,9 +249,14 @@ class DatabaseStack(Stack):
             vpc_subnets=_ec2.SubnetSelection(
                 subnet_type=_ec2.SubnetType.PUBLIC
             ),
+            private_ip_address=privateIpAddress,
             block_devices=blockDevices,
             user_data=UserData
         )
+
+        if devSecurityGroup is not None:
+            dev_sg = _ec2.SecurityGroup.from_security_group_id(self, "SG", devSecurityGroup, mutable=False)
+            ec2.add_security_group(dev_sg)
 
         backup_bucket = 'openaq-db-backups'
         openaq_backup_bucket = _s3.Bucket.from_bucket_name(
@@ -270,3 +283,19 @@ class DatabaseStack(Stack):
             value=ec2.instance_public_ip,
             description="public ip",
             export_name=f"{id}-public-ip")
+
+
+        CfnOutput(
+            scope=self,
+            id=f"{id}-private-ip",
+            value=ec2.instance_private_ip,
+            description="private ip",
+            export_name=f"{id}-private-ip")
+
+
+        CfnOutput(
+            scope=self,
+            id=f"{id}-public-url",
+            value=ec2.instance_public_dns_name,
+            description="public dns name",
+            export_name=f"{id}-public-url")

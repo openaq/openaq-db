@@ -19,7 +19,7 @@ DEST_DB=$DATABASE_DB
 # add any tables that need to be transferred
 # refrain from adding large tables here and instead write something
 # specific for those (see the measurements example)
-TABLES=("providers" "sensor_nodes" "sensor_systems" "measurands" "sensors" )
+TABLES=("providers" "sensor_nodes" "sensor_systems" "measurands" "sensors")
 
 for TABLE in "${TABLES[@]}"
 do
