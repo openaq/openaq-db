@@ -11,8 +11,7 @@
 	SELECT p.providers_id
 	, json_agg(json_build_object(
 	  'id', p.licenses_id
-	, 'url', COALESCE(p.url, l.url)
-	, 'description', COALESCE(p.notes, l.description)
+	, 'name', l.name
 	, 'date_from', lower(active_period)
 	, 'date_to', upper(active_period)
 	)) as licenses
