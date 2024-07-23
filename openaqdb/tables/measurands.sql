@@ -31,3 +31,12 @@ SELECT measurands_id
 , concat(measurand, units)
 FROM measurands
 GROUP BY 1,2;
+
+
+CREATE OR REPLACE FUNCTION get_measurands_id(m text)
+RETURNS int LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
+SELECT measurands_id
+FROM measurands
+WHERE lower(measurand) = lower(m)
+LIMIT 1;
+$$;
