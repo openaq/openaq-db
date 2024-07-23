@@ -11,8 +11,7 @@
 	SELECT p.providers_id
 	, json_agg(json_build_object(
 	  'id', p.licenses_id
-	, 'url', COALESCE(p.url, l.url)
-	, 'description', COALESCE(p.notes, l.description)
+	, 'name', l.name
 	, 'date_from', lower(active_period)
 	, 'date_to', upper(active_period)
 	)) as licenses
@@ -65,7 +64,7 @@ WITH nodes_instruments AS (
   FROM sensor_nodes sn
   JOIN sensor_systems ss USING (sensor_nodes_id)
   JOIN sensors s USING (sensor_systems_id)
-  JOIN sensors_rollup sl USING (sensors_id)
+  LEFT JOIN sensors_rollup sl USING (sensors_id)
   JOIN measurands m USING (measurands_id)
   GROUP BY sensor_nodes_id)
   -----------------------------

@@ -188,8 +188,9 @@ RETURNS json AS $$
 SELECT json_build_object(
        'utc', format_timestamp(tstz, 'UTC')
      , 'local', format_timestamp(tstz, tz)
-     );
+     ) WHERE tstz IS NOT NULL;
 $$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
+
 
 -- assume that its in the right timezone but not timestamptz
 -- this would happen if we used timezone(tz, timestamptz) to convert something

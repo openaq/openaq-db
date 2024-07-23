@@ -898,12 +898,3 @@ BEGIN
 	WHERE datetime = st;
 END;
 $$ LANGUAGE plpgsql;
-
-
-
-
-
-SELECT *
-  FROM hourly_stats
-  WHERE calculated_on IS NULL
-  LIMIT 10;
