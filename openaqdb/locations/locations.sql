@@ -106,6 +106,7 @@ SELECT
   , oc.entity_type::text~*'research' as is_analysis
   , ni.manufacturers
   , ni.manufacturer_ids
+  , ni.instrument_ids
 	, pl.licenses
 	, l.providers_id
 FROM sensor_nodes l

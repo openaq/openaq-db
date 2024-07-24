@@ -46,10 +46,18 @@ WITH locations AS (
     SET instruments_id = EXCLUDED.instruments_id
     RETURNING sensor_systems_id, source_id
   ), inserted_sensors AS (
-    INSERT INTO sensors (sensor_systems_id, source_id, measurands_id)
+    INSERT INTO sensors (
+        sensor_systems_id
+        , source_id
+        , measurands_id
+        , data_averaging_period_seconds
+        , data_logging_period_seconds
+        )
     SELECT sensor_systems_id
     , source_id||'/'||measurand
     , get_measurands_id(l.measurand)
+    , 60*30
+    , 60*30
     FROM locations l
     JOIN inserted_systems n USING (source_id)
     ON CONFLICT (sensor_systems_id, measurands_id) DO UPDATE
