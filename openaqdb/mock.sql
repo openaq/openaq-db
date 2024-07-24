@@ -1,4 +1,6 @@
 
+
+
 -- create some test sites
   -- using airgradient provider just to get a license
 WITH locations AS (
@@ -39,7 +41,7 @@ WITH locations AS (
     INSERT INTO sensor_systems (sensor_nodes_id, source_id, instruments_id)
     SELECT sensor_nodes_id
     , source_id
-    , 1 as instruments_id
+    , 2 as instruments_id -- 2 is a monitor and not a sensor
     FROM locations l
     JOIN inserted_nodes n USING (source_id)
     ON CONFLICT (sensor_nodes_id, source_id) DO UPDATE
