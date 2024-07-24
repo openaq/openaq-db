@@ -34,6 +34,7 @@ WITH nodes_instruments AS (
       , 'name', mc.full_name
       )
   )) as instruments
+  , array_agg(DISTINCT i.instruments_id) as instrument_ids
   , array_agg(DISTINCT mc.full_name) as manufacturers
   , array_agg(DISTINCT i.manufacturer_entities_id) as manufacturer_ids
   FROM sensor_nodes sn
