@@ -19,21 +19,19 @@ SELECT cron.schedule_in_database(
   , 'openaq'
   );
 
--- every hour on the 1/2 hour
 SELECT cron.schedule_in_database(
-  'rollup-daily-data-leading'
-  , '30 * * * *'
-  , $$SELECT calculate_daily_data_full((now() + '15h'::interval)::date)$$
+  'rollup-daily-data'
+  , '*/20 * * * *'
+  , $$CALL update_daily_data(500)$$
   , 'openaq'
   );
 
 SELECT cron.schedule_in_database(
-  'rollup-daily-data-trailing'
-  , '10 * * * *'
-  , $$SELECT calculate_daily_data_full((now() - '13h'::interval)::date)$$
+  'rollup-annual-data'
+  , '0 * * * *'
+  , $$CALL update_annual_data(25)$$
   , 'openaq'
   );
-
 
 -- at quarter past each hour calculate
 -- the latest 10 hours that need updating
