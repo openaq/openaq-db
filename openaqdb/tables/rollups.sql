@@ -43,8 +43,8 @@ CREATE TABLE IF NOT EXISTS rollups (
     rollup text,
     st timestamptz,
     et timestamptz,
-    first_datetime timestamptz,
-    last_datetime timestamptz,
+    datetime_first timestamptz,
+    datetime_last timestamptz,
     value_count bigint,
     value_sum float,
     last_value float,
@@ -72,8 +72,8 @@ CREATE TABLE IF NOT EXISTS hourly_data (
   sensors_id int NOT NULL --REFERENCES sensors ON DELETE CASCADE
 , datetime timestamptz NOT NULL
 , measurands_id int NOT NULL --REFERENCES measurands -- required for partition
-, first_datetime timestamptz NOT NULL
-, last_datetime timestamptz NOT NULL
+, datetime_first timestamptz NOT NULL
+, datetime_last timestamptz NOT NULL
 , value_count int NOT NULL
 , value_avg double precision
 , value_sd double precision
@@ -460,8 +460,8 @@ INSERT INTO hourly_data (
   sensors_id
 , measurands_id
 , datetime
-, first_datetime
-, last_datetime
+, datetime_first
+, datetime_last
 , value_count
 , value_avg
 , value_sd
@@ -478,8 +478,8 @@ INSERT INTO hourly_data (
   sensors_id
 , measurands_id
 , datetime
-, MIN(datetime) as first_datetime
-, MAX(datetime) as last_datetime
+, MIN(datetime) as datetime_first
+, MAX(datetime) as datetime_last
 , COUNT(1) as value_count
 , AVG(value) as value_avg
 , STDDEV(value) as value_sd
@@ -496,8 +496,8 @@ FROM measurements_filtered m
 GROUP BY 1,2,3
 HAVING COUNT(1) > 0
 ON CONFLICT (sensors_id, measurands_id, datetime) DO UPDATE
-SET first_datetime = EXCLUDED.first_datetime
-, last_datetime = EXCLUDED.last_datetime
+SET datetime_first = EXCLUDED.datetime_first
+, datetime_last = EXCLUDED.datetime_last
 , value_avg = EXCLUDED.value_avg
 , value_min = EXCLUDED.value_min
 , value_max = EXCLUDED.value_max
@@ -541,8 +541,8 @@ INSERT INTO hourly_data (
   sensors_id
 , measurands_id
 , datetime
-, first_datetime
-, last_datetime
+, datetime_first
+, datetime_last
 , value_count
 , value_avg
 , value_sd
@@ -559,8 +559,8 @@ INSERT INTO hourly_data (
   sensors_id
 , measurands_id
 , datetime
-, MIN(datetime) as first_datetime
-, MAX(datetime) as last_datetime
+, MIN(datetime) as datetime_first
+, MAX(datetime) as datetime_last
 , COUNT(1) as value_count
 , AVG(value) as value_avg
 , STDDEV(value) as value_sd
@@ -577,8 +577,8 @@ FROM measurements_filtered m
 GROUP BY 1,2,3
 HAVING COUNT(1) > 0
 ON CONFLICT (sensors_id, measurands_id, datetime) DO UPDATE
-SET first_datetime = EXCLUDED.first_datetime
-, last_datetime = EXCLUDED.last_datetime
+SET datetime_first = EXCLUDED.datetime_first
+, datetime_last = EXCLUDED.datetime_last
 , value_avg = EXCLUDED.value_avg
 , value_min = EXCLUDED.value_min
 , value_max = EXCLUDED.value_max
@@ -614,7 +614,14 @@ SELECT * FROM calculate_hourly_data(dt::timestamptz, dt + '1day'::interval);
 $$ LANGUAGE SQL;
 
 
+-- create a dummy method for triggering another event
+  CREATE OR REPLACE FUNCTION hourly_data_updated_event(hr timestamptz) RETURNS boolean AS $$
+  SELECT 't'::boolean;
+  $$ LANGUAGE SQL;
+
+
 --DROP FUNCTION IF EXISTS update_hourly_data(timestamptz);
+-- this is the root method
 CREATE OR REPLACE FUNCTION update_hourly_data(hr timestamptz DEFAULT now() - '1hour'::interval) RETURNS bigint AS $$
 DECLARE
 nw timestamptz := clock_timestamp();
@@ -624,28 +631,29 @@ WITH inserted AS (
   SELECT COALESCE(measurements_count, 0) as measurements_count
   , COALESCE(sensors_count, 0) as sensors_count
   FROM calculate_hourly_data(hr))
-INSERT INTO hourly_stats (
-  datetime
-, calculated_on
-, measurements_count
-, sensors_count
-, calculated_count
-, calculated_seconds)
-SELECT date_trunc('hour', hr)
-, now()
-, measurements_count
-, sensors_count
-, 1
-, EXTRACT(EPOCH FROM clock_timestamp() - nw)
-FROM inserted
-ON CONFLICT (datetime) DO UPDATE
-SET calculated_on = EXCLUDED.calculated_on
-, calculated_count = hourly_stats.calculated_count + 1
-, measurements_count = EXCLUDED.measurements_count
-, sensors_count = EXCLUDED.sensors_count
-, calculated_seconds = EXCLUDED.calculated_seconds
-RETURNING measurements_count INTO mc;
-RETURN mc;
+  INSERT INTO hourly_stats (
+    datetime
+  , calculated_on
+  , measurements_count
+  , sensors_count
+  , calculated_count
+  , calculated_seconds)
+  SELECT date_trunc('hour', hr)
+  , now()
+  , measurements_count
+  , sensors_count
+  , 1
+  , EXTRACT(EPOCH FROM clock_timestamp() - nw)
+  FROM inserted
+  ON CONFLICT (datetime) DO UPDATE
+  SET calculated_on = EXCLUDED.calculated_on
+  , calculated_count = hourly_stats.calculated_count + 1
+  , measurements_count = EXCLUDED.measurements_count
+  , sensors_count = EXCLUDED.sensors_count
+  , calculated_seconds = EXCLUDED.calculated_seconds
+  RETURNING measurements_count INTO mc;
+  PERFORM hourly_data_updated_event(hr);
+  RETURN mc;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -788,8 +796,8 @@ $$ LANGUAGE plpgsql;
 
 DROP TABLE IF EXISTS sensors_rollup_patch;
 SELECT sensors_id
-, MIN(first_datetime) as first_datetime
-, MAX(last_datetime) as last_datetime
+, MIN(datetime_first) as datetime_first
+, MAX(datetime_last) as datetime_last
 , SUM(value_count) as value_count
 , AVG(value_avg) as value_avg
 , MIN(value_min) as value_min
@@ -812,15 +820,15 @@ INSERT INTO sensors_rollup (
  , value_latest
 )
 SELECT s.sensors_id
- , s.first_datetime
- , s.last_datetime
+ , s.datetime_first
+ , s.datetime_last
  , s.value_count
  , s.value_avg
  , s.value_min
  , s.value_max
  , m.value
 FROM sensors_rollup_patch s
-JOIN measurements m ON (s.sensors_id = m.sensors_id AND s.last_datetime = m.datetime)
+JOIN measurements m ON (s.sensors_id = m.sensors_id AND s.datetime_last = m.datetime)
 ON CONFLICT (sensors_id) DO UPDATE
 SET datetime_first = EXCLUDED.datetime_first
 , datetime_last = EXCLUDED.datetime_last

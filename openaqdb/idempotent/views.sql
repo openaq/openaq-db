@@ -20,8 +20,8 @@ CREATE AGGREGATE public.last(anyelement, timestamptz) (
 
 create table if not exists analyses_summary as
 SELECT sensors_id
-, min(datetime) as first_datetime
-, max(datetime) as last_datetime
+, min(datetime) as datetime_first
+, max(datetime) as datetime_last
 , last(value,datetime) as last_value
 , count(*) as value_count
 , sum(value) as value_sum
@@ -38,8 +38,8 @@ DROP MATERIALIZED VIEW IF EXISTS sensors_first_last;
 CREATE MATERIALIZED VIEW sensors_first_last AS
 SELECT
     sensors_id,
-    first_datetime,
-    last_datetime,
+    datetime_first,
+    datetime_last,
     last_value
 FROM
     rollups
@@ -194,8 +194,8 @@ WITH
         sensors_id,
         value_count,
         value_sum,
-        first_datetime,
-        last_datetime,
+        datetime_first,
+        datetime_last,
         last_value,
         last_point,
         minx,
@@ -209,8 +209,8 @@ WITH
         sensors_id,
         value_count,
         value_sum,
-        first_datetime,
-        last_datetime,
+        datetime_first,
+        datetime_last,
         last_value,
         last_point,
         minx,
@@ -254,9 +254,9 @@ SELECT
     units,
     value_count::numeric,
     value_sum / value_count as values_average,
-    first_datetime,
+    datetime_first,
     null::float as first_value,
-    last_datetime,
+    datetime_last,
     last_value,
     sensors.metadata as sensor_metadata
 FROM
@@ -390,8 +390,8 @@ WITH base AS (
                 mfr(sensor_systems.metadata) mfr,
                 value_count,
                 value_sum,
-                first_datetime,
-                last_datetime,
+                datetime_first,
+                datetime_last,
                 last_value,
                 measurand,
                 units,
@@ -423,16 +423,16 @@ WITH base AS (
             country,
             json->'sources' as sources,
             jsonb_build_object(
-               -- 'longitude', st_x(coalesce((last(last_point, last_datetime))::geometry, geom)),
-               -- 'latitude', st_y(coalesce((last(last_point, last_datetime))::geometry, geom))
+               -- 'longitude', st_x(coalesce((last(last_point, datetime_last))::geometry, geom)),
+               -- 'latitude', st_y(coalesce((last(last_point, datetime_last))::geometry, geom))
             ) as coordinates,
             jsonb_agg(DISTINCT mfr) FILTER (WHERE mfr is not Null) as manufacturers,
             sum(value_count) as measurements,
-            min(first_datetime) as "firstUpdated",
-            max(last_datetime) as "lastUpdated",
+            min(datetime_first) as "firstUpdated",
+            max(datetime_last) as "lastUpdated",
             json,
-            coalesce((last(last_point, last_datetime))::geometry, geom) as sgeom,
-            coalesce((last(last_point, last_datetime)), geom::geography) as geog,
+            coalesce((last(last_point, datetime_last))::geometry, geom) as sgeom,
+            coalesce((last(last_point, datetime_last)), geom::geography) as geog,
             CASE WHEN ismobile THEN to_jsonb(ARRAY[min(minx), min(miny), max(maxx), max(maxy)]) ELSE NULL::jsonb END as bounds
         FROM base
         group by id, name,city,country,json,geom,sources,"sensorType","isMobile","isAnalysis"
@@ -446,8 +446,8 @@ WITH base AS (
                 measurands_id as "parameterId",
                 value_count as count,
                 value_sum / value_count as average,
-                first_datetime as "firstUpdated",
-                last_datetime as "lastUpdated",
+                datetime_first as "firstUpdated",
+                datetime_last as "lastUpdated",
                 last_value as "lastValue",
                 jsonb_agg(DISTINCT mfr) FILTER (WHERE mfr is not Null) as manufacturers
             FROM
@@ -503,7 +503,7 @@ SELECT
        ismobile,
        (sn.metadata->>'is_analysis')::bool as is_analysis,
        sn.metadata->>'sensorType' as "sensorType",
-       last_datetime,
+       datetime_last,
        st_transform(COALESCE(last_point, sn.geom)::geometry, 3857) as geom,
        minx,
        miny,
@@ -527,11 +527,11 @@ FROM
     ismobile,
     is_analysis,
     "sensorType",
-    max(last_datetime) as "last_datetime",
-    last(geom, last_datetime) as geom,
+    max(datetime_last) as "datetime_last",
+    last(geom, datetime_last) as geom,
     st_transform(bounds(min(minx), min(miny), max(maxx), max(maxy)), 3857) as bounds,
     sum(value_count) as count,
-    last(last_value, last_datetime) as last_value
+    last(last_value, datetime_last) as last_value
 
 FROM
     s
@@ -539,7 +539,7 @@ WHERE geom IS NOT NULL
 GROUP BY 1,2,3,4,5,6,7,8,9,10;
 CREATE INDEX ON locations USING GIST (geom);
 CREATE INDEX ON locations USING GIST (bounds) where ismobile;
-create index on locations (last_datetime);
+create index on locations (datetime_last);
 create index on locations (location_id);
 create index on locations (measurands_id);
 
@@ -557,8 +557,8 @@ WITH m AS (
         count(distinct city) as cities,
         count(distinct sensor_nodes_id) as locations,
         sum(value_count) as count,
-        min(first_datetime) as "firstUpdated",
-        max(last_datetime) as "lastUpdated",
+        min(datetime_first) as "firstUpdated",
+        max(datetime_last) as "lastUpdated",
         array_agg(DISTINCT measurand) as parameters
     FROM sensor_stats
     LEFT JOIN measurands using (measurands_id)
@@ -578,8 +578,8 @@ WITH m AS (
         city,
         count(distinct sensor_nodes_id) as locations,
         sum(value_count) as count,
-        min(first_datetime) as "firstUpdated",
-        max(last_datetime) as "lastUpdated",
+        min(datetime_first) as "firstUpdated",
+        max(datetime_last) as "lastUpdated",
         array_agg(DISTINCT measurand) as parameters
     FROM sensor_stats
     LEFT JOIN measurands using (measurands_id)
