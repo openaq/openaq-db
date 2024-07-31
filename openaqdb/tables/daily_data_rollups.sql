@@ -111,7 +111,7 @@ $$ LANGUAGE SQL;
 
 
 DROP FUNCTION IF EXISTS fetch_daily_data_jobs(int, date, date);
-CREATE OR REPLACE FUNCTION fetch_daily_data_jobs(n int DEFAULT 1, min_day date DEFAULT '-infinity', max_day date DEFAULT 'infinity') RETURNS TABLE(
+CREATE OR REPLACE FUNCTION fetch_daily_data_jobs(n int DEFAULT 1, min_day date DEFAULT NULL, max_day date DEFAULT NULL) RETURNS TABLE(
     datetime date
   , tz_offset int
   , queued_on timestamptz
@@ -127,7 +127,7 @@ CREATE OR REPLACE FUNCTION fetch_daily_data_jobs(n int DEFAULT 1, min_day date D
           FROM daily_data_queue q
           -- Its either not been calculated or its been modified
           WHERE q.datetime >= COALESCE(min_day, '-infinity'::date)
-          AND q.datetime <= COALESCE(max_day, 'infinity'::date)
+          AND q.datetime <= COALESCE(max_day, current_date - '1day'::interval)
           AND (q.calculated_on IS NULL OR q.modified_on > q.calculated_on)
           -- either its never been or it was resently modified but not queued
           AND (q.queued_on IS NULL -- has not been queued
@@ -568,7 +568,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 
-CREATE OR REPLACE PROCEDURE update_daily_data(n int DEFAULT 5, min_day date DEFAULT '-infinity', max_day date DEFAULT 'infinity') AS $$
+CREATE OR REPLACE PROCEDURE update_daily_data(n int DEFAULT 5, min_day date DEFAULT NULL, max_day date DEFAULT NULL) AS $$
 DECLARE
   rw record;
 BEGIN

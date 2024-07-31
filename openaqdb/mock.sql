@@ -71,9 +71,19 @@ WITH locations AS (
   ) SELECT * FROM inserted_sensors;
 
 
+WITH fake_times AS (
+SELECT generate_series('2023-03-01'::date, '2023-04-01'::date, '30min'::interval) as datetime
+  ) INSERT INTO measurements (datetime, sensors_id, value)
+  SELECT f.datetime, s.sensors_id, date_part('day', as_local(datetime - interval '1sec', t.tzid))
+  FROM fake_times f
+  JOIN sensors s ON (TRUE)
+  JOIN sensor_systems sy ON (s.sensor_systems_id = sy.sensor_systems_id)
+  JOIN sensor_nodes sn ON (sy.sensor_nodes_id = sn.sensor_nodes_id)
+  JOIN timezones t ON (sn.timezones_id = t.timezones_id);
+
 
 WITH fake_times AS (
-SELECT generate_series('2024-03-01'::date, '2024-04-01'::date, '30min'::interval) as datetime
+SELECT generate_series(current_date - 7, current_timestamp, '30min'::interval) as datetime
   ) INSERT INTO measurements (datetime, sensors_id, value)
   SELECT f.datetime, s.sensors_id, date_part('day', as_local(datetime - interval '1sec', t.tzid))
   FROM fake_times f
