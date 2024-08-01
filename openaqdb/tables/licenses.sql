@@ -17,11 +17,11 @@ CREATE TABLE IF NOT EXISTS licenses (
   , description text -- short descriptive summary
   , url text -- link to the actual text/pdf/copy of license
  -- , author_entities_id int NOT NULL REFERENCES entities
-  , attribution_required boolean DEFAULT 't'
-  , share_alike_required boolean DEFAULT 't'
-  , commercial_use_allowed boolean DEFAULT 'f'
-  , redistribution_allowed boolean DEFAULT 'f'
-  , modification_allowed boolean DEFAULT 'f'
+  , attribution_required boolean NOT NULL DEFAULT 't'
+  , share_alike_required boolean NOT NULL DEFAULT 't'
+  , commercial_use_allowed boolean NOT NULL DEFAULT 'f'
+  , redistribution_allowed boolean NOT NULL DEFAULT 'f'
+  , modification_allowed boolean NOT NULL DEFAULT 'f'
   , metadata jsonb
 );
 

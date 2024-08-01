@@ -19,7 +19,6 @@
 	JOIN licenses l ON (l.licenses_id = p.licenses_id)
 	GROUP BY providers_id;
 
-locations -> providers -> providers_licenses_view -> entities
 
  CREATE OR REPLACE VIEW location_licenses_view AS
 	SELECT sn.sensor_nodes_id
