@@ -166,18 +166,6 @@ SELECT cron.schedule_in_database(
  $$ LANGUAGE SQL;
 
 
-
-
-	SELECT jobid
-	, start_time
-	, age(end_time, start_time) as duration
-	FROM cron.job_run_details
-	WHERE start_time > current_date
-	AND jobid = 2
-	ORDER BY start_time DESC
-	LIMIT 30;
-
-
   CREATE OR REPLACE VIEW recent_jobs_summary AS
   WITH jobs AS (
 	SELECT d.jobid
@@ -202,14 +190,3 @@ SELECT cron.schedule_in_database(
 	FROM jobs
 	GROUP BY jobid, jobname, active
 	ORDER BY 1,2 DESC;
-
-
-
-  SELECT command
-  , end_time
-  , return_message
-  FROM cron.job_run_details
-  WHERE status = 'failed'
-  AND start_time > now() - '12h'::interval
-  ORDER BY end_time DESC
-  LIMIT 10;

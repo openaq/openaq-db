@@ -6,11 +6,11 @@
 WITH locations AS (
   SELECT * FROM
   (VALUES
-  ('testing/site3', 'testing', 'testing site 3', ST_SetSRID(ST_Point( -71.104, 42.315),4326), 'airnow', 'pm25') -- America/New_York
+    ('testing/site1', 'testing', 'testing site 1', ST_SetSRID(ST_Point( -151.76306, -16.51516), 4326), 'airnow', 'pm25') -- Kirbati
   , ('testing/site2', 'testing', 'testing site 2', ST_SetSRID(ST_Point( -121.8418, 44.75228), 4326), 'airnow', 'pm25') -- America/Los_Angeles
+  , ('testing/site3', 'testing', 'testing site 3', ST_SetSRID(ST_Point( -71.104, 42.315),4326), 'airnow', 'pm25') -- America/New_York
   , ('testing/site4', 'testing', 'testing site 4', ST_SetSRID(ST_Point( -0.107389, 51.487236), 4326), 'airnow', 'pm25') -- Europe/London
   , ('testing/site5', 'testing', 'testing site 5', ST_SetSRID(ST_Point( 185.199922, -20.248716), 4326), 'airnow', 'pm25')
-  , ('testing/site1', 'testing', 'testing site 1', ST_SetSRID(ST_Point( -151.76306, -16.51516), 4326), 'airnow', 'pm25') -- Kirbati
    ) as t (source_id, source_name, site_name, geom, provider, measurand)
   ), inserted_nodes AS (
   INSERT INTO sensor_nodes (
@@ -72,7 +72,7 @@ WITH locations AS (
 
 
 WITH fake_times AS (
-SELECT generate_series('2023-03-01'::date, '2023-04-01'::date, '30min'::interval) as datetime
+SELECT generate_series('2023-02-28'::date, '2023-04-02'::date, '30min'::interval) as datetime
   ) INSERT INTO measurements (datetime, sensors_id, value)
   SELECT f.datetime, s.sensors_id, date_part('day', as_local(datetime - interval '1sec', t.tzid))
   FROM fake_times f
