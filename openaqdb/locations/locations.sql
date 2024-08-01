@@ -19,6 +19,25 @@
 	JOIN licenses l ON (l.licenses_id = p.licenses_id)
 	GROUP BY providers_id;
 
+locations -> providers -> providers_licenses_view -> entities
+
+ CREATE OR REPLACE VIEW location_licenses_view AS
+	SELECT sn.sensor_nodes_id
+	, json_agg(json_build_object(
+	  'id', pl.licenses_id
+		, 'name', l.name
+		, 'date_from', lower(pl.active_period)
+		, 'date_to', upper(pl.active_period)
+  		, 'attribution', json_build_object(
+      		'name', e.full_name, 'url', COALESCE(e.metadata->>'url',NULL)
+    )
+	)) as licenses
+	FROM providers_licenses pl
+  JOIN sensor_nodes sn USING (providers_id)
+  JOIN entities e ON (sn.owner_entities_id = e.entities_id)
+	JOIN licenses l ON (l.licenses_id = pl.licenses_id)
+	GROUP BY sn.sensor_nodes_id;
+
 
 CREATE OR REPLACE VIEW locations_view AS
 -----------------------------
