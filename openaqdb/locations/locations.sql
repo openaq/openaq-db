@@ -126,7 +126,7 @@ SELECT
   , ni.manufacturers
   , ni.manufacturer_ids
   , ni.instrument_ids
-	, pl.licenses
+	, ll.licenses
 	, l.providers_id
 FROM sensor_nodes l
 JOIN timezones t ON (l.timezones_id = t.timezones_id)
@@ -135,7 +135,7 @@ JOIN entities oc ON (oc.entities_id = l.owner_entities_id)
 JOIN providers p ON (p.providers_id = l.providers_id)
 JOIN nodes_instruments ni USING (sensor_nodes_id)
 JOIN nodes_sensors ns USING (sensor_nodes_id)
-LEFT JOIN provider_licenses_view pl ON (pl.providers_id = l.providers_id)
+LEFT JOIN location_licenses_view ll USING (sensor_nodes_id)
 WHERE l.is_public;
 
 DROP MATERIALIZED VIEW IF EXISTS locations_view_cached CASCADE;
