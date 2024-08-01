@@ -106,6 +106,7 @@ CREATE TABLE IF NOT EXISTS entities (
   , added_by int NOT NULL REFERENCES users DEFAULT 1
   , modified_on timestamptz
   , modified_by int REFERENCES users
+  , metadata jsonb
 );
 
 

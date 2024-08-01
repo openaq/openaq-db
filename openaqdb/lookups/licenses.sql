@@ -7,7 +7,6 @@ COPY public.licenses (licenses_id, name, description, url, attribution_required,
 38	CC0 1.0 DEED	Creative Commons license that permits sharing and adapting the work.	https://creativecommons.org/publicdomain/zero/1.0/deed.ca	f	f	t	t	t	{}
 36	Mexico SINAICA Terms and Conditions	\N	https://datos.gob.mx/libreusomx	t	t	t	t	t	{}
 41	CC BY 4.0 DEED	Creative Commons license that permits sharing and adapting the work, with attribution required.	https://creativecommons.org/licenses/by/4.0/	t	t	t	t	t	{}
-40	attribution required	\N	\N	t	\N	\N	\N	\N	{}
 31	Taiwan Open Government Data License	\N	https://data.gov.tw/en/license	t	t	t	t	t	{}
 33	US Public Domain	Declaration that a work is free of known copyright restrictions and can be freely used.	http://www.usa.gov/publicdomain/label/1.0/	f	f	t	t	t	{}
 39	Japan Terms of Use v2	\N	https://www.env.go.jp/kanbo/koho/opendata.html	t	f	t	t	t	{}
