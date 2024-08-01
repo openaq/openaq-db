@@ -20,6 +20,24 @@
 	GROUP BY providers_id;
 
 
+ CREATE OR REPLACE VIEW location_licenses_view AS
+	SELECT sn.sensor_nodes_id
+	, json_agg(json_build_object(
+	  'id', pl.licenses_id
+		, 'name', l.name
+		, 'date_from', lower(pl.active_period)
+		, 'date_to', upper(pl.active_period)
+  		, 'attribution', json_build_object(
+      		'name', e.full_name, 'url', COALESCE(e.metadata->>'url',NULL)
+    )
+	)) as licenses
+	FROM providers_licenses pl
+  JOIN sensor_nodes sn USING (providers_id)
+  JOIN entities e ON (sn.owner_entities_id = e.entities_id)
+	JOIN licenses l ON (l.licenses_id = pl.licenses_id)
+	GROUP BY sn.sensor_nodes_id;
+
+
 CREATE OR REPLACE VIEW locations_view AS
 -----------------------------
 WITH nodes_instruments AS (
@@ -107,7 +125,7 @@ SELECT
   , ni.manufacturers
   , ni.manufacturer_ids
   , ni.instrument_ids
-	, pl.licenses
+	, ll.licenses
 	, l.providers_id
 FROM sensor_nodes l
 JOIN timezones t ON (l.timezones_id = t.timezones_id)
@@ -116,7 +134,7 @@ JOIN entities oc ON (oc.entities_id = l.owner_entities_id)
 JOIN providers p ON (p.providers_id = l.providers_id)
 JOIN nodes_instruments ni USING (sensor_nodes_id)
 JOIN nodes_sensors ns USING (sensor_nodes_id)
-LEFT JOIN provider_licenses_view pl ON (pl.providers_id = l.providers_id)
+LEFT JOIN location_licenses_view ll USING (sensor_nodes_id)
 WHERE l.is_public;
 
 DROP MATERIALIZED VIEW IF EXISTS locations_view_cached CASCADE;
