@@ -5,61 +5,19 @@
 CREATE SEQUENCE IF NOT EXISTS sensors_rollup_sq START 10;
 CREATE TABLE IF NOT EXISTS sensors_rollup (
     sensors_id int PRIMARY KEY REFERENCES sensors
-  , datetime_first timestamptz -- first recorded measument datetime (@ingest)
-  , datetime_last timestamptz -- last recorded measurement time (@ingest)
-  , geom_latest geometry -- last recorded point (@ingest)
-  , value_latest double precision -- last recorded measurement (@ingest)
-  , value_count int NOT NULL -- total count of measurements (@ingest, @rollup)
-  , value_avg double precision -- average of all measurements (@ingest, @rollup)
-  , value_sd double precision -- sd of all measurements (@ingest, @rollup)
-  , value_min double precision -- lowest measurement value (@ingest, @rollup)
-  , value_max double precision -- highest value measured (@ingest, @rollup)
-  --, value_p05 double precision -- 5th percentile (@rollup)
-  --, value_p50 double precision -- median (@rollup)
-  --, value_p95 double precision -- 95th percentile (@rollup)
-  , added_on timestamptz NOT NULL DEFAULT now() -- first time measurements were added (@ingest)
-  , modified_on timestamptz NOT NULL DEFAULT now() -- last time we measurements were added (@ingest)
-  --, calculated_on timestamptz -- last time data was rolled up (@rollup)
+  , datetime_first timestamptz NOT NULL             -- first recorded measument datetime (@ingest)
+  , datetime_last timestamptz NOT NULL              -- last recorded measurement time (@ingest)
+  , geom_latest geometry                            -- last recorded point (@ingest)
+  , value_latest double precision NOT NULL          -- last recorded measurement (@ingest)
+  , value_count int NOT NULL NOT NULL               -- total count of measurements (@ingest, @rollup)
+  , value_avg double precision NOT NULL             -- average of all measurements (@ingest, @rollup)
+  , value_sd double precision NOT NULL              -- sd of all measurements (@ingest, @rollup)
+  , value_min double precision NOT NULL             -- lowest measurement value (@ingest, @rollup)
+  , value_max double precision NOT NULL             -- highest value measured (@ingest, @rollup)
+  , added_on timestamptz NOT NULL DEFAULT now()     -- first time measurements were added (@ingest)
+  , modified_on timestamptz NOT NULL DEFAULT now()  -- last time we measurements were added (@ingest)
 );
 
-
--- Sensors latest will act as a cache for the most recent
--- sensor value, managed by the ingester
-CREATE TABLE IF NOT EXISTS sensors_latest (
-    sensors_id int PRIMARY KEY NOT NULL REFERENCES sensors
-  , datetime timestamptz
-  , value double precision NOT NULL
-  , lat double precision -- so that nulls dont take up space
-  , lon double precision
-  , modified_on timestamptz DEFAULT now()
-  , fetchlogs_id int -- for debugging issues, no reference constraint
-);
-
-
-CREATE TABLE IF NOT EXISTS rollups (
-    groups_id int REFERENCES groups (groups_id),
-    measurands_id int,
-    sensors_id int,
-    rollup text,
-    st timestamptz,
-    et timestamptz,
-    datetime_first timestamptz,
-    datetime_last timestamptz,
-    value_count bigint,
-    value_sum float,
-    last_value float,
-    minx float,
-    miny float,
-    maxx float,
-    maxy float,
-    last_point geography,
-    PRIMARY KEY (groups_id, measurands_id, rollup, et)
-);
-
-CREATE INDEX rollups_measurands_id_idx ON rollups USING btree (measurands_id);
-CREATE INDEX rollups_rollup_idx ON rollups USING btree (rollup);
-CREATE INDEX rollups_sensors_id_idx ON rollups USING btree (sensors_id);
-CREATE INDEX rollups_st_idx ON rollups USING btree (st);
 
 -- The following tables, functions and views are to handle
 -- tracking coverage for the system. If possibly we may also want to replace
@@ -796,8 +754,10 @@ $$ LANGUAGE plpgsql;
 
 DROP TABLE IF EXISTS sensors_rollup_patch;
 SELECT sensors_id
-, MIN(datetime_first) as datetime_first
-, MAX(datetime_last) as datetime_last
+--, MIN(datetime_first) as datetime_first
+--, MAX(datetime_last) as datetime_last
+, MIN(first_datetime) as datetime_first
+, MAX(last_datetime) as datetime_last
 , SUM(value_count) as value_count
 , AVG(value_avg) as value_avg
 , MIN(value_min) as value_min
@@ -805,6 +765,8 @@ SELECT sensors_id
 INTO sensors_rollup_patch
 FROM hourly_data
 GROUP BY sensors_id;
+
+
 
 SELECT COUNT(1)
 FROM sensors_rollup;

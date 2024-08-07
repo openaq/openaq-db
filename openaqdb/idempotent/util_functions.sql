@@ -225,7 +225,7 @@ SELECT json_build_object(
        'utc', format_timestamp(tstz AT TIME ZONE tz, 'UTC')
      , 'local', format_timestamp(tstz AT TIME ZONE tz, tz)
      , 'timezone', tz
-     );
+     ) WHERE tstz IS NOT NULL;
 $$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
 
 CREATE OR REPLACE FUNCTION slugify("value" TEXT)
