@@ -47,6 +47,7 @@
  , modified_count int NOT NULL DEFAULT 0
  , calculated_on timestamptz
  , calculated_count int NOT NULL DEFAULT 0
+ , calculated_seconds real
  , sensor_nodes_count int
  , sensors_count int
  , measurements_count int
@@ -56,16 +57,18 @@
 
 
 
+
 CREATE OR REPLACE FUNCTION update_daily_data_queue() RETURNS bigint AS $$
  WITH data_min AS (
   SELECT MIN(datetime) as min_date
+  , MAX(datetime) as max_date
   FROM measurements
  ), days AS (
-  SELECT generate_series(min_date, current_date, '1day'::interval) as datetime
+  SELECT generate_series(min_date, max_date, '1day'::interval) as datetime
   FROM data_min
  ), daily_inserts AS (
   INSERT INTO daily_data_queue (datetime, tz_offset)
-  SELECT datetime, generate_series(0,23,1) as tz_offset
+  SELECT datetime, generate_series(-12,14,1) as tz_offset
   FROM days
   ON CONFLICT DO NOTHING
   RETURNING datetime, tz_offset
@@ -76,9 +79,39 @@ CREATE OR REPLACE FUNCTION update_daily_data_queue() RETURNS bigint AS $$
 
 
 
+CREATE OR REPLACE FUNCTION update_daily_data_queue(dt timestamptz) RETURNS bigint AS $$
+ WITH affected_offsets AS (
+  -- the following will just queue up every possible offset
+  -- regardless of whether we have a sensor node
+  -- SELECT generate_series(-12, 14, 1) as tz_offset
+  -- and this will only do the queue the offsets that we have
+  SELECT utc_offset_hours(dt, tzid) as tz_offset
+  FROM sensor_nodes n
+  JOIN timezones t USING (timezones_id)
+  GROUP BY 1
+ ), daily_inserts AS (
+  INSERT INTO daily_data_queue (datetime, tz_offset)
+  SELECT (dt + make_interval(hours=>tz_offset::int, secs=>-1))::date
+  , tz_offset
+  FROM affected_offsets
+  ON CONFLICT (datetime, tz_offset) DO UPDATE
+  SET modified_on = now()
+  , modified_count = daily_data_queue.modified_count + 1
+  RETURNING datetime, tz_offset
+  ) SELECT COUNT(*)
+  FROM daily_inserts;
+  $$ LANGUAGE SQL;
+
+
+CREATE OR REPLACE FUNCTION hourly_data_updated_event(hr timestamptz) RETURNS boolean AS $$
+ SELECT update_daily_data_queue(hr)>0;
+$$ LANGUAGE SQL;
+
+
+
 
 DROP FUNCTION IF EXISTS fetch_daily_data_jobs(int, date, date);
-CREATE OR REPLACE FUNCTION fetch_daily_data_jobs(n int, min_day date DEFAULT '-infinity', max_day date DEFAULT 'infinity') RETURNS TABLE(
+CREATE OR REPLACE FUNCTION fetch_daily_data_jobs(n int DEFAULT 1, min_day date DEFAULT NULL, max_day date DEFAULT NULL) RETURNS TABLE(
     datetime date
   , tz_offset int
   , queued_on timestamptz
@@ -94,10 +127,17 @@ CREATE OR REPLACE FUNCTION fetch_daily_data_jobs(n int, min_day date DEFAULT '-i
           FROM daily_data_queue q
           -- Its either not been calculated or its been modified
           WHERE q.datetime >= COALESCE(min_day, '-infinity'::date)
-          AND q.datetime <= COALESCE(min_day, 'infinity'::date)
+          AND q.datetime <= COALESCE(max_day, current_date - '1day'::interval)
           AND (q.calculated_on IS NULL OR q.modified_on > q.calculated_on)
           -- either its never been or it was resently modified but not queued
-          AND (q.queued_on IS NULL OR (q.queued_on < q.modified_on AND q.queued_on < now() - '1h'::interval))
+          AND (q.queued_on IS NULL -- has not been queued
+          OR (
+              q.queued_on < now() - '1h'::interval -- a set amount of time has passed AND
+              AND (
+                q.queued_on < q.modified_on  -- its been changed since being queued
+                OR calculated_on IS NULL     -- it was never calculated
+              )
+          ))
           ORDER BY q.datetime, q.tz_offset
           LIMIT n
           FOR UPDATE SKIP LOCKED
@@ -128,10 +168,10 @@ $$ LANGUAGE plpgsql;
 -- The daily data will be similar to the hourly data and include
 -- summary data for that day in the appropriate timezone
 CREATE TABLE IF NOT EXISTS daily_data (
-  sensors_id int NOT NULL --REFERENCES sensors ON DELETE CASCADE
+  sensors_id int NOT NULL REFERENCES sensors ON DELETE CASCADE
 , datetime date NOT NULL -- keeping the name datetime makes dynamic queries easier
-, first_datetime timestamptz NOT NULL
-, last_datetime timestamptz NOT NULL
+, datetime_first timestamptz NOT NULL
+, datetime_last timestamptz NOT NULL
 , value_count int NOT NULL
 , value_avg double precision
 , value_sd double precision
@@ -153,10 +193,6 @@ CREATE TABLE IF NOT EXISTS daily_data (
 , calculated_count int DEFAULT 1
 , UNIQUE(sensors_id, datetime)
 );
-
---ALTER TABLE daily_data
---  ADD COLUMN error_count int NOT NULL DEFAULT 0
---, ADD COLUMN error_raw_count int NOT NULL DEFAULT 0;
 
 CREATE INDEX IF NOT EXISTS daily_data_sensors_id_idx
 ON daily_data
@@ -189,8 +225,8 @@ SELECT
 , sn.sensor_nodes_id
 , as_date(m.datetime, t.tzid) as datetime
 , utc_offset(t.tzid) as utc_offset
-, MIN(datetime) as first_datetime
-, MAX(datetime) as last_datetime
+, MIN(datetime) as datetime_first
+, MAX(datetime) as datetime_last
 , COUNT(1) AS value_count
 , SUM(value_count) as value_raw_count
 , AVG(value_avg) as value_avg
@@ -227,8 +263,8 @@ SELECT
 , sn.sensor_nodes_id
 , as_date(m.datetime, t.tzid)  as datetime
 , MAX(m.updated_on) as updated_on
-, MIN(first_datetime) as first_datetime
-, MAX(last_datetime) as last_datetime
+, MIN(datetime_first) as datetime_first
+, MAX(datetime_last) as datetime_last
 , COUNT(1) AS value_count
 , AVG(value_avg) as value_avg
 , STDDEV(value_avg) as value_sd
@@ -261,8 +297,8 @@ INSERT INTO daily_data (
   sensors_id
 , datetime
 , updated_on
-, first_datetime
-, last_datetime
+, datetime_first
+, datetime_last
 , value_count
 , value_avg
 , value_sd
@@ -283,8 +319,8 @@ INSERT INTO daily_data (
 	SELECT sensors_id
 , datetime
 , updated_on
-, first_datetime
-, last_datetime
+, datetime_first
+, datetime_last
 , value_count
 , value_avg
 , value_sd
@@ -304,8 +340,8 @@ INSERT INTO daily_data (
 , current_timestamp as calculated_on
 	FROM sensors_rollup
 ON CONFLICT (sensors_id, datetime) DO UPDATE
-SET first_datetime = EXCLUDED.first_datetime
-, last_datetime = EXCLUDED.last_datetime
+SET datetime_first = EXCLUDED.datetime_first
+, datetime_last = EXCLUDED.datetime_last
 , updated_on = EXCLUDED.updated_on
 , value_avg = EXCLUDED.value_avg
 , value_min = EXCLUDED.value_min
@@ -331,6 +367,225 @@ SET first_datetime = EXCLUDED.first_datetime
 $$ LANGUAGE SQL;
 
 
+CREATE OR REPLACE FUNCTION calculate_daily_data_by_offset(dy date DEFAULT current_date - 1, tz_offset int DEFAULT 0)
+  RETURNS TABLE (
+	  sensors_id int
+  , sensor_nodes_id int
+  , datetime date
+  , updated_on timestamptz
+  , datetime_first timestamptz
+  , datetime_last timestamptz
+  , value_count bigint
+  , value_avg real
+  , value_sd real
+  , value_min real
+  , value_max real
+  , value_raw_count bigint
+  , value_raw_avg real
+  , value_raw_min real
+  , value_raw_max real
+  , value_p02 real
+  , value_p25 real
+  , value_p50 real
+  , value_p75 real
+  , value_p98 real
+  , error_raw_count bigint
+  , error_count bigint
+  ) AS $$
+SELECT
+  m.sensors_id
+, sn.sensor_nodes_id
+, as_date(m.datetime, t.tzid)  as datetime
+, MAX(m.updated_on) as updated_on
+, MIN(datetime_first) as datetime_first
+, MAX(datetime_last) as datetime_last
+, COUNT(1) AS value_count
+, AVG(value_avg) as value_avg
+, STDDEV(value_avg) as value_sd
+, MIN(value_avg) as value_min
+, MAX(value_avg) as value_max
+, SUM(value_count) as value_raw_count
+, SUM(value_avg*value_count)/SUM(value_count) as value_raw_avg
+, MIN(value_min) as value_raw_min
+, MAX(value_max) as value_raw_max
+, PERCENTILE_CONT(0.02) WITHIN GROUP(ORDER BY value_avg) as value_p02
+, PERCENTILE_CONT(0.25) WITHIN GROUP(ORDER BY value_avg) as value_p25
+, PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY value_avg) as value_p50
+, PERCENTILE_CONT(0.75) WITHIN GROUP(ORDER BY value_avg) as value_p75
+, PERCENTILE_CONT(0.98) WITHIN GROUP(ORDER BY value_avg) as value_p98
+, SUM(error_count) as error_raw_count
+, SUM((value_avg IS NULL)::int) as error_count
+FROM hourly_data m
+JOIN sensors s ON (m.sensors_id = s.sensors_id)
+JOIN sensor_systems sy ON (s.sensor_systems_id = sy.sensor_systems_id)
+JOIN sensor_nodes sn ON (sy.sensor_nodes_id = sn.sensor_nodes_id)
+JOIN timezones t ON (sn.timezones_id = t.timezones_id)
+WHERE value_count > 0
+AND datetime > as_utc(dy, t.tzid)
+AND datetime <= as_utc(dy + 1, t.tzid)
+AND utc_offset_hours(dy, t.tzid) = tz_offset
+GROUP BY 1,2,3
+HAVING COUNT(1) > 0;
+  $$ LANGUAGE SQL;
+
+
+
+CREATE OR REPLACE FUNCTION insert_daily_data_by_offset(dy date DEFAULT current_date - 1, tz_offset int DEFAULT 0)
+  RETURNS TABLE (
+	   sensor_nodes_count bigint
+   , sensors_count bigint
+   , measurements_hourly_count bigint
+   , measurements_count bigint
+  ) AS $$
+SET LOCAL work_mem = '512MB';
+WITH data_rollup AS (
+  SELECT *
+  FROM calculate_daily_data_by_offset(dy, tz_offset)
+), data_inserted AS (
+INSERT INTO daily_data (
+  sensors_id
+, datetime
+, updated_on
+, datetime_first
+, datetime_last
+, value_count
+, value_avg
+, value_sd
+, value_min
+, value_max
+, value_raw_count
+, value_raw_avg
+, value_raw_min
+, value_raw_max
+, value_p02
+, value_p25
+, value_p50
+, value_p75
+, value_p98
+, error_count
+, error_raw_count
+, calculated_on)
+	SELECT sensors_id
+, datetime
+, updated_on
+, datetime_first
+, datetime_last
+, value_count
+, value_avg
+, value_sd
+, value_min
+, value_max
+, value_raw_count
+, value_raw_avg
+, value_raw_min
+, value_raw_max
+, value_p02
+, value_p25
+, value_p50
+, value_p75
+, value_p98
+, error_count
+, error_raw_count
+, current_timestamp as calculated_on
+	FROM data_rollup
+ON CONFLICT (sensors_id, datetime) DO UPDATE
+SET datetime_first = EXCLUDED.datetime_first
+, datetime_last = EXCLUDED.datetime_last
+, updated_on = EXCLUDED.updated_on
+, value_avg = EXCLUDED.value_avg
+, value_min = EXCLUDED.value_min
+, value_max = EXCLUDED.value_max
+, value_count = EXCLUDED.value_count
+, value_raw_avg = EXCLUDED.value_raw_avg
+, value_raw_min = EXCLUDED.value_raw_min
+, value_raw_max = EXCLUDED.value_raw_max
+, value_raw_count = EXCLUDED.value_raw_count
+, value_p02 = EXCLUDED.value_p02
+, value_p25 = EXCLUDED.value_p25
+, value_p50 = EXCLUDED.value_p50
+, value_p75 = EXCLUDED.value_p75
+, value_p98 = EXCLUDED.value_p98
+, error_count = EXCLUDED.error_count
+, error_raw_count = EXCLUDED.error_raw_count
+, calculated_on = EXCLUDED.calculated_on
+  RETURNING sensors_id, value_count, value_raw_count
+	) SELECT COUNT(DISTINCT sensors_id) as sensors_count
+	, COUNT(DISTINCT sensor_nodes_id) as sensor_nodes_count
+	, SUM(value_count) as measurements_hourly_count
+	, SUM(value_raw_count) as measurements_count
+	FROM data_rollup;
+$$ LANGUAGE SQL;
+
+
+CREATE OR REPLACE FUNCTION daily_data_updated_event(dy date, tz_offset_int int) RETURNS boolean AS $$
+ SELECT 't'::boolean;
+$$ LANGUAGE SQL;
+
+
+
+CREATE OR REPLACE FUNCTION update_daily_data(dy date DEFAULT current_date - 1, tz_offset_int int DEFAULT 0) RETURNS bigint AS $$
+DECLARE
+nw timestamptz := clock_timestamp();
+mc bigint;
+BEGIN
+WITH inserted AS (
+  SELECT sensor_nodes_count
+  , sensors_count
+  , measurements_hourly_count
+  , measurements_count
+  FROM insert_daily_data_by_offset(dy, tz_offset_int))
+  INSERT INTO daily_data_queue (
+    datetime
+  , tz_offset
+  , calculated_on
+  , calculated_count
+  , sensor_nodes_count
+  , sensors_count
+  , measurements_count
+  , measurements_raw_count
+  , calculated_seconds
+  )
+  SELECT dy
+  , tz_offset_int
+  , now()
+  , 1
+  , sensor_nodes_count
+  , sensors_count
+  , measurements_hourly_count
+  , measurements_count
+  , EXTRACT(EPOCH FROM clock_timestamp() - nw)
+  FROM inserted
+  ON CONFLICT (datetime, tz_offset) DO UPDATE
+  SET calculated_on = EXCLUDED.calculated_on
+  , calculated_count = daily_data_queue.calculated_count + 1
+  , measurements_count = EXCLUDED.measurements_count
+  , sensors_count = EXCLUDED.sensors_count
+  , calculated_seconds = EXCLUDED.calculated_seconds
+  RETURNING measurements_count INTO mc;
+  PERFORM daily_data_updated_event(dy, tz_offset_int);
+  RETURN mc;
+END;
+$$ LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE PROCEDURE update_daily_data(n int DEFAULT 5, min_day date DEFAULT NULL, max_day date DEFAULT NULL) AS $$
+DECLARE
+  rw record;
+BEGIN
+FOR rw IN (
+    SELECT datetime
+    , tz_offset
+     FROM fetch_daily_data_jobs(n, min_day, max_day))
+LOOP
+  RAISE NOTICE 'updating day: % - %', rw.datetime, rw.tz_offset;
+  PERFORM update_daily_data(rw.datetime, rw.tz_offset);
+  COMMIT;
+END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
+
+
 
 CREATE OR REPLACE FUNCTION calculate_sensor_daily_data(id int, sd date, ed date) RETURNS TABLE (
 	sensor_nodes_count bigint
@@ -345,8 +600,8 @@ SELECT
 , sn.sensor_nodes_id
 , as_date(m.datetime, t.tzid)  as datetime
 , MAX(m.updated_on) as updated_on
-, MIN(first_datetime) as first_datetime
-, MAX(last_datetime) as last_datetime
+, MIN(datetime_first) as datetime_first
+, MAX(datetime_last) as datetime_last
 , COUNT(1) AS value_count
 , AVG(value_avg) as value_avg
 , STDDEV(value_avg) as value_sd
@@ -379,8 +634,8 @@ INSERT INTO daily_data (
   sensors_id
 , datetime
 , updated_on
-, first_datetime
-, last_datetime
+, datetime_first
+, datetime_last
 , value_count
 , value_avg
 , value_sd
@@ -401,8 +656,8 @@ INSERT INTO daily_data (
 	SELECT sensors_id
 , datetime
 , updated_on
-, first_datetime
-, last_datetime
+, datetime_first
+, datetime_last
 , value_count
 , value_avg
 , value_sd
@@ -422,8 +677,8 @@ INSERT INTO daily_data (
 , current_timestamp as calculated_on
 	FROM sensors_rollup
 ON CONFLICT (sensors_id, datetime) DO UPDATE
-SET first_datetime = EXCLUDED.first_datetime
-, last_datetime = EXCLUDED.last_datetime
+SET datetime_first = EXCLUDED.datetime_first
+, datetime_last = EXCLUDED.datetime_last
 , updated_on = EXCLUDED.updated_on
 , value_avg = EXCLUDED.value_avg
 , value_min = EXCLUDED.value_min

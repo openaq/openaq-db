@@ -61,6 +61,7 @@ GRANT ALL ON FUNCTIONS to :DATABASE_WRITE_USER;
 \i tables/providers_views.sql
 \i tables/parameters_views.sql
 \i tables/daily_data_rollups.sql
+\i tables/annual_data_rollups.sql
 \i tables/lists.sql
 \i tables/measurements_view.sql
 

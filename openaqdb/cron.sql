@@ -19,21 +19,19 @@ SELECT cron.schedule_in_database(
   , 'openaq'
   );
 
--- every hour on the 1/2 hour
 SELECT cron.schedule_in_database(
-  'rollup-daily-data-leading'
-  , '30 * * * *'
-  , $$SELECT calculate_daily_data_full((now() + '15h'::interval)::date)$$
+  'rollup-daily-data'
+  , '*/20 * * * *'
+  , $$CALL update_daily_data(500)$$
   , 'openaq'
   );
 
 SELECT cron.schedule_in_database(
-  'rollup-daily-data-trailing'
-  , '10 * * * *'
-  , $$SELECT calculate_daily_data_full((now() - '13h'::interval)::date)$$
+  'rollup-annual-data'
+  , '0 * * * *'
+  , $$CALL update_annual_data(25)$$
   , 'openaq'
   );
-
 
 -- at quarter past each hour calculate
 -- the latest 10 hours that need updating
@@ -168,18 +166,6 @@ SELECT cron.schedule_in_database(
  $$ LANGUAGE SQL;
 
 
-
-
-	SELECT jobid
-	, start_time
-	, age(end_time, start_time) as duration
-	FROM cron.job_run_details
-	WHERE start_time > current_date
-	AND jobid = 2
-	ORDER BY start_time DESC
-	LIMIT 30;
-
-
   CREATE OR REPLACE VIEW recent_jobs_summary AS
   WITH jobs AS (
 	SELECT d.jobid
@@ -204,14 +190,3 @@ SELECT cron.schedule_in_database(
 	FROM jobs
 	GROUP BY jobid, jobname, active
 	ORDER BY 1,2 DESC;
-
-
-
-  SELECT command
-  , end_time
-  , return_message
-  FROM cron.job_run_details
-  WHERE status = 'failed'
-  AND start_time > now() - '12h'::interval
-  ORDER BY end_time DESC
-  LIMIT 10;
