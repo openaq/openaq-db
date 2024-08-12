@@ -208,14 +208,14 @@ SELECT timezone(tz, tstz::timestamp);
 $$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
 
 
-CREATE OR REPLACE FUNCTION get_datetime_object(tstz timestamptz, tz text DEFAULT 'UTC')
+  CREATE OR REPLACE FUNCTION get_datetime_object(tstz timestamptz, tz text DEFAULT 'UTC')
 RETURNS json AS $$
 SELECT json_build_object(
        'utc', format_timestamp(tstz, 'UTC')
      , 'local', format_timestamp(tstz, tz)
+       , 'timezone', tz
      ) WHERE tstz IS NOT NULL;
 $$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
-
 
 -- assume that its in the right timezone but not timestamptz
 -- this would happen if we used timezone(tz, timestamptz) to convert something
@@ -227,6 +227,12 @@ SELECT json_build_object(
      , 'timezone', tz
      ) WHERE tstz IS NOT NULL;
 $$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION get_datetime_object(tstz date, tz text DEFAULT 'UTC')
+RETURNS json AS $$
+  SELECT get_datetime_object(tstz::timestamp, tz);
+$$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
+
 
 CREATE OR REPLACE FUNCTION slugify("value" TEXT)
 RETURNS TEXT AS $$
