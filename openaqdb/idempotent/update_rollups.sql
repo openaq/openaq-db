@@ -808,7 +808,7 @@ $$ LANGUAGE plpgsql;
 
 
 -- run after you have just imported data outside of the fetcher
-CREATE OR REPLACE PROCEDURE intialize_sensors_rollup() AS $$
+CREATE OR REPLACE PROCEDURE initialize_sensors_rollup() AS $$
 DECLARE
 BEGIN
   CREATE TEMP TABLE sensors_missing_from_rollup AS
@@ -818,6 +818,7 @@ BEGIN
     FROM sensors
     LEFT JOIN sensors_rollup s USING (sensors_id)
     WHERE s.sensors_id IS NULL
+    OR value_avg IS NULL
   ), data AS (
   -- use that list to aggregate based on the measurements
     SELECT m.sensors_id
@@ -865,7 +866,14 @@ BEGIN
   , value_max
   , value_latest
   FROM sensors_missing_from_rollup
-  ON CONFLICT DO NOTHING;
+ON CONFLICT (sensors_id) DO UPDATE
+SET datetime_first = EXCLUDED.datetime_first
+, datetime_last = EXCLUDED.datetime_last
+, value_count  = EXCLUDED.value_count
+, value_min = EXCLUDED.value_min
+, value_max = EXCLUDED.value_max
+, value_avg = EXCLUDED.value_avg
+, value_latest = COALESCE(sensors_rollup.value_latest, EXCLUDED.value_latest);
 END;
 $$ LANGUAGE plpgsql;
 
