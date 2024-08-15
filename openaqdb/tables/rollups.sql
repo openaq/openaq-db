@@ -752,55 +752,6 @@ END;
 $$ LANGUAGE plpgsql;
 
 
-DROP TABLE IF EXISTS sensors_rollup_patch;
-SELECT sensors_id
---, MIN(datetime_first) as datetime_first
---, MAX(datetime_last) as datetime_last
-, MIN(first_datetime) as datetime_first
-, MAX(last_datetime) as datetime_last
-, SUM(value_count) as value_count
-, AVG(value_avg) as value_avg
-, MIN(value_min) as value_min
-, MAX(value_max) as value_max
-INTO sensors_rollup_patch
-FROM hourly_data
-GROUP BY sensors_id;
-
-
-
-SELECT COUNT(1)
-FROM sensors_rollup;
-
-INSERT INTO sensors_rollup (
- sensors_id
- , datetime_first
- , datetime_last
- , value_count
- , value_avg
- , value_min
- , value_max
- , value_latest
-)
-SELECT s.sensors_id
- , s.datetime_first
- , s.datetime_last
- , s.value_count
- , s.value_avg
- , s.value_min
- , s.value_max
- , m.value
-FROM sensors_rollup_patch s
-JOIN measurements m ON (s.sensors_id = m.sensors_id AND s.datetime_last = m.datetime)
-ON CONFLICT (sensors_id) DO UPDATE
-SET datetime_first = EXCLUDED.datetime_first
-, datetime_last = EXCLUDED.datetime_last
-, value_count  = EXCLUDED.value_count
-, value_min = EXCLUDED.value_min
-, value_max = EXCLUDED.value_max
-, value_avg = EXCLUDED.value_avg
-, value_latest = COALESCE(sensors_rollup.value_latest, EXCLUDED.value_latest);
-
-
 
 -- when was it last updated
 DO $$

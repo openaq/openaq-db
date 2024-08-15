@@ -5,7 +5,7 @@ export PGDATABASE=$DATABASE_DB
 export PGHOST=localhost
 
 psql --single-transaction -f "mock.sql"
-psql -c "CALL intialize_sensors_rollup()" \
+psql -c "CALL initialize_sensors_rollup()" \
      -c "SELECT reset_hourly_stats()" \
      -c "CALL update_hourly_data(20000)" \
      -c "CALL update_daily_data(10000)" \

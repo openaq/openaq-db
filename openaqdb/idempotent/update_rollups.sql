@@ -878,16 +878,6 @@ END;
 $$ LANGUAGE plpgsql;
 
 
-SELECT sensors_id
-, MIN(datetime_first) as datetime_first
-, MAX(datetime_last) as datetime_last
-, COUNT(1) as value_count
-, STDDEV(value_avg) as value_sd
-, AVG(value_avg) as value_avg
-INTO TEMP sensors_temp_table
-FROM hourly_data
-GROUP BY 1;
-
 
 CREATE OR REPLACE FUNCTION reset_hourly_stats(
   st timestamptz DEFAULT '-infinity'
