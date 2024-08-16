@@ -8,35 +8,35 @@
 --DROP VIEW IF EXISTS locations_view CASCADE;
 
  CREATE OR REPLACE VIEW provider_licenses_view AS
-	SELECT p.providers_id
-	, json_agg(json_build_object(
-	  'id', p.licenses_id
-	, 'name', l.name
-	, 'date_from', lower(active_period)
-	, 'date_to', upper(active_period)
-	)) as licenses
-	FROM providers_licenses p
-	JOIN licenses l ON (l.licenses_id = p.licenses_id)
-	GROUP BY providers_id;
+  SELECT p.providers_id
+  , json_agg(json_build_object(
+    'id', p.licenses_id
+  , 'name', l.name
+  , 'date_from', lower(active_period)
+  , 'date_to', upper(active_period)
+  )) as licenses
+  FROM providers_licenses p
+  JOIN licenses l ON (l.licenses_id = p.licenses_id)
+  GROUP BY providers_id;
 
 
  CREATE OR REPLACE VIEW location_licenses_view AS
-	SELECT sn.sensor_nodes_id
-	, json_agg(json_build_object(
-	  'id', pl.licenses_id
-		, 'name', l.name
-		, 'date_from', lower(pl.active_period)
-		, 'date_to', upper(pl.active_period)
-  		, 'attribution', json_build_object(
-      		'name', e.full_name, 'url', COALESCE(e.metadata->>'url',NULL)
+  SELECT sn.sensor_nodes_id
+  , json_agg(json_build_object(
+    'id', pl.licenses_id
+    , 'name', l.name
+    , 'date_from', lower(pl.active_period)
+    , 'date_to', upper(pl.active_period)
+      , 'attribution', json_build_object(
+          'name', e.full_name, 'url', COALESCE(e.metadata->>'url', NULL)
     )
-	)) as licenses
+  )) as licenses
   , array_agg(DISTINCT pl.licenses_id) as license_ids
-	FROM providers_licenses pl
+  FROM providers_licenses pl
   JOIN sensor_nodes sn USING (providers_id)
   JOIN entities e ON (sn.owner_entities_id = e.entities_id)
-	JOIN licenses l ON (l.licenses_id = pl.licenses_id)
-	GROUP BY sn.sensor_nodes_id;
+  JOIN licenses l ON (l.licenses_id = pl.licenses_id)
+  GROUP BY sn.sensor_nodes_id;
 
 
 CREATE OR REPLACE VIEW locations_view AS
@@ -126,9 +126,9 @@ SELECT
   , ni.manufacturers
   , ni.manufacturer_ids
   , ni.instrument_ids
-	, ll.licenses
+  , ll.licenses
   , ll.license_ids
-	, l.providers_id
+  , l.providers_id
 FROM sensor_nodes l
 JOIN timezones t ON (l.timezones_id = t.timezones_id)
 JOIN countries c ON (c.countries_id = l.countries_id)
@@ -165,7 +165,7 @@ WITH locations AS (
   JOIN sensor_systems ss ON (ss.sensor_nodes_id = sn.sensor_nodes_id)
   JOIN instruments i ON (ss.instruments_id = i.instruments_id)
   JOIN entities mc ON (mc.entities_id = i.manufacturer_entities_id)
-	WHERE sn.is_public
+  WHERE sn.is_public
   GROUP BY 1,2)
   SELECT id
   , jsonb_agg(manufacturer) as manufacturers
