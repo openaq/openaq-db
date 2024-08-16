@@ -31,6 +31,7 @@
       		'name', e.full_name, 'url', COALESCE(e.metadata->>'url',NULL)
     )
 	)) as licenses
+  , array_agg(DISTINCT pl.licenses_id) as license_ids
 	FROM providers_licenses pl
   JOIN sensor_nodes sn USING (providers_id)
   JOIN entities e ON (sn.owner_entities_id = e.entities_id)
@@ -126,6 +127,7 @@ SELECT
   , ni.manufacturer_ids
   , ni.instrument_ids
 	, ll.licenses
+  , ll.license_ids
 	, l.providers_id
 FROM sensor_nodes l
 JOIN timezones t ON (l.timezones_id = t.timezones_id)
