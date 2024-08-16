@@ -919,11 +919,28 @@ JOIN
   $$ LANGUAGE SQL;
 
 
-  -- SELECT * FROM measurements_per_hour('1day'::interval);
+  CREATE OR REPLACE FUNCTION measurements_per_hour(param text,  dur interval DEFAULT '1day') RETURNS TABLE (
+  sensor_nodes_count bigint
+  , sensors_count bigint
+  , measurements_per_hour_expected double precision
+  , measurements_per_hour_observed double precision
+  ) AS $$
+  SELECT COUNT(DISTINCT n.sensor_nodes_id) as sensor_nodes_count
+  , COUNT(DISTINCT n.sensors_id) as sensors_count
+  , ROUND(SUM(3600.0/s.data_logging_period_seconds)) as measurements_per_hour_expected
+  , ROUND(SUM((3600.0/s.data_logging_period_seconds)*(percent_complete/100.0))) as measurements_per_hour_observed
+  FROM sensor_nodes_check n
+  JOIN sensors s USING (sensors_id)
+  WHERE datetime_last > now() - dur
+  AND n.parameter ~* param;
+  $$ LANGUAGE SQL;
+
+
+  -- SELECT * FROM measurements_per_hour('pm25', '1day'::interval);
 
   -- WITH gs AS (
   -- SELECT UNNEST(ARRAY['1 hour', '4 hours', '8 hours', '16 hours', '2 days', '1 week']) as dur)
   -- SELECT gs.dur as lag, m.*
-  -- FROM gs, measurements_per_hour(dur::interval) m;
+  -- FROM gs, measurements_per_hour('^pm', dur::interval) m;
 
 COMMIT;
