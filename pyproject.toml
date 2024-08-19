@@ -5,6 +5,12 @@ description = ""
 authors = ["OpenAQ <info@openaq.org>"]
 readme = "README.md"
 
+[tool.poetry.group.dev.dependencies]
+boto3 = "^1.35.0"
+requests = "^2.32.3"
+migra = "^3.0.1663481299"
+psycopg2 = "^2.9.9"
+
 [tool.pytest.ini_options]
 pythonpath = "api"
 log_format = "[%(asctime)s] %(levelname)s [%(name)s:%(lineno)s] %(message)s"

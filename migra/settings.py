@@ -1,7 +1,15 @@
 from typing import Optional
-from pydantic import BaseSettings, validator
+
+from pydantic import computed_field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
 from pathlib import Path
 from os import environ
+
+def get_env():
+    parent = Path(__file__).resolve().parent.parent
+    env_file = Path.joinpath(parent, environ.get("DOTENV", ".env"))
+    return env_file
 
 
 class Settings(BaseSettings):
@@ -10,21 +18,14 @@ class Settings(BaseSettings):
     DATABASE_DB: str
     DATABASE_HOST: str
     DATABASE_PORT: int
-    DATABASE_WRITE_URL: Optional[str]
     REMOTE_DATABASE_URL: str
 
-    @validator('DATABASE_WRITE_URL', allow_reuse=True)
-    def get_write_url(cls, v, values):
-        return v or f"postgresql://{values['DATABASE_WRITE_USER']}:{values['DATABASE_WRITE_PASSWORD']}@{values['DATABASE_HOST']}:{values['DATABASE_PORT']}/{values['DATABASE_DB']}"
+    @computed_field(return_type=str, alias="DATABASE_WRITE_URL")
+    @property
+    def DATABASE_WRITE_URL(self):
+        return f"postgresql://{self.DATABASE_WRITE_USER}:{self.DATABASE_WRITE_PASSWORD}@{self.DATABASE_HOST}:{self.DATABASE_PORT}/{self.DATABASE_DB}"
 
-    class Config:
-        parent = Path(__file__).resolve().parent.parent
-        if 'DOTENV' in environ:
-            env_file = Path.joinpath(parent, environ['DOTENV'])
-        elif 'ENV' in environ:
-            env_file = Path.joinpath(parent, f".env.{environ['ENV']}")
-        else:
-            env_file = Path.joinpath(parent, ".env")
+    model_config = SettingsConfigDict(extra="ignore", env_file=get_env())
 
 
 settings = Settings()
