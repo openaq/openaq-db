@@ -489,105 +489,12 @@ CREATE INDEX ON locations_base_v2 USING GIN(parameters);
 CREATE INDEX ON locations_base_v2 (id);
 CREATE INDEX ON locations_base_v2 (name);
 
-DROP MATERIALIZED VIEW IF EXISTS public.locations;
-CREATE MATERIALIZED VIEW locations AS
-WITH s AS (
-SELECT
-       sensor_nodes_id as location_id,
-       site_name as location,
-       sensors_id,
-       measurand,
-       measurands_id,
-       units,
-       sn.country,
-       ismobile,
-       (sn.metadata->>'is_analysis')::bool as is_analysis,
-       sn.metadata->>'sensorType' as "sensorType",
-       last_datetime,
-       st_transform(COALESCE(last_point, sn.geom)::geometry, 3857) as geom,
-       minx,
-       miny,
-       maxx,
-       maxy, --st_transform(bounds::geometry, 3857) as bounds,
-       value_count,
-       last_value
-FROM
-    sensor_stats
-    JOIN sensors using (sensors_id, measurands_id)
-    join sensor_nodes sn using(sensor_nodes_id)
-    join measurands using (measurands_id)
-) SELECT
-    location_id,
-    location,
-    sensors_id,
-    measurands_id,
-    measurand,
-    units,
-    country,
-    ismobile,
-    is_analysis,
-    "sensorType",
-    max(last_datetime) as "last_datetime",
-    last(geom, last_datetime) as geom,
-    st_transform(bounds(min(minx), min(miny), max(maxx), max(maxy)), 3857) as bounds,
-    sum(value_count) as count,
-    last(last_value, last_datetime) as last_value
-
-FROM
-    s
-WHERE geom IS NOT NULL
-GROUP BY 1,2,3,4,5,6,7,8,9,10;
-CREATE INDEX ON locations USING GIST (geom);
-CREATE INDEX ON locations USING GIST (bounds) where ismobile;
-create index on locations (last_datetime);
-create index on locations (location_id);
-create index on locations (measurands_id);
 
 create or replace view measurements_analyses AS
 SELECT * FROM measurements
 UNION ALL
 SELECT * FROM analyses;
 
-DROP MATERIALIZED VIEW IF EXISTS  country_stats ;
-CREATE MATERIALIZED VIEW country_stats AS
-WITH m AS (
-    SELECT
-        country as code,
-        coalesce(name, country) as name,
-        count(distinct city) as cities,
-        count(distinct sensor_nodes_id) as locations,
-        sum(value_count) as count,
-        min(first_datetime) as "firstUpdated",
-        max(last_datetime) as "lastUpdated",
-        array_agg(DISTINCT measurand) as parameters
-    FROM sensor_stats
-    LEFT JOIN measurands using (measurands_id)
-    LEFT JOIN countries cl on (country=iso)
-    GROUP BY 1,2
-)
-SELECT  *, sources_in_country(code) as sources
-FROM m;
-
-
-DROP MATERIALIZED VIEW IF EXISTS  city_stats ;
-CREATE MATERIALIZED VIEW city_stats AS
-WITH m AS (
-    SELECT
-        country as code,
-        coalesce(name, country) as name,
-        city,
-        count(distinct sensor_nodes_id) as locations,
-        sum(value_count) as count,
-        min(first_datetime) as "firstUpdated",
-        max(last_datetime) as "lastUpdated",
-        array_agg(DISTINCT measurand) as parameters
-    FROM sensor_stats
-    LEFT JOIN measurands using (measurands_id)
-    LEFT JOIN countries cl on (country=iso)
-    GROUP BY 1,2,3
-)
-SELECT *, sources_in_city(code) as sources
-FROM m;
 
 
 /*

@@ -197,23 +197,6 @@ CREATE TABLE IF NOT EXISTS hourly_stats (
  );
 
 
--- create a table to help us keep track of what days have been exported
--- we can use the hourly_stats to determine which are outdated
--- basically check and see which days have either not been exported
--- or
-CREATE TABLE IF NOT EXISTS daily_exported_stats (
-  day date NOT NULL UNIQUE
-, sensor_nodes_count bigint NOT NULL
-, sensors_count bigint NOT NULL
-, hours_count bigint NOT NULL
-, measurements_count bigint NOT NULL
-, export_path text
-, calculated_on timestamp
-, initiated_on timestamp
-, exported_on timestamp
-, metadata jsonb
-);
-
 
 CREATE OR REPLACE FUNCTION has_measurement(timestamptz) RETURNS boolean AS $$
 WITH m AS (
@@ -283,32 +266,6 @@ $$ LANGUAGE SQL;
 
 
 
-CREATE OR REPLACE FUNCTION initialize_daily_exported_stats(
-  sd date DEFAULT '-infinity'
-  , ed date DEFAULT 'infinity'
-  )
-RETURNS bigint AS $$
-WITH first_and_last AS (
-SELECT MIN(datetime) as datetime_first
-, MAX(datetime) as datetime_last
-FROM measurements
-WHERE datetime >= sd
-AND datetime <= ed
-), datetimes AS (
-SELECT generate_series(
-   date_trunc('day', datetime_first)
-   , date_trunc('day', datetime_last)
-   , '1day'::interval) as day
-FROM first_and_last
-), inserts AS (
-INSERT INTO daily_exported_stats (day, sensor_nodes_count, sensors_count, measurements_count, hours_count)
-SELECT day::date, -1, -1, -1, -1
-FROM datetimes
-WHERE has_measurement(day::date)
-ON CONFLICT (day) DO NOTHING
-RETURNING 1)
-SELECT COUNT(1) FROM inserts;
-$$ LANGUAGE SQL;
 
 
 
@@ -387,45 +344,6 @@ GROUP BY 1, 2, 3, 4;
 CREATE UNIQUE INDEX ON sensor_node_range_exceedances (sensor_nodes_id, measurands_id, threshold_value, days);
 
 
--- this is the basic function used to rollup an entire day
-CREATE OR REPLACE FUNCTION calculate_rollup_daily_exported_stats(day date) RETURNS bigint AS $$
-WITH data AS (
-   SELECT (datetime - '1sec'::interval)::date as day
-   , h.sensors_id
-   , sensor_nodes_id
-   , value_count
-   FROM hourly_data h
-   JOIN sensors s ON (h.sensors_id = s.sensors_id)
-   JOIN sensor_systems ss ON (s.sensor_systems_id = ss.sensor_systems_id)
-   WHERE datetime > day::timestamp
-   AND  datetime <= day + '1day'::interval
-), inserts AS (
-INSERT INTO daily_exported_stats (
-  day
-, sensor_nodes_count
-, sensors_count
-, hours_count
-, measurements_count
-, calculated_on
-)
-SELECT day
-, COUNT(DISTINCT sensor_nodes_id) as sensor_nodes_count
-, COUNT(DISTINCT sensors_id) as sensors_count
-, COUNT(1) as hours_count
-, SUM(value_count) as measurements_count
-, current_timestamp
-FROM data
-GROUP BY day
-ON CONFLICT (day) DO UPDATE
-SET sensor_nodes_count = EXCLUDED.sensor_nodes_count
-, sensors_count = EXCLUDED.sensors_count
-, hours_count = EXCLUDED.hours_count
-, measurements_count = EXCLUDED.measurements_count
-, calculated_on = EXCLUDED.calculated_on
-RETURNING measurements_count)
-SELECT measurements_count
-FROM inserts;
-$$ LANGUAGE SQL;
 
 -- Function to rollup a give interval to the hour
 -- date_trunc is used to ensure that only hourly data is inserted

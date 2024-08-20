@@ -40,7 +40,6 @@ COPY public.providers_licenses (providers_licenses_id, licenses_id, providers_id
 133	37	152	[2019-12-23,)	https://www.health.act.gov.au/copyright	\N	\N
 134	38	16	[2016-11-18,)	https://web.gencat.cat/ca/ajuda/avis_legal/	\N	\N
 135	39	63	[2023-07-14,)	https://www.env.go.jp/mail.html	\N	\N
-136	40	205	[2016-01-30,)	http://api.erg.ic.ac.uk/AirQuality/Information/Documentation/pdf	\N	\N
 137	41	17	[2023-03-31,)	https://data.ecan.govt.nz/Catalogue/Search?Query=air&CollectionId=0	\N	\N
 138	41	224	[2017-08-22,)	https://podatki.gov.si/pogoji-uporabe	\N	\N
 \.

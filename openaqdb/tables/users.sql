@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE SEQUENCE IF NOT EXISTS user_keys_sq START 10;
 CREATE TABLE IF NOT EXISTS user_keys (
   user_keys_id int PRIMARY KEY DEFAULT nextval('user_keys_sq')
-  , users_id int NOT NULL REFERENCES users ON DELETE CASCADE 
+  , users_id int NOT NULL REFERENCES users ON DELETE CASCADE
   -- uncomment if using the key_types method
   --, key_types_id int NOT NULL REFERENCES key_types
   , label varchar(100) NOT NULL
@@ -102,6 +102,7 @@ CREATE TABLE IF NOT EXISTS entities (
   , full_name text NOT NULL
   -- add any details that we want to track about a person
   -- some tracking tables that we may want to include
+  , metadata jsonb
   , added_on timestamptz NOT NULL DEFAULT now()
   , added_by int NOT NULL REFERENCES users DEFAULT 1
   , modified_on timestamptz
