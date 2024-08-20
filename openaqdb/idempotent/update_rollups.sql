@@ -808,7 +808,7 @@ $$ LANGUAGE plpgsql;
 
 
 -- run after you have just imported data outside of the fetcher
-CREATE OR REPLACE PROCEDURE intialize_sensors_rollup() AS $$
+CREATE OR REPLACE PROCEDURE initialize_sensors_rollup() AS $$
 DECLARE
 BEGIN
   CREATE TEMP TABLE sensors_missing_from_rollup AS
