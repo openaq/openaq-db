@@ -1,4 +1,54 @@
 
+----------------
+CREATE OR REPLACE FUNCTION public.get_measurands_id(m text)
+ RETURNS integer
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE STRICT
+AS $function$
+SELECT measurands_id
+FROM measurands
+WHERE lower(measurand) = lower(m)
+LIMIT 1;
+$function$
+;
+----------------
+
+----------------
+CREATE OR REPLACE FUNCTION public.get_countries_id(g geometry)
+ RETURNS integer
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE STRICT
+AS $function$
+SELECT countries_id from countries WHERE st_intersects(g::geography, geog) LIMIT 1;
+$function$
+;
+----------------
+----------------
+CREATE OR REPLACE FUNCTION public.get_providers_id(p text)
+ RETURNS integer
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE STRICT
+AS $function$
+SELECT providers_id
+FROM providers
+WHERE lower(source_name) = lower(p)
+LIMIT 1;
+$function$
+;
+----------------
+CREATE OR REPLACE FUNCTION public.get_timezones_id(g geometry)
+ RETURNS integer
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE STRICT
+AS $function$
+	SELECT timezones_id
+	FROM timezones
+	WHERE st_intersects(g::geography, geog)
+	ORDER BY timezones_id ASC
+	LIMIT 1;
+$function$
+;
+----------------
 
 
 INSERT INTO public.instruments (instruments_id
