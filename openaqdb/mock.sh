@@ -5,7 +5,7 @@ export PGDATABASE=$DATABASE_DB
 export PGHOST=localhost
 
 psql -v ON_ERROR_STOP=1 \
-     -f "patches/patch_20240819.sql" \
+     -f "patches/patch_20240820.sql" \
      -f "mock.sql" \
      -c "CALL initialize_sensors_rollup()" \
      -c "SELECT reset_hourly_stats()" \

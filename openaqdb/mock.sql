@@ -1,6 +1,15 @@
 
 
 
+INSERT INTO public.instruments (instruments_id
+, label
+, description
+, manufacturer_entities_id
+, is_monitor) VALUES
+(1, 'Unknown Sensor', 'Instrument details not available', 1, 'f')
+, (2, 'Government Monitor', 'Instrument details are not available', 1, 't')
+ON CONFLICT DO NOTHING;
+
 -- create some test sites
   -- using airgradient provider just to get a license
 WITH locations AS (
