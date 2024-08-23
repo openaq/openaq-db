@@ -257,8 +257,8 @@ SELECT
         'day' as rollup,
         _st as st,
         _et as et,
-        min(datetime) as first_datetime,
-        max(datetime) as last_datetime,
+        min(datetime) as datetime_first,
+        max(datetime) as datetime_last,
         count(*) as value_count,
         sum(value) as value_sum,
         last(value, datetime) as last_value,
@@ -282,20 +282,20 @@ SELECT
     SELECT
         groups_id,
         measurands_id,
-        last(sensors_id, last_datetime) as sensors_id,
+        last(sensors_id, datetime_last) as sensors_id,
         rollup,
         st,
         et,
-        min(first_datetime) as first_datetime,
-        max(last_datetime) as last_datetime,
+        min(datetime_first) as datetime_first,
+        max(datetime_last) as datetime_last,
         sum(value_count) as value_count,
         sum(value_sum) as value_sum,
-        last(last_value, last_datetime) as last_value,
+        last(last_value, datetime_last) as last_value,
         min(minx) as minx,
         min(miny) as miny,
         max(maxx) as maxx,
         max(maxy) as maxy,
-        last(last_point, last_datetime) as last_point
+        last(last_point, datetime_last) as last_point
     FROM dailyrolluptemp_by_sensor
     JOIN groups_sensors USING (sensors_id)
     JOIN sensors USING (sensors_id)
@@ -312,8 +312,8 @@ SELECT
         rollup,
         st,
         et,
-        first_datetime,
-        last_datetime,
+        datetime_first,
+        datetime_last,
         value_count,
         value_sum,
         last_value,
@@ -370,8 +370,8 @@ RAISE NOTICE '% %', _st, _et;
         rollup,
         st,
         et,
-        first_datetime,
-        last_datetime,
+        datetime_first,
+        datetime_last,
         value_count,
         value_sum,
         last_value,
@@ -383,20 +383,20 @@ RAISE NOTICE '% %', _st, _et;
     ) SELECT
         groups_id,
         measurands_id,
-        last(sensors_id, last_datetime),
+        last(sensors_id, datetime_last),
         'month',
         _st,
         _et,
-        min(first_datetime),
-        max(last_datetime),
+        min(datetime_first),
+        max(datetime_last),
         sum(value_count),
         sum(value_sum),
-        last(last_value, last_datetime),
+        last(last_value, datetime_last),
         min(minx),
         min(miny),
         max(maxx),
         max(maxy),
-        last(last_point, last_datetime)
+        last(last_point, datetime_last)
     FROM rollups
     WHERE
         rollup = 'day' AND
@@ -433,8 +433,8 @@ RAISE NOTICE '% %', _st, _et;
         rollup,
         st,
         et,
-        first_datetime,
-        last_datetime,
+        datetime_first,
+        datetime_last,
         value_count,
         value_sum,
         last_value,
@@ -446,20 +446,20 @@ RAISE NOTICE '% %', _st, _et;
     ) SELECT
         groups_id,
         measurands_id,
-        last(sensors_id, last_datetime),
+        last(sensors_id, datetime_last),
         'year',
         _st,
         _et,
-        min(first_datetime),
-        max(last_datetime),
+        min(datetime_first),
+        max(datetime_last),
         sum(value_count),
         sum(value_sum),
-        last(last_value, last_datetime),
+        last(last_value, datetime_last),
         min(minx),
         min(miny),
         max(maxx),
         max(maxy),
-        last(last_point, last_datetime)
+        last(last_point, datetime_last)
     FROM rollups
         WHERE
             rollup = 'month' AND
@@ -488,8 +488,8 @@ RAISE NOTICE 'Updating total Rollups --- %', clock_timestamp();
             rollup,
             st,
             et,
-            first_datetime,
-            last_datetime,
+            datetime_first,
+            datetime_last,
             value_count,
             value_sum,
             last_value,
@@ -501,20 +501,20 @@ RAISE NOTICE 'Updating total Rollups --- %', clock_timestamp();
         ) SELECT
             groups_id,
             measurands_id,
-            last(sensors_id, last_datetime),
+            last(sensors_id, datetime_last),
             'total',
             '1970-01-01'::timestamptz,
             '2999-01-01'::timestamptz,
-            min(first_datetime),
-            max(last_datetime),
+            min(datetime_first),
+            max(datetime_last),
             sum(value_count),
             sum(value_sum),
-            last(last_value, last_datetime),
+            last(last_value, datetime_last),
         min(minx),
         min(miny),
         max(maxx),
         max(maxy),
-        last(last_point, last_datetime)
+        last(last_point, datetime_last)
         FROM rollups
         WHERE
             rollup = 'year'
@@ -789,6 +789,12 @@ BEGIN
     AND data_averaging_period_seconds IS NULL;
     -----------
     UPDATE sensors
+    SET data_averaging_period_seconds = 3600
+    , data_logging_period_seconds = 3600
+    WHERE source_id ~* '^smartsense'
+    AND data_averaging_period_seconds IS NULL;
+    -----------
+    UPDATE sensors
     SET data_averaging_period_seconds = 1
     , data_logging_period_seconds = 1
 	    WHERE source_id ~* 'habitatmap'
@@ -808,16 +814,17 @@ $$ LANGUAGE plpgsql;
 
 
 -- run after you have just imported data outside of the fetcher
-CREATE OR REPLACE PROCEDURE intialize_sensors_rollup() AS $$
+CREATE OR REPLACE PROCEDURE initialize_sensors_rollup() AS $$
 DECLARE
 BEGIN
-  CREATE TEMP TABLE sensors_missing_from_rollup AS
+  CREATE TEMP TABLE sensors_missing_from_rollup ON COMMIT DROP AS
   -- Get a list of all sensors missing data
   WITH missing AS (
     SELECT sensors_id
     FROM sensors
     LEFT JOIN sensors_rollup s USING (sensors_id)
     WHERE s.sensors_id IS NULL
+    OR value_avg IS NULL
   ), data AS (
   -- use that list to aggregate based on the measurements
     SELECT m.sensors_id
@@ -865,20 +872,18 @@ BEGIN
   , value_max
   , value_latest
   FROM sensors_missing_from_rollup
-  ON CONFLICT DO NOTHING;
+ON CONFLICT (sensors_id) DO UPDATE
+SET datetime_first = EXCLUDED.datetime_first
+, datetime_last = EXCLUDED.datetime_last
+, value_count  = EXCLUDED.value_count
+, value_min = EXCLUDED.value_min
+, value_max = EXCLUDED.value_max
+, value_avg = EXCLUDED.value_avg
+, value_sd = EXCLUDED.value_sd
+, value_latest = COALESCE(sensors_rollup.value_latest, EXCLUDED.value_latest);
+, modified_on = now()
 END;
 $$ LANGUAGE plpgsql;
-
-
-SELECT sensors_id
-, MIN(first_datetime) as first_datetime
-, MAX(last_datetime) as last_datetime
-, COUNT(1) as value_count
-, STDDEV(value_avg) as value_sd
-, AVG(value_avg) as value_avg
-INTO TEMP sensors_temp_table
-FROM hourly_data
-GROUP BY 1;
 
 
 CREATE OR REPLACE FUNCTION reset_hourly_stats(

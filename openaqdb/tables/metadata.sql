@@ -259,7 +259,8 @@ INSERT INTO instruments (instruments_id
 , description
 , manufacturer_entities_id
 , is_monitor) VALUES
-(1, 'N/A', 'Instrument is not available', 1, 'f')
+(1, 'Unknown Sensor', 'Instrument details not available', 1, 'f')
+, (2, 'Government Monitor', 'Instrument details are not available', 1, 't')
 ON CONFLICT DO NOTHING;
 
 
@@ -278,7 +279,7 @@ INSERT INTO providers (providers_id
 , source_name
 , export_prefix
 , owner_entities_id) VALUES
-(1, 'N/A', 'Provider is not available', 'na', 'na_', 1);
+(1, 'Unknown Provider', 'Provider details are not available', 'na', 'na_', 1);
 
 DO $$
 BEGIN

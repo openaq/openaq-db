@@ -1,10 +1,10 @@
-FROM postgis/postgis:14-3.4 as pg
+FROM postgis/postgis:16-3.4 as pg
 
 LABEL maintainer="OpenAQ"
 
 # defaults that may be overwritten by env
 ENV POSTGIS_MAJOR 3
-ENV POSTGRESQL_MAJOR 14
+ENV POSTGRESQL_MAJOR 16
 ENV PGUSER postgres
 ENV PGDATABASE postgres
 ENV PGHOST localhost
@@ -24,6 +24,7 @@ EXPOSE 5432
  # Docker image will automatically run scripts in `/docker-entrypoint-initdb.d`
  RUN mkdir -p /docker-entrypoint-initdb.d \
      && echo "#!/bin/bash" >/docker-entrypoint-initdb.d/001_initdb.sh \
-     && echo "/openaqdb/init.sh" >> /docker-entrypoint-initdb.d/001_initdb.sh
+     && echo "/openaqdb/init.sh" >> /docker-entrypoint-initdb.d/001_initdb.sh \
+     && echo "/openaqdb/mock.sh" >> /docker-entrypoint-initdb.d/001_initdb.sh
 
 WORKDIR /openaqdb

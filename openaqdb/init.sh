@@ -41,7 +41,6 @@ psql --single-transaction \
 psql --single-transaction -v ON_ERROR_STOP=1 -f lookups/measurands.sql
 psql --single-transaction -v ON_ERROR_STOP=1 -f lookups/measurands_map.sql
 psql --single-transaction -v ON_ERROR_STOP=1 -f lookups/thresholds.sql
-psql --single-transaction -v ON_ERROR_STOP=1 -f lookups/thresholds.sql
 
 gunzip -c lookups/countries.csv.gz | psql --single-transaction -v ON_ERROR_STOP=1 -c "copy countries (name, iso_a3, iso, geog) from stdin DELIMITER ',' CSV HEADER"
 gunzip -c lookups/timezones.csv.gz | psql --single-transaction -v ON_ERROR_STOP=1 -c "copy timezones (tzid, geog) from stdin DELIMITER ',' CSV HEADER"

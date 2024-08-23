@@ -99,10 +99,25 @@ CREATE OR REPLACE FUNCTION utc_offset(tz text) RETURNS interval AS $$
 SELECT timezone(tz, now()) - timezone('UTC', now());
 $$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
 
+
+CREATE OR REPLACE FUNCTION utc_offset_hours(tz text) RETURNS int AS $$
+SELECT date_part('hours', utc_offset(tz)) as tz_offset
+$$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
+
 -- get the offset for a specific date/time
 CREATE OR REPLACE FUNCTION utc_offset(dt timestamptz, tz text) RETURNS interval AS $$
 SELECT timezone(tz, dt) - timezone('UTC', dt);
 $$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION utc_offset_hours(dt timestamptz, tz text) RETURNS int AS $$
+SELECT date_part('hours', utc_offset(dt,tz)) as tz_offset
+$$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION utc_offset_hours(dt date, tz text) RETURNS int AS $$
+SELECT date_part('hours', utc_offset(dt::timestamptz,tz)) as tz_offset
+$$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
+
+
 
 -- same but supplying the sensor_nodes_id
 CREATE OR REPLACE FUNCTION utc_offset(dt timestamptz, sn int) RETURNS interval AS $$
@@ -113,8 +128,8 @@ FROM sensor_nodes n
 $$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
 
 CREATE OR REPLACE FUNCTION utc_offset(sn int) RETURNS interval AS $$
-SELECT utc_offset(t.tzid)
-FROM sensor_nodes n
+  SELECT utc_offset(t.tzid)
+  FROM sensor_nodes n
 	JOIN timezones t ON (t.timezones_id = n.timezones_id)
 	WHERE sensor_nodes_id = sn;
 $$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
@@ -126,6 +141,11 @@ $$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
 CREATE OR REPLACE FUNCTION as_utc(dt timestamptz, tz text) RETURNS timestamptz AS $$
 SELECT timezone(tz, timezone('UTC', dt));
 $$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION as_local(dt timestamptz, tz text) RETURNS timestamptz AS $$
+SELECT timezone(tz, dt);
+$$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
+
 
 CREATE OR REPLACE FUNCTION as_local_hour(dt timestamptz, tz text) RETURNS timestamptz AS $$
 SELECT timezone(tz, date_trunc('hour', dt));
@@ -156,6 +176,11 @@ RETURNS date AS $$
 SELECT date_trunc('day', timezone(tz, tstz + '-1sec'::interval))::date;
 $$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
 
+CREATE OR REPLACE FUNCTION as_year(tstz timestamptz, tz text)
+RETURNS date AS $$
+SELECT date_trunc('year', timezone(tz, tstz + '-1sec'::interval))::date;
+$$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
+
 --DROP FUNCTION IF EXISTS truncate_timestamp(timestamptz, text, text, interval);
 CREATE OR REPLACE FUNCTION truncate_timestamp(tstz timestamptz, period text, tz text, _offset interval)
 RETURNS timestamptz AS $$
@@ -183,12 +208,13 @@ SELECT timezone(tz, tstz::timestamp);
 $$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
 
 
-CREATE OR REPLACE FUNCTION get_datetime_object(tstz timestamptz, tz text DEFAULT 'UTC')
+  CREATE OR REPLACE FUNCTION get_datetime_object(tstz timestamptz, tz text DEFAULT 'UTC')
 RETURNS json AS $$
 SELECT json_build_object(
        'utc', format_timestamp(tstz, 'UTC')
      , 'local', format_timestamp(tstz, tz)
-     );
+       , 'timezone', tz
+     ) WHERE tstz IS NOT NULL;
 $$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
 
 -- assume that its in the right timezone but not timestamptz
@@ -199,8 +225,14 @@ SELECT json_build_object(
        'utc', format_timestamp(tstz AT TIME ZONE tz, 'UTC')
      , 'local', format_timestamp(tstz AT TIME ZONE tz, tz)
      , 'timezone', tz
-     );
+     ) WHERE tstz IS NOT NULL;
 $$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION get_datetime_object(tstz date, tz text DEFAULT 'UTC')
+RETURNS json AS $$
+  SELECT get_datetime_object(tstz::timestamp, tz);
+$$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
+
 
 CREATE OR REPLACE FUNCTION slugify("value" TEXT)
 RETURNS TEXT AS $$
