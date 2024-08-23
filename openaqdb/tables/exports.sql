@@ -167,7 +167,7 @@ CREATE OR REPLACE FUNCTION get_providers_id(p text)
 RETURNS int LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
 SELECT providers_id
 FROM providers
-WHERE source_name = p
+WHERE lower(source_name) = lower(p)
 LIMIT 1;
 $$;
 

@@ -7,6 +7,15 @@ RETURNS int LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
 SELECT countries_id from countries WHERE st_intersects(g::geography, geog) LIMIT 1;
 $$;
 
+CREATE OR REPLACE FUNCTION get_closest_countries_id(g geometry, w int DEFAULT 1000)
+  RETURNS int LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
+    SELECT c.countries_id
+    FROM countries c
+    WHERE ST_DWithin(c.geog, g::geography, w)
+    ORDER BY ST_Distance(c.geog, g::geography) ASC
+    LIMIT 1;
+ $$;
+
 CREATE OR REPLACE FUNCTION country(g geography)
 RETURNS text LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
 SELECT iso from countries WHERE st_intersects(g, geog) LIMIT 1;

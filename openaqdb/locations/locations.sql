@@ -8,17 +8,35 @@
 --DROP VIEW IF EXISTS locations_view CASCADE;
 
  CREATE OR REPLACE VIEW provider_licenses_view AS
-	SELECT p.providers_id
-	, json_agg(json_build_object(
-	  'id', p.licenses_id
-	, 'url', COALESCE(p.url, l.url)
-	, 'description', COALESCE(p.notes, l.description)
-	, 'date_from', lower(active_period)
-	, 'date_to', upper(active_period)
-	)) as licenses
-	FROM providers_licenses p
-	JOIN licenses l ON (l.licenses_id = p.licenses_id)
-	GROUP BY providers_id;
+  SELECT p.providers_id
+  , json_agg(json_build_object(
+    'id', p.licenses_id
+  , 'name', l.name
+  , 'date_from', lower(active_period)
+  , 'date_to', upper(active_period)
+  )) as licenses
+  FROM providers_licenses p
+  JOIN licenses l ON (l.licenses_id = p.licenses_id)
+  GROUP BY providers_id;
+
+
+ CREATE OR REPLACE VIEW location_licenses_view AS
+  SELECT sn.sensor_nodes_id
+  , json_agg(json_build_object(
+    'id', pl.licenses_id
+    , 'name', l.name
+    , 'date_from', lower(pl.active_period)
+    , 'date_to', upper(pl.active_period)
+      , 'attribution', json_build_object(
+          'name', e.full_name, 'url', COALESCE(e.metadata->>'url', NULL)
+    )
+  )) as licenses
+  , array_agg(DISTINCT pl.licenses_id) as license_ids
+  FROM providers_licenses pl
+  JOIN sensor_nodes sn USING (providers_id)
+  JOIN entities e ON (sn.owner_entities_id = e.entities_id)
+  JOIN licenses l ON (l.licenses_id = pl.licenses_id)
+  GROUP BY sn.sensor_nodes_id;
 
 
 CREATE OR REPLACE VIEW locations_view AS
@@ -35,6 +53,7 @@ WITH nodes_instruments AS (
       , 'name', mc.full_name
       )
   )) as instruments
+  , array_agg(DISTINCT i.instruments_id) as instrument_ids
   , array_agg(DISTINCT mc.full_name) as manufacturers
   , array_agg(DISTINCT i.manufacturer_entities_id) as manufacturer_ids
   FROM sensor_nodes sn
@@ -65,7 +84,7 @@ WITH nodes_instruments AS (
   FROM sensor_nodes sn
   JOIN sensor_systems ss USING (sensor_nodes_id)
   JOIN sensors s USING (sensor_systems_id)
-  JOIN sensors_rollup sl USING (sensors_id)
+  LEFT JOIN sensors_rollup sl USING (sensors_id)
   JOIN measurands m USING (measurands_id)
   GROUP BY sensor_nodes_id)
   -----------------------------
@@ -106,8 +125,10 @@ SELECT
   , oc.entity_type::text~*'research' as is_analysis
   , ni.manufacturers
   , ni.manufacturer_ids
-	, pl.licenses
-	, l.providers_id
+  , ni.instrument_ids
+  , ll.licenses
+  , ll.license_ids
+  , l.providers_id
 FROM sensor_nodes l
 JOIN timezones t ON (l.timezones_id = t.timezones_id)
 JOIN countries c ON (c.countries_id = l.countries_id)
@@ -115,7 +136,7 @@ JOIN entities oc ON (oc.entities_id = l.owner_entities_id)
 JOIN providers p ON (p.providers_id = l.providers_id)
 JOIN nodes_instruments ni USING (sensor_nodes_id)
 JOIN nodes_sensors ns USING (sensor_nodes_id)
-LEFT JOIN provider_licenses_view pl ON (pl.providers_id = l.providers_id)
+LEFT JOIN location_licenses_view ll USING (sensor_nodes_id)
 WHERE l.is_public;
 
 DROP MATERIALIZED VIEW IF EXISTS locations_view_cached CASCADE;
@@ -144,7 +165,7 @@ WITH locations AS (
   JOIN sensor_systems ss ON (ss.sensor_nodes_id = sn.sensor_nodes_id)
   JOIN instruments i ON (ss.instruments_id = i.instruments_id)
   JOIN entities mc ON (mc.entities_id = i.manufacturer_entities_id)
-	WHERE sn.is_public
+  WHERE sn.is_public
   GROUP BY 1,2)
   SELECT id
   , jsonb_agg(manufacturer) as manufacturers

@@ -61,6 +61,7 @@ GRANT ALL ON FUNCTIONS to :DATABASE_WRITE_USER;
 \i tables/providers_views.sql
 \i tables/parameters_views.sql
 \i tables/daily_data_rollups.sql
+\i tables/annual_data_rollups.sql
 \i tables/lists.sql
 \i tables/measurements_view.sql
 
@@ -69,8 +70,7 @@ GRANT ALL ON FUNCTIONS to :DATABASE_WRITE_USER;
 \i refresh_idempotent.sql
 
 INSERT INTO fetchlogs (key, last_modified) VALUES
-  ('lcs-etl-pipeline/measures/purpleair/1664911958-z2atn.csv.gz', now())
-, ('uploaded/measures/houston/61509.csv.gz', now())
+  ('uploaded/measures/houston/61509.csv.gz', now())
 , ('realtime-gzipped/2022-10-04/1664912239.ndjson.gz', now())
 ON CONFLICT DO NOTHING
 ;

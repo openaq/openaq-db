@@ -41,7 +41,7 @@ REMOTE_DATABASE_URL=postgresql://user:pwd@host:port/openaq
 ```
 
 ```sh
-ENV=docker python3 compare.py
+DOTENV=.env.docker python3 compare.py
 ```
 
 ## Notes

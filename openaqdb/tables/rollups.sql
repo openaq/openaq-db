@@ -5,61 +5,19 @@
 CREATE SEQUENCE IF NOT EXISTS sensors_rollup_sq START 10;
 CREATE TABLE IF NOT EXISTS sensors_rollup (
     sensors_id int PRIMARY KEY REFERENCES sensors
-  , datetime_first timestamptz -- first recorded measument datetime (@ingest)
-  , datetime_last timestamptz -- last recorded measurement time (@ingest)
-  , geom_latest geometry -- last recorded point (@ingest)
-  , value_latest double precision -- last recorded measurement (@ingest)
-  , value_count int NOT NULL -- total count of measurements (@ingest, @rollup)
-  , value_avg double precision -- average of all measurements (@ingest, @rollup)
-  , value_sd double precision -- sd of all measurements (@ingest, @rollup)
-  , value_min double precision -- lowest measurement value (@ingest, @rollup)
-  , value_max double precision -- highest value measured (@ingest, @rollup)
-  --, value_p05 double precision -- 5th percentile (@rollup)
-  --, value_p50 double precision -- median (@rollup)
-  --, value_p95 double precision -- 95th percentile (@rollup)
-  , added_on timestamptz NOT NULL DEFAULT now() -- first time measurements were added (@ingest)
-  , modified_on timestamptz NOT NULL DEFAULT now() -- last time we measurements were added (@ingest)
-  --, calculated_on timestamptz -- last time data was rolled up (@rollup)
+  , datetime_first timestamptz NOT NULL             -- first recorded measument datetime (@ingest)
+  , datetime_last timestamptz NOT NULL              -- last recorded measurement time (@ingest)
+  , geom_latest geometry                            -- last recorded point (@ingest)
+  , value_latest double precision NOT NULL          -- last recorded measurement (@ingest)
+  , value_count int NOT NULL NOT NULL               -- total count of measurements (@ingest, @rollup)
+  , value_avg double precision NOT NULL             -- average of all measurements (@ingest, @rollup)
+  , value_sd double precision NOT NULL              -- sd of all measurements (@ingest, @rollup)
+  , value_min double precision NOT NULL             -- lowest measurement value (@ingest, @rollup)
+  , value_max double precision NOT NULL             -- highest value measured (@ingest, @rollup)
+  , added_on timestamptz NOT NULL DEFAULT now()     -- first time measurements were added (@ingest)
+  , modified_on timestamptz NOT NULL DEFAULT now()  -- last time we measurements were added (@ingest)
 );
 
-
--- Sensors latest will act as a cache for the most recent
--- sensor value, managed by the ingester
-CREATE TABLE IF NOT EXISTS sensors_latest (
-    sensors_id int PRIMARY KEY NOT NULL REFERENCES sensors
-  , datetime timestamptz
-  , value double precision NOT NULL
-  , lat double precision -- so that nulls dont take up space
-  , lon double precision
-  , modified_on timestamptz DEFAULT now()
-  , fetchlogs_id int -- for debugging issues, no reference constraint
-);
-
-
-CREATE TABLE IF NOT EXISTS rollups (
-    groups_id int REFERENCES groups (groups_id),
-    measurands_id int,
-    sensors_id int,
-    rollup text,
-    st timestamptz,
-    et timestamptz,
-    first_datetime timestamptz,
-    last_datetime timestamptz,
-    value_count bigint,
-    value_sum float,
-    last_value float,
-    minx float,
-    miny float,
-    maxx float,
-    maxy float,
-    last_point geography,
-    PRIMARY KEY (groups_id, measurands_id, rollup, et)
-);
-
-CREATE INDEX rollups_measurands_id_idx ON rollups USING btree (measurands_id);
-CREATE INDEX rollups_rollup_idx ON rollups USING btree (rollup);
-CREATE INDEX rollups_sensors_id_idx ON rollups USING btree (sensors_id);
-CREATE INDEX rollups_st_idx ON rollups USING btree (st);
 
 -- The following tables, functions and views are to handle
 -- tracking coverage for the system. If possibly we may also want to replace
@@ -72,8 +30,8 @@ CREATE TABLE IF NOT EXISTS hourly_data (
   sensors_id int NOT NULL --REFERENCES sensors ON DELETE CASCADE
 , datetime timestamptz NOT NULL
 , measurands_id int NOT NULL --REFERENCES measurands -- required for partition
-, first_datetime timestamptz NOT NULL
-, last_datetime timestamptz NOT NULL
+, datetime_first timestamptz NOT NULL
+, datetime_last timestamptz NOT NULL
 , value_count int NOT NULL
 , value_avg double precision
 , value_sd double precision
@@ -378,8 +336,8 @@ INSERT INTO hourly_data (
   sensors_id
 , measurands_id
 , datetime
-, first_datetime
-, last_datetime
+, datetime_first
+, datetime_last
 , value_count
 , value_avg
 , value_sd
@@ -396,8 +354,8 @@ INSERT INTO hourly_data (
   sensors_id
 , measurands_id
 , datetime
-, MIN(datetime) as first_datetime
-, MAX(datetime) as last_datetime
+, MIN(datetime) as datetime_first
+, MAX(datetime) as datetime_last
 , COUNT(1) as value_count
 , AVG(value) as value_avg
 , STDDEV(value) as value_sd
@@ -414,8 +372,8 @@ FROM measurements_filtered m
 GROUP BY 1,2,3
 HAVING COUNT(1) > 0
 ON CONFLICT (sensors_id, measurands_id, datetime) DO UPDATE
-SET first_datetime = EXCLUDED.first_datetime
-, last_datetime = EXCLUDED.last_datetime
+SET datetime_first = EXCLUDED.datetime_first
+, datetime_last = EXCLUDED.datetime_last
 , value_avg = EXCLUDED.value_avg
 , value_min = EXCLUDED.value_min
 , value_max = EXCLUDED.value_max
@@ -459,8 +417,8 @@ INSERT INTO hourly_data (
   sensors_id
 , measurands_id
 , datetime
-, first_datetime
-, last_datetime
+, datetime_first
+, datetime_last
 , value_count
 , value_avg
 , value_sd
@@ -477,8 +435,8 @@ INSERT INTO hourly_data (
   sensors_id
 , measurands_id
 , datetime
-, MIN(datetime) as first_datetime
-, MAX(datetime) as last_datetime
+, MIN(datetime) as datetime_first
+, MAX(datetime) as datetime_last
 , COUNT(1) as value_count
 , AVG(value) as value_avg
 , STDDEV(value) as value_sd
@@ -495,8 +453,8 @@ FROM measurements_filtered m
 GROUP BY 1,2,3
 HAVING COUNT(1) > 0
 ON CONFLICT (sensors_id, measurands_id, datetime) DO UPDATE
-SET first_datetime = EXCLUDED.first_datetime
-, last_datetime = EXCLUDED.last_datetime
+SET datetime_first = EXCLUDED.datetime_first
+, datetime_last = EXCLUDED.datetime_last
 , value_avg = EXCLUDED.value_avg
 , value_min = EXCLUDED.value_min
 , value_max = EXCLUDED.value_max
@@ -532,7 +490,14 @@ SELECT * FROM calculate_hourly_data(dt::timestamptz, dt + '1day'::interval);
 $$ LANGUAGE SQL;
 
 
+-- create a dummy method for triggering another event
+  CREATE OR REPLACE FUNCTION hourly_data_updated_event(hr timestamptz) RETURNS boolean AS $$
+  SELECT 't'::boolean;
+  $$ LANGUAGE SQL;
+
+
 --DROP FUNCTION IF EXISTS update_hourly_data(timestamptz);
+-- this is the root method
 CREATE OR REPLACE FUNCTION update_hourly_data(hr timestamptz DEFAULT now() - '1hour'::interval) RETURNS bigint AS $$
 DECLARE
 nw timestamptz := clock_timestamp();
@@ -542,28 +507,29 @@ WITH inserted AS (
   SELECT COALESCE(measurements_count, 0) as measurements_count
   , COALESCE(sensors_count, 0) as sensors_count
   FROM calculate_hourly_data(hr))
-INSERT INTO hourly_stats (
-  datetime
-, calculated_on
-, measurements_count
-, sensors_count
-, calculated_count
-, calculated_seconds)
-SELECT date_trunc('hour', hr)
-, now()
-, measurements_count
-, sensors_count
-, 1
-, EXTRACT(EPOCH FROM clock_timestamp() - nw)
-FROM inserted
-ON CONFLICT (datetime) DO UPDATE
-SET calculated_on = EXCLUDED.calculated_on
-, calculated_count = hourly_stats.calculated_count + 1
-, measurements_count = EXCLUDED.measurements_count
-, sensors_count = EXCLUDED.sensors_count
-, calculated_seconds = EXCLUDED.calculated_seconds
-RETURNING measurements_count INTO mc;
-RETURN mc;
+  INSERT INTO hourly_stats (
+    datetime
+  , calculated_on
+  , measurements_count
+  , sensors_count
+  , calculated_count
+  , calculated_seconds)
+  SELECT date_trunc('hour', hr)
+  , now()
+  , measurements_count
+  , sensors_count
+  , 1
+  , EXTRACT(EPOCH FROM clock_timestamp() - nw)
+  FROM inserted
+  ON CONFLICT (datetime) DO UPDATE
+  SET calculated_on = EXCLUDED.calculated_on
+  , calculated_count = hourly_stats.calculated_count + 1
+  , measurements_count = EXCLUDED.measurements_count
+  , sensors_count = EXCLUDED.sensors_count
+  , calculated_seconds = EXCLUDED.calculated_seconds
+  RETURNING measurements_count INTO mc;
+  PERFORM hourly_data_updated_event(hr);
+  RETURN mc;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -704,51 +670,6 @@ END;
 $$ LANGUAGE plpgsql;
 
 
-DROP TABLE IF EXISTS sensors_rollup_patch;
-SELECT sensors_id
-, MIN(first_datetime) as first_datetime
-, MAX(last_datetime) as last_datetime
-, SUM(value_count) as value_count
-, AVG(value_avg) as value_avg
-, MIN(value_min) as value_min
-, MAX(value_max) as value_max
-INTO sensors_rollup_patch
-FROM hourly_data
-GROUP BY sensors_id;
-
-SELECT COUNT(1)
-FROM sensors_rollup;
-
-INSERT INTO sensors_rollup (
- sensors_id
- , datetime_first
- , datetime_last
- , value_count
- , value_avg
- , value_min
- , value_max
- , value_latest
-)
-SELECT s.sensors_id
- , s.first_datetime
- , s.last_datetime
- , s.value_count
- , s.value_avg
- , s.value_min
- , s.value_max
- , m.value
-FROM sensors_rollup_patch s
-JOIN measurements m ON (s.sensors_id = m.sensors_id AND s.last_datetime = m.datetime)
-ON CONFLICT (sensors_id) DO UPDATE
-SET datetime_first = EXCLUDED.datetime_first
-, datetime_last = EXCLUDED.datetime_last
-, value_count  = EXCLUDED.value_count
-, value_min = EXCLUDED.value_min
-, value_max = EXCLUDED.value_max
-, value_avg = EXCLUDED.value_avg
-, value_latest = COALESCE(sensors_rollup.value_latest, EXCLUDED.value_latest);
-
-
 
 -- when was it last updated
 DO $$
@@ -816,12 +737,3 @@ BEGIN
 	WHERE datetime = st;
 END;
 $$ LANGUAGE plpgsql;
-
-
-
-
-
-SELECT *
-  FROM hourly_stats
-  WHERE calculated_on IS NULL
-  LIMIT 10;
