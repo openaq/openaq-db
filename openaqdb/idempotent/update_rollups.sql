@@ -789,6 +789,12 @@ BEGIN
     AND data_averaging_period_seconds IS NULL;
     -----------
     UPDATE sensors
+    SET data_averaging_period_seconds = 3600
+    , data_logging_period_seconds = 3600
+    WHERE source_id ~* '^smartsense'
+    AND data_averaging_period_seconds IS NULL;
+    -----------
+    UPDATE sensors
     SET data_averaging_period_seconds = 1
     , data_logging_period_seconds = 1
 	    WHERE source_id ~* 'habitatmap'
@@ -811,7 +817,7 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE PROCEDURE initialize_sensors_rollup() AS $$
 DECLARE
 BEGIN
-  CREATE TEMP TABLE sensors_missing_from_rollup AS
+  CREATE TEMP TABLE sensors_missing_from_rollup ON COMMIT DROP AS
   -- Get a list of all sensors missing data
   WITH missing AS (
     SELECT sensors_id
@@ -873,10 +879,11 @@ SET datetime_first = EXCLUDED.datetime_first
 , value_min = EXCLUDED.value_min
 , value_max = EXCLUDED.value_max
 , value_avg = EXCLUDED.value_avg
+, value_sd = EXCLUDED.value_sd
 , value_latest = COALESCE(sensors_rollup.value_latest, EXCLUDED.value_latest);
+, modified_on = now()
 END;
 $$ LANGUAGE plpgsql;
-
 
 
 CREATE OR REPLACE FUNCTION reset_hourly_stats(

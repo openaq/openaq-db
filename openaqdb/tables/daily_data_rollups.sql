@@ -376,19 +376,19 @@ CREATE OR REPLACE FUNCTION calculate_daily_data_by_offset(dy date DEFAULT curren
   , datetime_first timestamptz
   , datetime_last timestamptz
   , value_count bigint
-  , value_avg real
-  , value_sd real
-  , value_min real
-  , value_max real
+  , value_avg double precision
+  , value_sd double precision
+  , value_min double precision
+  , value_max double precision
   , value_raw_count bigint
-  , value_raw_avg real
-  , value_raw_min real
-  , value_raw_max real
-  , value_p02 real
-  , value_p25 real
-  , value_p50 real
-  , value_p75 real
-  , value_p98 real
+  , value_raw_avg double precision
+  , value_raw_min double precision
+  , value_raw_max double precision
+  , value_p02 double precision
+  , value_p25 double precision
+  , value_p50 double precision
+  , value_p75 double precision
+  , value_p98 double precision
   , error_raw_count bigint
   , error_count bigint
   ) AS $$
@@ -427,8 +427,6 @@ AND utc_offset_hours(dy, t.tzid) = tz_offset
 GROUP BY 1,2,3
 HAVING COUNT(1) > 0;
   $$ LANGUAGE SQL;
-
-
 
 CREATE OR REPLACE FUNCTION insert_daily_data_by_offset(dy date DEFAULT current_date - 1, tz_offset int DEFAULT 0)
   RETURNS TABLE (
