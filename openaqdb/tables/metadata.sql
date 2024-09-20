@@ -121,6 +121,7 @@ CREATE TABLE IF NOT EXISTS instruments (
   , label text NOT NULL UNIQUE
   , description text
   , is_monitor boolean NOT NULL DEFAULT 'f'
+  , ingest_id text UNIQUE -- not required unless expected in provider data
 );
 
 -- models
@@ -252,6 +253,7 @@ INSERT INTO entities (
 , (5, 'Research Organization', 'Default Research Organization')
 , (6, 'Community Organization', 'Default Community Organization')
 , (7, 'Private Organization', 'Default Private Organization')
+, (8, 'Sensor Manufacturer', 'Default Instrument Organization')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO instruments (instruments_id
@@ -259,8 +261,8 @@ INSERT INTO instruments (instruments_id
 , description
 , manufacturer_entities_id
 , is_monitor) VALUES
-(1, 'Unknown Sensor', 'Instrument details not available', 1, 'f')
-, (2, 'Government Monitor', 'Instrument details are not available', 1, 't')
+(1, 'Unknown Sensor', 'Instrument details not available', 8, 'f')
+, (2, 'Government Monitor', 'Instrument details are not available', 8, 't')
 ON CONFLICT DO NOTHING;
 
 
