@@ -14,7 +14,7 @@
   SELECT entities_id, v.model_name, v.description, v.is_monitor, v.ingest_id
   FROM manufacturer, (VALUES
     ('AIO 2','Sonic Weather Sensor/Station', true, 'metone:aio2')
-  , ('BAM 1020','Beta Attenuation Mass Monitor', true, 'metone:bam1020')
+  , ('BAM 1020','Beta Attenuation Mass Monitor', true, 'metone:bam_1020')
   ) as v(model_name, description, is_monitor, ingest_id);
 
 
@@ -26,7 +26,7 @@
   INSERT INTO instruments (manufacturer_entities_id, label, description, is_monitor, ingest_id)
   SELECT entities_id, v.model_name, v.description, v.is_monitor, v.ingest_id
   FROM manufacturer, (VALUES
-    ('Serinus 30','Carbon Monoxide (CO) analyser', true, 'ecotech:serinus30')
+    ('Serinus 30','Carbon Monoxide (CO) analyser', true, 'ecotech:serinus_30')
   ) as v(model_name, description, is_monitor, ingest_id);
 
   WITH manufacturer AS (
