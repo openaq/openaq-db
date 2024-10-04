@@ -11,6 +11,7 @@ WITH locations AS (
   , ('testing/site3', 'testing', 'testing site 3', ST_SetSRID(ST_Point( -71.104, 42.315),4326), 'airnow', 'pm25') -- America/New_York
   , ('testing/site4', 'testing', 'testing site 4', ST_SetSRID(ST_Point( -0.107389, 51.487236), 4326), 'airnow', 'pm25') -- Europe/London
   , ('testing/site5', 'testing', 'testing site 5', ST_SetSRID(ST_Point( 185.199922, -20.248716), 4326), 'airnow', 'pm25')
+  , ('testing/site6', 'testing', 'testing site 6', ST_SetSRID(ST_Point( 75.85257, 22.70763), 4326), 'airnow', 'pm25') -- malav, indore
    ) as t (source_id, source_name, site_name, geom, provider, measurand)
   ), inserted_nodes AS (
   INSERT INTO sensor_nodes (
@@ -65,17 +66,19 @@ WITH locations AS (
     , 60*30
     FROM locations l
     JOIN inserted_systems n USING (source_id)
-    ON CONFLICT (sensor_systems_id, measurands_id) DO UPDATE
-    SET source_id = EXCLUDED.source_id
+    --ON CONFLICT (sensor_systems_id, measurands_id) DO UPDATE
+    --SET source_id = EXCLUDED.source_id
     RETURNING sensor_systems_id, source_id
   ) SELECT * FROM inserted_sensors;
 
-
+-- Using the 15m offset to make it easier to debug 30m offset timezones
 WITH fake_times AS (
-SELECT generate_series('2023-03-01'::date, '2023-04-01'::date, '30min'::interval) as datetime
+SELECT generate_series('2023-03-01'::date, '2023-04-01'::date, '30min'::interval) + '15m'::interval as datetime
   ) INSERT INTO measurements (datetime, sensors_id, value)
   --SELECT f.datetime, s.sensors_id, date_part('day', as_local(datetime - interval '1sec', t.tzid))
-  SELECT as_utc(datetime, t.tzid), s.sensors_id, date_part('day', datetime - interval '1sec')
+  SELECT as_utc(datetime, t.tzid)
+  , s.sensors_id
+  , date_part('day', datetime - '1sec'::interval) + date_part('hour', datetime - '1sec'::interval)/100
   FROM fake_times f
   JOIN sensors s ON (TRUE)
   JOIN sensor_systems sy ON (s.sensor_systems_id = sy.sensor_systems_id)
@@ -84,31 +87,55 @@ SELECT generate_series('2023-03-01'::date, '2023-04-01'::date, '30min'::interval
   ON CONFLICT DO NOTHING;
 
 
- -- make sure we have something to test the moy with
-WITH fake_times AS (
---SELECT generate_series(current_date - (365 * 2), current_date, '1d'::interval) as datetime
-SELECT generate_series('2021-12-25'::date, '2023-01-05'::date, '1d'::interval) as datetime
-  ) INSERT INTO measurements (datetime, sensors_id, value)
-  --SELECT f.datetime, s.sensors_id, date_part('day', as_utc(datetime - interval '1sec', t.tzid))
-  SELECT as_utc(datetime, t.tzid), s.sensors_id, date_part('day', datetime - interval '1sec')
-  FROM fake_times xf
-  JOIN sensors s ON (TRUE)
-  JOIN sensor_systems sy ON (s.sensor_systems_id = sy.sensor_systems_id)
-  JOIN sensor_nodes sn ON (sy.sensor_nodes_id = sn.sensor_nodes_id)
-  JOIN timezones t ON (sn.timezones_id = t.timezones_id)
-  WHERE sensors_id = 1
-  ON CONFLICT DO NOTHING;
+--  -- make sure we have something to test the moy with
+-- WITH fake_times AS (
+-- --SELECT generate_series(current_date - (365 * 2), current_date, '1d'::interval) as datetime
+-- SELECT generate_series('2021-12-25'::date, '2023-01-05'::date, '1d'::interval) + '15m'::interval as datetime
+--   ) INSERT INTO measurements (datetime, sensors_id, value)
+--   --SELECT f.datetime, s.sensors_id, date_part('day', as_utc(datetime - interval '1sec', t.tzid))
+--   SELECT as_utc(datetime, t.tzid)
+--   , s.sensors_id
+--   , date_part('day', datetime - '1sec'::interval) + date_part('hour', datetime - '1sec'::interval)/100
+--   FROM fake_times xf
+--   JOIN sensors s ON (TRUE)
+--   JOIN sensor_systems sy ON (s.sensor_systems_id = sy.sensor_systems_id)
+--   JOIN sensor_nodes sn ON (sy.sensor_nodes_id = sn.sensor_nodes_id)
+--   JOIN timezones t ON (sn.timezones_id = t.timezones_id)
+--   WHERE sensors_id = 1
+--   ON CONFLICT DO NOTHING;
 
 
-WITH fake_times AS (
-SELECT generate_series(current_date - 7, current_timestamp, '30min'::interval) as datetime
-  ) INSERT INTO measurements (datetime, sensors_id, value)
-  --SELECT f.datetime, s.sensors_id, date_part('day', as_utc(datetime - interval '1sec', t.tzid))
-  SELECT as_utc(datetime, t.tzid), s.sensors_id, date_part('day', datetime - interval '1sec')
-  FROM fake_times f
-  JOIN sensors s ON (TRUE)
-  JOIN sensor_systems sy ON (s.sensor_systems_id = sy.sensor_systems_id)
-  JOIN sensor_nodes sn ON (sy.sensor_nodes_id = sn.sensor_nodes_id)
-  JOIN timezones t ON (sn.timezones_id = t.timezones_id)
-  WHERE sensors_id = 1
-  ON CONFLICT DO NOTHING;
+-- WITH fake_times AS (
+-- SELECT generate_series(current_date - 7, current_timestamp, '30min'::interval) + '15m'::interval as datetime
+--   ) INSERT INTO measurements (datetime, sensors_id, value)
+--   --SELECT f.datetime, s.sensors_id, date_part('day', as_utc(datetime - interval '1sec', t.tzid))
+--   SELECT as_utc(datetime, t.tzid)
+--   , s.sensors_id
+--   , date_part('day', datetime - '1sec'::interval) + date_part('hour', datetime - '1sec'::interval)/100
+--   FROM fake_times f
+--   JOIN sensors s ON (TRUE)
+--   JOIN sensor_systems sy ON (s.sensor_systems_id = sy.sensor_systems_id)
+--   JOIN sensor_nodes sn ON (sy.sensor_nodes_id = sn.sensor_nodes_id)
+--   JOIN timezones t ON (sn.timezones_id = t.timezones_id)
+--   WHERE sensors_id = 1
+--   ON CONFLICT DO NOTHING;
+
+
+
+
+-- WITH data AS (
+-- SELECT generate_series('2024-01-01', '2024-02-01', '15m'::interval) as datetime
+--   ), values AS (
+--   SELECT datetime, date_part('day', datetime - '1sec'::interval) + date_part('hour', datetime - '1sec'::interval)/100 as value
+--   FROM data
+--  ) SELECT date_trunc('day', datetime  - '1sec'::interval)
+--   , COUNT(1)
+--   , MIN(datetime)
+--   , MAX(datetime)
+--   , MIN(value)
+--   , MAX(value)
+--   , AVG(value)
+--   FROM values
+--   GROUP BY 1
+--   ORDER BY 1
+--   LIMIT 10;

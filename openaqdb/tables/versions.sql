@@ -28,8 +28,7 @@ SET sort_order = EXCLUDED.sort_order
 , readme = EXCLUDED.readme;
 
 ALTER TABLE sensors
-	DROP CONSTRAINT sensors_sensor_systems_id_measurands_id_key
-  , ADD COLUMN sensor_statuses_id int NOT NULL DEFAULT 1 REFERENCES sensor_statuses;
+   ADD COLUMN sensor_statuses_id int NOT NULL DEFAULT 1 REFERENCES sensor_statuses;
 
 
 

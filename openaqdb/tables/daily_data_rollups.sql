@@ -40,7 +40,7 @@
 	DROP TABLE IF EXISTS daily_data_queue;
 	CREATE TABLE IF NOT EXISTS daily_data_queue (
    datetime date NOT NULL
- , tz_offset int NOT NULL
+ , tz_offset interval NOT NULL
  , added_on timestamptz NOT NULL DEFAULT now()
  , queued_on timestamptz
  , modified_on timestamptz 											-- last time the hourly data was modified
@@ -58,6 +58,7 @@
 
 
 
+
 CREATE OR REPLACE FUNCTION update_daily_data_queue() RETURNS bigint AS $$
  WITH data_min AS (
   SELECT MIN(datetime) as min_date
@@ -66,10 +67,16 @@ CREATE OR REPLACE FUNCTION update_daily_data_queue() RETURNS bigint AS $$
  ), days AS (
   SELECT generate_series(min_date, max_date, '1day'::interval) as datetime
   FROM data_min
+ ), node_timezones AS (
+  SELECT tz.tzid as timezone
+  FROM sensor_nodes n
+  JOIN timezones tz ON (n.timezones_id = tz.timezones_id)
+  GROUP BY 1
  ), daily_inserts AS (
   INSERT INTO daily_data_queue (datetime, tz_offset)
-  SELECT datetime, generate_series(-12,14,1) as tz_offset
-  FROM days
+  SELECT datetime, utc_offset(datetime, timezone)
+  FROM days, node_timezones
+  GROUP BY 1, 2
   ON CONFLICT DO NOTHING
   RETURNING datetime, tz_offset
   ) SELECT COUNT(*)
@@ -85,13 +92,13 @@ CREATE OR REPLACE FUNCTION update_daily_data_queue(dt timestamptz) RETURNS bigin
   -- regardless of whether we have a sensor node
   -- SELECT generate_series(-12, 14, 1) as tz_offset
   -- and this will only do the queue the offsets that we have
-  SELECT utc_offset_hours(dt, tzid) as tz_offset
+  SELECT utc_offset(dt, tzid) as tz_offset
   FROM sensor_nodes n
   JOIN timezones t USING (timezones_id)
   GROUP BY 1
  ), daily_inserts AS (
   INSERT INTO daily_data_queue (datetime, tz_offset)
-  SELECT (dt + make_interval(hours=>tz_offset::int, secs=>-1))::date
+  SELECT (dt + tz_offset - '1sec'::interval)::date
   , tz_offset
   FROM affected_offsets
   ON CONFLICT (datetime, tz_offset) DO UPDATE
@@ -103,8 +110,22 @@ CREATE OR REPLACE FUNCTION update_daily_data_queue(dt timestamptz) RETURNS bigin
   $$ LANGUAGE SQL;
 
 
-CREATE OR REPLACE FUNCTION hourly_data_updated_event(hr timestamptz) RETURNS boolean AS $$
- SELECT update_daily_data_queue(hr)>0;
+CREATE OR REPLACE FUNCTION update_daily_data_queue(dt timestamptz, _tz_offset interval) RETURNS bigint AS $$
+  WITH daily_inserts AS (
+    INSERT INTO daily_data_queue (datetime, tz_offset) VALUES
+    ((dt + _tz_offset - '1sec'::interval)::date, _tz_offset)
+    ON CONFLICT (datetime, tz_offset) DO UPDATE
+    SET modified_on = now()
+    , modified_count = daily_data_queue.modified_count + 1
+    RETURNING datetime, tz_offset
+  )
+  SELECT COUNT(*)
+  FROM daily_inserts;
+$$ LANGUAGE SQL;
+
+
+CREATE OR REPLACE FUNCTION hourly_data_updated_event(hr timestamptz, _tz_offset interval) RETURNS boolean AS $$
+ SELECT update_daily_data_queue(hr, _tz_offset)>0;
 $$ LANGUAGE SQL;
 
 
@@ -113,7 +134,7 @@ $$ LANGUAGE SQL;
 DROP FUNCTION IF EXISTS fetch_daily_data_jobs(int, date, date);
 CREATE OR REPLACE FUNCTION fetch_daily_data_jobs(n int DEFAULT 1, min_day date DEFAULT NULL, max_day date DEFAULT NULL) RETURNS TABLE(
     datetime date
-  , tz_offset int
+  , tz_offset interval
   , queued_on timestamptz
   ) AS $$
   BEGIN
@@ -367,7 +388,7 @@ SET datetime_first = EXCLUDED.datetime_first
 $$ LANGUAGE SQL;
 
 
-CREATE OR REPLACE FUNCTION calculate_daily_data_by_offset(dy date DEFAULT current_date - 1, tz_offset int DEFAULT 0)
+CREATE OR REPLACE FUNCTION calculate_daily_data(dy date DEFAULT current_date - 1, tz_offset interval DEFAULT '0s')
   RETURNS TABLE (
 	  sensors_id int
   , sensor_nodes_id int
@@ -423,12 +444,12 @@ JOIN timezones t ON (sn.timezones_id = t.timezones_id)
 WHERE value_count > 0
 AND datetime > as_utc(dy, t.tzid)
 AND datetime <= as_utc(dy + 1, t.tzid)
-AND utc_offset_hours(dy, t.tzid) = tz_offset
+AND utc_offset(dy, t.tzid) = tz_offset
 GROUP BY 1,2,3
 HAVING COUNT(1) > 0;
   $$ LANGUAGE SQL;
 
-CREATE OR REPLACE FUNCTION insert_daily_data_by_offset(dy date DEFAULT current_date - 1, tz_offset int DEFAULT 0)
+CREATE OR REPLACE FUNCTION insert_daily_data_by_offset(dy date DEFAULT current_date - 1, _tz_offset interval DEFAULT '0s')
   RETURNS TABLE (
 	   sensor_nodes_count bigint
    , sensors_count bigint
@@ -438,7 +459,7 @@ CREATE OR REPLACE FUNCTION insert_daily_data_by_offset(dy date DEFAULT current_d
 SET LOCAL work_mem = '512MB';
 WITH data_rollup AS (
   SELECT *
-  FROM calculate_daily_data_by_offset(dy, tz_offset)
+  FROM calculate_daily_data(dy, _tz_offset)
 ), data_inserted AS (
 INSERT INTO daily_data (
   sensors_id
@@ -515,13 +536,13 @@ SET datetime_first = EXCLUDED.datetime_first
 $$ LANGUAGE SQL;
 
 
-CREATE OR REPLACE FUNCTION daily_data_updated_event(dy date, tz_offset_int int) RETURNS boolean AS $$
+CREATE OR REPLACE FUNCTION daily_data_updated_event(dy date, _tz_offset interval) RETURNS boolean AS $$
  SELECT 't'::boolean;
 $$ LANGUAGE SQL;
 
 
 
-CREATE OR REPLACE FUNCTION update_daily_data(dy date DEFAULT current_date - 1, tz_offset_int int DEFAULT 0) RETURNS bigint AS $$
+CREATE OR REPLACE FUNCTION update_daily_data(dy date DEFAULT current_date - 1, _tz_offset interval DEFAULT '0s') RETURNS bigint AS $$
 DECLARE
 nw timestamptz := clock_timestamp();
 mc bigint;
@@ -531,7 +552,7 @@ WITH inserted AS (
   , sensors_count
   , measurements_hourly_count
   , measurements_count
-  FROM insert_daily_data_by_offset(dy, tz_offset_int))
+  FROM insert_daily_data_by_offset(dy, _tz_offset))
   INSERT INTO daily_data_queue (
     datetime
   , tz_offset
@@ -544,7 +565,7 @@ WITH inserted AS (
   , calculated_seconds
   )
   SELECT dy
-  , tz_offset_int
+  , _tz_offset
   , now()
   , 1
   , sensor_nodes_count
@@ -560,7 +581,7 @@ WITH inserted AS (
   , sensors_count = EXCLUDED.sensors_count
   , calculated_seconds = EXCLUDED.calculated_seconds
   RETURNING measurements_count INTO mc;
-  PERFORM daily_data_updated_event(dy, tz_offset_int);
+  PERFORM daily_data_updated_event(dy, _tz_offset);
   RETURN mc;
 END;
 $$ LANGUAGE plpgsql;
@@ -832,7 +853,11 @@ CREATE OR REPLACE FUNCTION calculate_daily_data_full(dt date DEFAULT current_dat
 	 o record;
 	 obj json;
 	BEGIN
-  FOR o IN SELECT generate_series(0,23,1) as tz_offset
+  FOR o IN
+    SELECT utc_offset(dt, tz.tzid) as tz_offset
+    FROM sensor_nodes n
+    JOIN timezones tz ON (n.timezones_id = tz.timezones_id)
+    GROUP BY 1
 	LOOP
 		PERFORM calculate_daily_data(dt, o.tz_offset);
 	END LOOP;

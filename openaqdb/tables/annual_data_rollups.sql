@@ -37,7 +37,7 @@ USING btree (datetime);
 
 CREATE TABLE IF NOT EXISTS annual_data_queue (
    datetime date NOT NULL
- , tz_offset int NOT NULL
+ , tz_offset interval NOT NULL
  , added_on timestamptz NOT NULL DEFAULT now()
  , queued_on timestamptz
  , modified_on timestamptz 											-- last time the hourly data was modified
@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS annual_data_queue (
 
 CREATE OR REPLACE FUNCTION fetch_annual_data_jobs(n int DEFAULT 1, min_day date DEFAULT NULL, max_day date DEFAULT NULL) RETURNS TABLE(
     datetime date
-  , tz_offset int
+  , tz_offset interval
   , queued_on timestamptz
   ) AS $$
   BEGIN
@@ -107,11 +107,10 @@ CREATE OR REPLACE FUNCTION fetch_annual_data_jobs(n int DEFAULT 1, min_day date 
 $$ LANGUAGE plpgsql;
 
 
-CREATE OR REPLACE FUNCTION update_annual_data_queue(dt date, tz_offset_int int) RETURNS bigint AS $$
+CREATE OR REPLACE FUNCTION update_annual_data_queue(dt date, _tz_offset interval) RETURNS bigint AS $$
  WITH annual_inserts AS (
   INSERT INTO annual_data_queue (datetime, tz_offset) VALUES
-  (date_trunc('year', dt + make_interval(hours=>tz_offset_int, secs=>-1))
-  , tz_offset_int)
+  (date_trunc('year', dt + _tz_offset + '-1s'::interval), _tz_offset)
   ON CONFLICT (datetime, tz_offset) DO UPDATE
   SET modified_on = now()
   , modified_count = annual_data_queue.modified_count + 1
@@ -121,12 +120,12 @@ CREATE OR REPLACE FUNCTION update_annual_data_queue(dt date, tz_offset_int int) 
   $$ LANGUAGE SQL;
 
 
-CREATE OR REPLACE FUNCTION daily_data_updated_event(dy date, tz_offset_int int) RETURNS boolean AS $$
- SELECT update_annual_data_queue(dy, tz_offset_int)>0;
+CREATE OR REPLACE FUNCTION daily_data_updated_event(dy date, _tz_offset interval) RETURNS boolean AS $$
+ SELECT update_annual_data_queue(dy, _tz_offset)>0;
 $$ LANGUAGE SQL;
 
 
-CREATE OR REPLACE FUNCTION calculate_annual_data_by_offset(dy date DEFAULT current_date - 1, tz_offset int DEFAULT 0)
+CREATE OR REPLACE FUNCTION calculate_annual_data_by_offset(dy date DEFAULT current_date - 1, _tz_offset interval DEFAULT '0s')
   RETURNS TABLE (
 	  sensors_id int
   , sensor_nodes_id int
@@ -182,13 +181,13 @@ JOIN timezones t ON (sn.timezones_id = t.timezones_id)
 WHERE value_count > 0
 AND datetime > as_utc(date_trunc('year', dy), t.tzid)
 AND datetime <= as_utc(date_trunc('year', dy + '1year'::interval), t.tzid)
-AND utc_offset_hours(dy, t.tzid) = tz_offset
+AND utc_offset(dy, t.tzid) = _tz_offset
 GROUP BY 1,2,3
 HAVING COUNT(1) > 0;
   $$ LANGUAGE SQL;
 
 
-CREATE OR REPLACE FUNCTION insert_annual_data_by_offset(dy date DEFAULT current_date - 1, tz_offset int DEFAULT 0)
+CREATE OR REPLACE FUNCTION insert_annual_data_by_offset(dy date DEFAULT current_date - 1, _tz_offset interval DEFAULT '0s')
   RETURNS TABLE (
 	   sensor_nodes_count bigint
    , sensors_count bigint
@@ -198,7 +197,7 @@ CREATE OR REPLACE FUNCTION insert_annual_data_by_offset(dy date DEFAULT current_
 SET LOCAL work_mem = '512MB';
 WITH data_rollup AS (
   SELECT *
-  FROM calculate_annual_data_by_offset(dy, tz_offset)
+  FROM calculate_annual_data_by_offset(dy, _tz_offset)
 ), data_inserted AS (
 INSERT INTO annual_data (
   sensors_id
@@ -275,7 +274,7 @@ SET datetime_first = EXCLUDED.datetime_first
 $$ LANGUAGE SQL;
 
 
-CREATE OR REPLACE FUNCTION update_annual_data(dy date DEFAULT current_date - 1, tz_offset_int int DEFAULT 0) RETURNS bigint AS $$
+CREATE OR REPLACE FUNCTION update_annual_data(dy date DEFAULT current_date - 1, tz_offset interval DEFAULT '0s') RETURNS bigint AS $$
 DECLARE
 nw timestamptz := clock_timestamp();
 mc bigint;
@@ -285,7 +284,7 @@ WITH inserted AS (
   , sensors_count
   , measurements_hourly_count
   , measurements_count
-  FROM insert_annual_data_by_offset(dy, tz_offset_int))
+  FROM insert_annual_data_by_offset(dy, _tz_offset))
   INSERT INTO annual_data_queue (
     datetime
   , tz_offset
@@ -298,7 +297,7 @@ WITH inserted AS (
   , calculated_seconds
   )
   SELECT dy
-  , tz_offset_int
+  , _tz_offset
   , now()
   , 1
   , sensor_nodes_count
@@ -314,7 +313,7 @@ WITH inserted AS (
   , sensors_count = EXCLUDED.sensors_count
   , calculated_seconds = EXCLUDED.calculated_seconds
   RETURNING measurements_count INTO mc;
-  -- PERFORM annual_data_updated_event(dy, tz_offset_int);
+  PERFORM annual_data_updated_event(dy, _tz_offset);
   RETURN mc;
 END;
 $$ LANGUAGE plpgsql;

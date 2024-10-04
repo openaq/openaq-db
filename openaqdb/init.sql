@@ -51,10 +51,16 @@ GRANT ALL ON FUNCTIONS to :DATABASE_WRITE_USER;
 \i tables/exports.sql
 \i tables/rejects.sql
 \i tables/users.sql
-\i tables/rollups.sql
 \i tables/metadata.sql
-\i tables/deployments.sql
 \i idempotent/util_functions.sql
+
+--\i tables/rollups.sql
+\i tables/sensors_rollup.sql
+\i tables/hourly_data_rollups.sql
+\i tables/thresholds.sql
+\i tables/performance_log.sql
+----
+\i tables/deployments.sql
 \i tables/licenses.sql
 \i locations/locations.sql
 \i tables/timezones_views.sql
