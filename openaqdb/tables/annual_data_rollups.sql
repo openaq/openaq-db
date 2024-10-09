@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS annual_data_queue (
  , modified_count int NOT NULL DEFAULT 0
  , calculated_on timestamptz
  , calculated_count int NOT NULL DEFAULT 0
- , calculated_seconds real
+ , calculated_seconds double precision
  , sensor_nodes_count int
  , sensors_count int
  , measurements_count int
@@ -125,7 +125,7 @@ CREATE OR REPLACE FUNCTION daily_data_updated_event(dy date, _tz_offset interval
 $$ LANGUAGE SQL;
 
 
-CREATE OR REPLACE FUNCTION calculate_annual_data_by_offset(dy date DEFAULT current_date - 1, _tz_offset interval DEFAULT '0s')
+CREATE OR REPLACE FUNCTION calculate_annual_data(dy date DEFAULT current_date - 1, _tz_offset interval DEFAULT '0s')
   RETURNS TABLE (
 	  sensors_id int
   , sensor_nodes_id int
@@ -134,19 +134,19 @@ CREATE OR REPLACE FUNCTION calculate_annual_data_by_offset(dy date DEFAULT curre
   , datetime_first timestamptz
   , datetime_last timestamptz
   , value_count bigint
-  , value_avg real
-  , value_sd real
-  , value_min real
-  , value_max real
+  , value_avg double precision
+  , value_sd double precision
+  , value_min double precision
+  , value_max double precision
   , value_raw_count bigint
-  , value_raw_avg real
-  , value_raw_min real
-  , value_raw_max real
-  , value_p02 real
-  , value_p25 real
-  , value_p50 real
-  , value_p75 real
-  , value_p98 real
+  , value_raw_avg double precision
+  , value_raw_min double precision
+  , value_raw_max double precision
+  , value_p02 double precision
+  , value_p25 double precision
+  , value_p50 double precision
+  , value_p75 double precision
+  , value_p98 double precision
   , error_raw_count bigint
   , error_count bigint
   ) AS $$
@@ -197,7 +197,7 @@ CREATE OR REPLACE FUNCTION insert_annual_data_by_offset(dy date DEFAULT current_
 SET LOCAL work_mem = '512MB';
 WITH data_rollup AS (
   SELECT *
-  FROM calculate_annual_data_by_offset(dy, _tz_offset)
+  FROM calculate_annual_data(dy, _tz_offset)
 ), data_inserted AS (
 INSERT INTO annual_data (
   sensors_id
@@ -274,7 +274,12 @@ SET datetime_first = EXCLUDED.datetime_first
 $$ LANGUAGE SQL;
 
 
-CREATE OR REPLACE FUNCTION update_annual_data(dy date DEFAULT current_date - 1, tz_offset interval DEFAULT '0s') RETURNS bigint AS $$
+CREATE OR REPLACE FUNCTION annual_data_updated_event(dy date, _tz_offset interval) RETURNS boolean AS $$
+ SELECT 't'::boolean;
+$$ LANGUAGE SQL;
+
+
+CREATE OR REPLACE FUNCTION update_annual_data(dy date DEFAULT current_date - 1, _tz_offset interval DEFAULT '0s') RETURNS bigint AS $$
 DECLARE
 nw timestamptz := clock_timestamp();
 mc bigint;
