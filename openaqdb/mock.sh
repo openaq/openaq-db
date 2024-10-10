@@ -6,7 +6,7 @@ export PGHOST=localhost
 
 psql --single-transaction -f "mock.sql"
 psql -c "CALL initialize_sensors_rollup()" \
-     -c "SELECT reset_hourly_stats()" \
+     -c "SELECT reset_hourly_data_queue()" \
      -c "CALL update_hourly_data(20000)" \
      -c "CALL update_daily_data(10000)" \
      -c "CALL update_annual_data(5000)" \

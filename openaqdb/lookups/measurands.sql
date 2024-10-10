@@ -72,6 +72,26 @@ INSERT INTO measurands (measurand, units, display, description) VALUES
 , 'deg'
 , 'wd'
 , 'Direction that the wind originates from')
+, ( 'bc_880'
+, 'ug/m2'
+, 'BC @ 880 nm'
+, 'Estimate of black carbon (BC)')
+, ( 'bc_625'
+, 'ug/m2'
+, 'BC @ 625 nm'
+, '')
+, ( 'bc_528'
+, 'ug/m2'
+, 'BC @ 528 nm'
+, '')
+, ( 'bc_470'
+, 'ug/m2'
+, 'BC @ 470 nm'
+, '')
+, ( 'bc_375'
+, 'ug/m2'
+, 'BC @ 375 nm'
+, 'Estimate of ultraviolet particulate matter (UVPM)')
 , ( 'so4'
 , 'ppb'
 , 'SO4'
