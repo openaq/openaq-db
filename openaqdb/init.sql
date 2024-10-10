@@ -51,6 +51,7 @@ GRANT ALL ON FUNCTIONS to :DATABASE_WRITE_USER;
 \i tables/exports.sql
 \i tables/rejects.sql
 \i tables/users.sql
+\i tables/flags.sql
 \i tables/metadata.sql
 \i idempotent/util_functions.sql
 
