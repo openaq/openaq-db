@@ -59,6 +59,8 @@ CREATE TABLE IF NOT EXISTS flagged_measurements (
   , period tstzrange NOT NULL
   , sensors_ids int[] --NOT NULL DEFAULT '{}'::int[]
   , note text
+  , added_on timestamptz DEFAULT now()
+  , modified_on timestamptz
 );
 
 CREATE INDEX flagged_measurements_period_idx ON flagged_measurements USING GiST (period);
