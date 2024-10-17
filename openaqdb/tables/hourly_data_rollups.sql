@@ -296,8 +296,8 @@ JOIN sensors s ON (m.sensors_id = s.sensors_id)
 JOIN sensor_systems sy ON (s.sensor_systems_id = sy.sensor_systems_id)
 JOIN sensor_nodes sn ON (sy.sensor_nodes_id = sn.sensor_nodes_id)
 JOIN timezones t ON (sn.timezones_id = t.timezones_id)
-WHERE datetime > as_utc_hour(hr - '1hour'::interval, t.tzid)
-AND datetime <= as_utc_hour(hr, t.tzid)
+WHERE datetime > hr - '1hour'::interval
+AND datetime <= hr
 --AND utc_offset_hours(hr, t.tzid) = tz_offset
 GROUP BY 1,2,3,4
 HAVING COUNT(1) > 0;
@@ -329,6 +329,7 @@ SELECT
   m.sensors_id
 , s.measurands_id
 , sn.sensor_nodes_id
+-- save as utc hour ending (interval makes it time ending)
 , as_utc_hour(m.datetime + '1h'::interval, t.tzid)  as datetime
 , MAX(m.added_on) as updated_on
 , MIN(datetime) as datetime_first
@@ -349,8 +350,10 @@ JOIN sensors s ON (m.sensors_id = s.sensors_id)
 JOIN sensor_systems sy ON (s.sensor_systems_id = sy.sensor_systems_id)
 JOIN sensor_nodes sn ON (sy.sensor_nodes_id = sn.sensor_nodes_id)
 JOIN timezones t ON (sn.timezones_id = t.timezones_id)
-WHERE datetime > as_utc_hour(hr - '1hour'::interval, t.tzid)
-AND datetime <= as_utc_hour(hr, t.tzid)
+-- We want to track everything in the hourly_data_queue and that will be in utc time
+-- and then we will need to convert to utc_hour for
+WHERE datetime > hr - '1hour'::interval
+AND datetime <= hr
 AND utc_offset(hr, t.tzid) = _tz_offset
 GROUP BY 1,2,3,4
 HAVING COUNT(1) > 0;
@@ -464,6 +467,7 @@ WITH inserted AS (
   , calculated_count = hourly_data_queue.calculated_count + 1
   , measurements_count = EXCLUDED.measurements_count
   , sensors_count = EXCLUDED.sensors_count
+  , sensor_nodes_count = EXCLUDED.sensor_nodes_count
   , calculated_seconds = EXCLUDED.calculated_seconds
   RETURNING measurements_count INTO mc;
   PERFORM hourly_data_updated_event(hr, _tz_offset);
