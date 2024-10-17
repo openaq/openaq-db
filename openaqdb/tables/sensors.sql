@@ -1,4 +1,4 @@
-DROP TABLE IF EXISTS sensors CASCADE;
+--DROP TABLE IF EXISTS sensors CASCADE;
 CREATE TABLE IF NOT EXISTS sensors (
     sensors_id int generated always as identity primary key
     , sensor_systems_id int not null
@@ -6,7 +6,6 @@ CREATE TABLE IF NOT EXISTS sensors (
     , source_id text
     , metadata jsonb
 		, is_public boolean DEFAULT 't'
-    , UNIQUE(sensor_systems_id, measurands_id)
 );
 
 ALTER TABLE sensors ADD CONSTRAINT ss_s_fkey

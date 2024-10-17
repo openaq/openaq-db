@@ -86,6 +86,7 @@ CREATE TYPE entity_type AS ENUM (
 , 'Research Organization'
 , 'Community Organization'
 , 'Private Organization'
+, 'Sensor Manufacturer'
 );
 
 -- If we want to add other information to the types,
@@ -107,7 +108,6 @@ CREATE TABLE IF NOT EXISTS entities (
   , added_by int NOT NULL REFERENCES users DEFAULT 1
   , modified_on timestamptz
   , modified_by int REFERENCES users
-  , metadata jsonb
 );
 
 

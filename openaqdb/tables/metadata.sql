@@ -121,6 +121,7 @@ CREATE TABLE IF NOT EXISTS instruments (
   , label text NOT NULL UNIQUE
   , description text
   , is_monitor boolean NOT NULL DEFAULT 'f'
+  , ingest_id text UNIQUE -- not required unless expected in provider data
 );
 
 -- models
@@ -145,80 +146,6 @@ CREATE TABLE IF NOT EXISTS models_sensors (
   , UNIQUE(models_id, measurands_id)
 );
 
--- flagging is a way that we can provide more detail about the data we collect
--- flagging data could be imported automatically via ingestion or
--- from user audit methods
-CREATE SEQUENCE IF NOT EXISTS flag_levels_sq START 10;
-CREATE TABLE IF NOT EXISTS flag_levels (
-  flag_levels_id int PRIMARY KEY DEFAULT nextval('flag_levels_sq')
-  , label text NOT NULL UNIQUE
-  , description text
-  , invalidates boolean DEFAULT false
-);
-
-INSERT INTO flag_levels (flag_levels_id, label, description, invalidates) VALUES
-  (1, 'INFO', 'Used to provide information', false)
-, (2, 'WARNING', 'Suggests to the user that the data may have issues', false)
-, (3, 'ERROR', 'Specifies that the data is erroneous in some way', true)
-ON CONFLICT (flag_levels_id) DO UPDATE
-SET label = EXCLUDED.label
-, description = EXCLUDED.description
-, invalidates = EXCLUDED.invalidates;
-
--- info, warning, error
-CREATE SEQUENCE IF NOT EXISTS flags_sq START 10;
-CREATE TABLE IF NOT EXISTS flags (
-  flags_id int PRIMARY KEY DEFAULT nextval('flags_sq')
-  , flag_levels_id int NOT NULL REFERENCES flag_levels
-  , label text NOT NULL
-  , description text
-);
-
--- Measurements will be flagged at the station level
--- with the option to specifiy which sensors the flag affects
--- Other options are to do the flagging at the sensor level but that could
--- be laborious for errors like `power out` and others that affect everything
--- Or we could just do the station level but that has issues when we want to
--- invalidate just one part of the station (temp but not wind speed) and
--- leave the rest of the measurements intact
--- as for storing the parameters we could do the array method, which is easy ui
--- but lacks constraints/checks
--- or the child table which has checks and constraints but more involved ui
--- choosing array with a trigger to check the parameter ids
-CREATE SEQUENCE IF NOT EXISTS flagged_measurements_sq START 10;
-CREATE TABLE IF NOT EXISTS flagged_measurements (
-  flagged_measurements_id int PRIMARY KEY DEFAULT nextval('flagged_measurements_sq')
-  , flags_id int NOT NULL REFERENCES flags
-  , sensor_nodes_id int NOT NULL REFERENCES sensor_nodes
-  , period tstzrange NOT NULL
-  , measurands_id int[] NOT NULL DEFAULT '{}'::int[]
-  , description text
-);
-
-
-
-CREATE OR REPLACE FUNCTION check_flagged_measurements() RETURNS TRIGGER AS $$
-DECLARE
-  measurands_check boolean;
-BEGIN
-  IF NEW.measurands_id IS NOT NULL THEN
-    -- -- check against current ids
-    SELECT NEW.measurands_id <@ array_agg(measurands_id)
-    INTO measurands_check
-    FROM measurands;
-    IF NOT measurands_check THEN
-        RAISE EXCEPTION 'Measurand not found';
-    END IF;
-  END IF;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-
-DROP TRIGGER IF EXISTS check_flagged_measurements_tgr ON flagged_measurements;
-CREATE TRIGGER check_flagged_measurements_tgr
-BEFORE INSERT OR UPDATE ON flagged_measurements
-FOR EACH ROW EXECUTE PROCEDURE check_flagged_measurements();
 
 -----------
 -- VIEWS --
@@ -252,6 +179,7 @@ INSERT INTO entities (
 , (5, 'Research Organization', 'Default Research Organization')
 , (6, 'Community Organization', 'Default Community Organization')
 , (7, 'Private Organization', 'Default Private Organization')
+, (8, 'Sensor Manufacturer', 'Default Instrument Organization')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO instruments (instruments_id
@@ -259,8 +187,8 @@ INSERT INTO instruments (instruments_id
 , description
 , manufacturer_entities_id
 , is_monitor) VALUES
-(1, 'Unknown Sensor', 'Instrument details not available', 1, 'f')
-, (2, 'Government Monitor', 'Instrument details are not available', 1, 't')
+(1, 'Unknown Sensor', 'Instrument details not available', 8, 'f')
+, (2, 'Government Monitor', 'Instrument details are not available', 8, 't')
 ON CONFLICT DO NOTHING;
 
 

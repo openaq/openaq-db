@@ -160,6 +160,20 @@ SELECT date_part('hour', timezone(tz, current_time));
 $$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
 
 
+-- some timezones are off by partial hours and so before we truncate we need to convert it
+-- and then convert it back once we are done
+CREATE OR REPLACE FUNCTION as_utc_hour(tstz timestamptz, tz text)
+RETURNS timestamptz AS $$
+SELECT date_trunc('hour',  (tstz + '-1sec'::interval) AT TIME ZONE tz) AT TIME ZONE tz;
+$$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION as_utc_hour(tstz timestamptz, tz_offset interval)
+RETURNS timestamptz AS $$
+SELECT date_trunc('hour',  (tstz + '-1sec'::interval + tz_offset)) - tz_offset
+$$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
+
+
+
 CREATE OR REPLACE FUNCTION truncate_timestamp(tstz timestamptz, period text)
 RETURNS timestamptz AS $$
 SELECT date_trunc(period, tstz + '11sec'::interval);
@@ -712,12 +726,45 @@ $$
 LANGUAGE plpgsql;
 
 
-SELECT row_count_estimate('_measurements_internal.hourly_data_202112');
+CREATE OR REPLACE FUNCTION has_measurement(timestamptz) RETURNS boolean AS $$
+WITH m AS (
+  SELECT datetime
+  FROM measurements
+  WHERE datetime = $1
+  LIMIT 1)
+SELECT COUNT(1) > 0
+FROM m;
+$$ LANGUAGE SQL;
+
+CREATE OR REPLACE FUNCTION has_hourly_measurement(timestamptz, interval) RETURNS boolean AS $$
+WITH m AS (
+  SELECT datetime
+  FROM measurements
+  WHERE as_utc_hour(datetime, $2) = as_utc_hour($1, $2)
+  LIMIT 1)
+SELECT COUNT(1) > 0
+FROM m;
+$$ LANGUAGE SQL;
 
 
-SELECT expected_hours('2021-01-01 00:00:00', '2023-01-01 00:00:00', 'month', '01'); -- 1488
-SELECT expected_hours('2022-01-01 00:00:00', '2023-01-01 00:00:00', 'month', '01'); -- 744
-SELECT expected_hours('2022-01-01 00:00:00', '2023-01-01 00:00:00', 'hour', '01'); -- 365
-SELECT expected_hours('2022-01-01 00:00:00', '2023-01-01 00:00:00', 'day', '1'); -- 1248
+CREATE OR REPLACE FUNCTION has_measurement(date) RETURNS boolean AS $$
+WITH m AS (
+SELECT datetime
+FROM measurements
+WHERE datetime > $1
+AND datetime <= $1 + '1day'::interval
+LIMIT 1)
+SELECT COUNT(1) > 0
+FROM m;
+$$ LANGUAGE SQL;
 
-SELECT expected_hours('2021-01-01 00:00:00', '2023-01-01 00:00:00', 'month', '01') * 3600;
+
+CREATE OR REPLACE FUNCTION has_measurement(int) RETURNS boolean AS $$
+WITH m AS (
+SELECT datetime
+FROM measurements
+WHERE sensors_id = $1
+LIMIT 1)
+SELECT COUNT(1) > 0
+FROM m;
+$$ LANGUAGE SQL;

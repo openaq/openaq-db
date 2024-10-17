@@ -49,5 +49,6 @@ gunzip -c lookups/sources_from_openaq.tsv.gz | psql --single-transaction -v ON_E
 
 psql --single-transaction -v ON_ERROR_STOP=1 -f lookups/licenses.sql
 psql --single-transaction -v ON_ERROR_STOP=1 -f lookups/providers_licenses.sql
+psql --single-transaction -v ON_ERROR_STOP=1 -f lookups/instruments_list.sql
 
 echo 'installed'

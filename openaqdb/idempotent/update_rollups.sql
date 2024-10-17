@@ -880,8 +880,8 @@ SET datetime_first = EXCLUDED.datetime_first
 , value_max = EXCLUDED.value_max
 , value_avg = EXCLUDED.value_avg
 , value_sd = EXCLUDED.value_sd
-, value_latest = COALESCE(sensors_rollup.value_latest, EXCLUDED.value_latest);
-, modified_on = now()
+, value_latest = COALESCE(sensors_rollup.value_latest, EXCLUDED.value_latest)
+, modified_on = now();
 END;
 $$ LANGUAGE plpgsql;
 
