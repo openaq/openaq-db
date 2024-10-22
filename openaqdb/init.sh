@@ -47,6 +47,7 @@ gunzip -c lookups/timezones.csv.gz | psql --single-transaction -v ON_ERROR_STOP=
 gunzip -c lookups/providers_data.csv.gz | psql --single-transaction -v ON_ERROR_STOP=1 -c "COPY providers (providers_id,label,description,source_name,export_prefix,license,metadata,owner_entities_id) FROM stdin DELIMITER ',' CSV HEADER"
 gunzip -c lookups/sources_from_openaq.tsv.gz | psql --single-transaction -v ON_ERROR_STOP=1 -c "copy sources_from_openaq from stdin"
 
+psql --single-transaction -v ON_ERROR_STOP=1 -f lookups/providers_data_additions.sql
 psql --single-transaction -v ON_ERROR_STOP=1 -f lookups/licenses.sql
 psql --single-transaction -v ON_ERROR_STOP=1 -f lookups/providers_licenses.sql
 psql --single-transaction -v ON_ERROR_STOP=1 -f lookups/instruments_list.sql

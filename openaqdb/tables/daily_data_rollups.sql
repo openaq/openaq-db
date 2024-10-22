@@ -579,6 +579,7 @@ WITH inserted AS (
   , calculated_count = daily_data_queue.calculated_count + 1
   , measurements_count = EXCLUDED.measurements_count
   , sensors_count = EXCLUDED.sensors_count
+  , sensor_nodes_count = EXCLUDED.sensor_nodes_count
   , calculated_seconds = EXCLUDED.calculated_seconds
   RETURNING measurements_count INTO mc;
   PERFORM daily_data_updated_event(dy, _tz_offset);
