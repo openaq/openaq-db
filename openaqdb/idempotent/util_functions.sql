@@ -79,13 +79,13 @@ CREATE AGGREGATE array_merge_agg(
 );
 
 
+-- Using the interval in the to_char method results in a neg minutes value
 CREATE OR REPLACE FUNCTION format_timestamp(tstz timestamptz, tz text DEFAULT 'UTC') returns text AS $$
 SELECT replace(format(
                 '%sT%s+%s',
                 to_char(timezone(COALESCE(tz, 'UTC'), tstz), 'YYYY-MM-DD'),
-                --timezone(tz, tstz)::time,
                 to_char(timezone(COALESCE(tz, 'UTC'), tstz)::time, 'HH24:MI:SS'),
-                to_char(timezone(COALESCE(tz, 'UTC'), tstz) - timezone('UTC',tstz), 'HH24:MI')
+                LEFT((timezone(COALESCE(tz, 'UTC'), tstz) - timezone('UTC',tstz))::varchar, -3)
             ),'+-','-')
 ;
 $$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
