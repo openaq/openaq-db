@@ -86,6 +86,7 @@ CREATE TYPE entity_type AS ENUM (
 , 'Research Organization'
 , 'Community Organization'
 , 'Private Organization'
+, 'Sensor Manufacturer'
 );
 
 -- If we want to add other information to the types,
