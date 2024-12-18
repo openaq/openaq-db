@@ -213,9 +213,6 @@ CREATE INDEX ON measurements_fastapi_base USING GIST (geog);
 
 
 
-
-
-
 create or replace view measurements_analyses AS
 SELECT * FROM measurements
 UNION ALL

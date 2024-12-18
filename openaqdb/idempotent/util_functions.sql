@@ -173,6 +173,11 @@ SELECT date_trunc('hour',  (tstz + '-1sec'::interval + tz_offset)) - tz_offset
 $$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
 
 
+CREATE OR REPLACE FUNCTION truncate_timestamp(tstz timestamptz, period text, tz text, _offset interval)
+RETURNS timestamptz AS $$
+SELECT timezone(tz, date_trunc(period, timezone(tz, tstz + ('-1sec'::interval + _offset))));
+$$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
+
 
 CREATE OR REPLACE FUNCTION truncate_timestamp(tstz timestamptz, period text)
 RETURNS timestamptz AS $$

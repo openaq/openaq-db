@@ -2,6 +2,8 @@
 start=`date +%s`
 PORT=5432
 USER=postgres
+#HOST=localhost
+DB=openaq
 
 while getopts ":f:h:p:u:" opt
 do
@@ -10,6 +12,7 @@ do
       p ) PORT="$OPTARG" ;;
       h ) HOST="$OPTARG" ;;
       u ) USER="$OPTARG" ;;
+      d ) DB="$OPTARG" ;;
    esac
 done
 
@@ -19,6 +22,10 @@ if [ -z ${HOST} ]; then
     exit 1
 fi;
 
+if [ -z ${DB} ]; then
+    printf '%s\n' "Missing db" >&2
+    exit 1
+fi;
 
 if [ -z ${FILE} ]; then
     printf '%s\n' "Missing file" >&2
@@ -32,7 +39,7 @@ PGOPTIONS='--client-min-messages=warning' psql \
          -h $HOST \
          -p $PORT \
          -U $USER \
-         -d openaq \
+         -d $DB \
          -c "BEGIN;" \
          "${FILES[@]}" \
          -c "COMMIT;"

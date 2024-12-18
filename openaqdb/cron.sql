@@ -79,6 +79,14 @@ SELECT cron.schedule_in_database(
   , 'openaq'
   );
 
+
+SELECT cron.schedule_in_database(
+  'delete-fetcher-reponses'
+  , '0 * * * *'
+  , $$DELETE FROM fetcher_responses WHERE datetime < (current_date - 14)$$
+  , 'openaq'
+  );
+
 -- just in case we start having failed ingestions
 -- we dont want to keep them open
 SELECT cron.schedule_in_database(

@@ -45,5 +45,7 @@ INSERT INTO measurands_map (key, measurands_id, units, source_name) VALUES
 , ('co2', 21, '', 'houston')
 , ('bc', 11, '', 'houston')
 , ('um025', 130, '', 'houston')
+, ('relativehumidity', 98, '', 'airqoon')
+, ('pressure', 95, '', 'airqoon')
 ON CONFLICT DO NOTHING
 ;

@@ -53,3 +53,70 @@ CREATE TABLE IF NOT EXISTS ingest_stats (
   , started_on timestamptz DEFAULT now() -- start time for stats
   , ingested_on timestamptz DEFAULT now()  -- last update for stats
 );
+
+
+-- A table to store responses sent from the fetchers
+CREATE TABLE IF NOT EXISTS fetcher_responses (
+    source_name text NOT NULL
+  , datetime timestamptz NOT NULL DEFAULT now()
+  , message text NOT NULL
+  , records int NOT NULL DEFAULT 0
+  , locations int
+  , datetime_from timestamptz
+  , datetime_to timestamptz
+  , duration_seconds real
+  , errors json
+  , parameters json
+);
+
+
+
+CREATE OR REPLACE FUNCTION fetcher_source_summary(st timestamptz, et timestamptz DEFAULT now()) RETURNS TABLE (
+   source_name text
+  , n int
+  , zeros int
+  , pct_success double precision
+  , min double precision
+  , p02 double precision
+  , p25 double precision
+  , p50 double precision
+  , avg double precision
+  , sd double precision
+  , p75 double precision
+  , p98 double precision
+  , max double precision
+  , skew double precision
+) AS $$
+WITH fetcher_agg AS (
+SELECT source_name
+  , COUNT(1) as n
+  , SUM((records=0)::int) AS zeros
+  , MIN(records) as min
+  , PERCENTILE_CONT(0.02) WITHIN GROUP(ORDER BY records) as p02
+  , PERCENTILE_CONT(0.25) WITHIN GROUP(ORDER BY records) as p25
+  , PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY records) as p50
+  , AVG(records) as avg
+  , STDDEV(records) as sd
+  , PERCENTILE_CONT(0.75) WITHIN GROUP(ORDER BY records) as p75
+  , PERCENTILE_CONT(0.98) WITHIN GROUP(ORDER BY records) as p98
+  , MAX(records) as max
+  FROM fetcher_responses
+  WHERE datetime > st
+  AND datetime < et
+  GROUP BY source_name)
+  SELECT source_name
+  , n
+  , zeros
+  , CASE WHEN zeros = 0 THEN 100 ELSE ROUND(((1-(zeros::numeric/n::numeric)) * 100.0),1) END as pct_success
+  , min
+  , ROUND(p02::numeric,1) as p02
+  , ROUND(p25::numeric,1) as p25
+  , ROUND(p50::numeric,1) as p50
+  , ROUND(avg::numeric,1) as avg
+  , ROUND(sd::numeric,1) as sd
+  , ROUND(p75::numeric,1) as p75
+  , ROUND(p98::numeric,1) as p98
+  , max
+  , CASE WHEN sd>0 THEN ROUND(((3*(avg-p50))/sd)::numeric,2) ELSE 0 END AS skew
+  FROM fetcher_agg;
+  $$ LANGUAGE SQL;

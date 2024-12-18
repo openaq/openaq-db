@@ -78,9 +78,11 @@ SELECT r.versions_id
 , r.version_date
 , r.label as life_cycle
 , r.version_rank
+, sy.sensor_nodes_id
 FROM version_ranks r
 JOIN sensors s ON (s.sensors_id = r.sensors_id)
-JOIN sensors p ON (p.sensors_id = r.parent_sensors_id);
+JOIN sensors p ON (p.sensors_id = r.parent_sensors_id)
+JOIN sensor_systems sy ON (s.sensor_systems_id = sy.sensor_systems_id);
 
 
 CREATE OR REPLACE VIEW stale_versions AS

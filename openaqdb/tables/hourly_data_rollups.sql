@@ -192,6 +192,45 @@ $$ LANGUAGE SQL;
  );
 
 
+
+
+
+SELECT datetime
+  , tz_offset
+  , datetime >= '-infinity'::date
+  , datetime <= current_date - '1hour'::interval
+  , current_date - '1hour'::interval
+  FROM hourly_data_queue WHERE calculated_on IS NULL AND queued_on IS NULL ORDER BY datetime DESC LIMIT 10;
+
+
+
+CREATE OR REPLACE FUNCTION fetch_hourly_data_jobs2(n int DEFAULT 1, min_hour timestamptz DEFAULT NULL, max_hour timestamptz DEFAULT NULL) RETURNS TABLE(
+    datetime timestamptz
+  , tz_offset interval
+  ) AS $$
+          SELECT q.datetime
+          , q.tz_offset
+          FROM hourly_data_queue q
+          -- Its either not been calculated or its been modified
+          WHERE q.datetime >= COALESCE(min_hour, '-infinity'::date)
+          AND q.datetime <= COALESCE(max_hour, now() - '1hour'::interval)
+          AND (q.calculated_on IS NULL)-- OR (q.modified_on IS NULL OR q.modified_on > q.calculated_on))
+          -- either its never been or it was resently modified but not queued
+          --AND (q.queued_on IS NULL -- has not been queued
+          --OR (
+          --   q.queued_on < now() - '1h'::interval -- a set amount of time has passed AND
+          --   AND (
+          --     q.queued_on < q.modified_on  -- its been changed since being queued
+          --     OR calculated_on IS NULL     -- it was never calculated
+          --   )
+         -- )
+          --)
+          ORDER BY q.datetime, q.tz_offset
+          LIMIT n;
+$$ LANGUAGE sql;
+
+
+
 CREATE OR REPLACE FUNCTION fetch_hourly_data_jobs(n int DEFAULT 1, min_hour timestamptz DEFAULT NULL, max_hour timestamptz DEFAULT NULL) RETURNS TABLE(
     datetime timestamptz
   , tz_offset interval
@@ -208,7 +247,7 @@ CREATE OR REPLACE FUNCTION fetch_hourly_data_jobs(n int DEFAULT 1, min_hour time
           FROM hourly_data_queue q
           -- Its either not been calculated or its been modified
           WHERE q.datetime >= COALESCE(min_hour, '-infinity'::date)
-          AND q.datetime <= COALESCE(max_hour, current_date - '1hour'::interval)
+          AND q.datetime <= COALESCE(max_hour, date_trunc('hour', now()))
           AND (q.calculated_on IS NULL OR q.modified_on > q.calculated_on)
           -- either its never been or it was resently modified but not queued
           AND (q.queued_on IS NULL -- has not been queued

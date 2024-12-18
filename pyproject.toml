@@ -12,7 +12,6 @@ migra = "^3.0.1663481299"
 psycopg2 = "^2.9.9"
 
 [tool.pytest.ini_options]
-pythonpath = "api"
 log_format = "[%(asctime)s] %(levelname)s [%(name)s:%(lineno)s] %(message)s"
 log_date_format = "%H:%M:%S"
 log_level = "DEBUG"
@@ -27,6 +26,7 @@ psycopg-binary = "^3.2.1"
 psycopg = "^3.2.1"
 pydantic-settings = "^2.3.4"
 pydantic = "^2.8.2"
+setuptools = "^75.2.0"
 
 
 [build-system]
