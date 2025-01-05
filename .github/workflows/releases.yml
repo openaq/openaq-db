@@ -20,7 +20,7 @@ jobs:
 
       - uses: actions/checkout@v4
       - name: create an issue - new tzdb
-        if: ${{ steps.timezone_db.outputs.release != '2024a' }}
+        if: ${{ steps.timezone_db.outputs.release != '2024b' }}
         uses: dacbd/create-issue-action@main
         with:
            token: ${{ github.token }}
