@@ -130,8 +130,14 @@ WITH fake_times AS (
   WHERE f.sensors_id IN (1)
   ON CONFLICT DO NOTHING;
 
+-- password hash is generated from the input password 'password'
+SELECT * FROM create_user('John McCormack', 'john.mccormack@example.com', '$pbkdf2-sha256$29000$QQekeGEVVYdygdKSlYqV/N$Zj3fpuME0YTaYLldiRKWzks7XN7tNPlqFGivu0Ce5qo', '0.0.0.0/32', 'Person');
+SELECT * FROM verify_email('john.mccormack@example.com', (SELECT verification_code FROM users WHERE email_address = 'john.mccormack@example.com'));
+-- password hash is generated from the input anadrome of password 'drowssap'
+SELECT * FROM create_user('Richard Tauber', 'richiet@example.com', '$pbkdf2-sha256$29000$nrMXtfT48DbQi3hJPPF/ug$z2gRQoGySzvJ3zeFDl6hbKXqkMO81JJ9eP7sgzn.Hp0', '0.0.0.0/32', 'Person');
+SELECT * FROM verify_email('richiet@example.com', (SELECT verification_code FROM users WHERE email_address = 'richiet@example.com'));
 
-
+ 
 
 -- WITH data AS (
 -- SELECT generate_series('2024-01-01', '2024-02-01', '15m'::interval) as datetime
