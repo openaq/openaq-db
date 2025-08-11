@@ -79,101 +79,100 @@ FROM
 
 
 
-DROP MATERIALIZED VIEW IF EXISTS groups_view_pre CASCADE;
-CREATE OR REPLACE VIEW groups_view_pre AS
-SELECT
-groups_id,
-groups.type,
-groups.name,
-groups.subtitle,
-groups.metadata,
-measurands_id,
-measurand,
-units,
-sensors_id,
-sensor_nodes_id,
-country
-FROM groups
-LEFT JOIN groups_sensors USING (groups_id)
-LEFT JOIN sensors USING (sensors_id)
-LEFT JOIN measurands USING (measurands_id)
-LEFT JOIN sensor_systems using (sensor_systems_id)
-LEFT JOIN sensor_nodes_ext USING (sensor_nodes_id)
-;
+-- DROP MATERIALIZED VIEW IF EXISTS groups_view_pre CASCADE;
+-- CREATE OR REPLACE VIEW groups_view_pre AS
+-- SELECT
+-- groups_id,
+-- groups.type,
+-- groups.name,
+-- groups.subtitle,
+-- groups.metadata,
+-- measurands_id,
+-- measurand,
+-- units,
+-- sensors_id,
+-- sensor_nodes_id,
+-- country
+-- FROM groups
+-- LEFT JOIN groups_sensors USING (groups_id)
+-- LEFT JOIN sensors USING (sensors_id)
+-- LEFT JOIN measurands USING (measurands_id)
+-- LEFT JOIN sensor_systems using (sensor_systems_id)
+-- LEFT JOIN sensor_nodes_ext USING (sensor_nodes_id)
+-- ;
 
-DROP MATERIALIZED VIEW IF EXISTS groups_sources_classify CASCADE;
-CREATE MATERIALIZED VIEW groups_sources_classify AS
-SELECT
-    groups_id,
-    m.ismobile as "isMobile",
-    a.is_analysis as "isAnalysis",
-    e.entity,
-    s."sensorType"
-FROM groups
-LEFT JOIN LATERAL(
-    SELECT EXISTS (
-        SELECT 1 FROM sensor_nodes LEFT JOIN
-        sensor_systems USING (sensor_nodes_id) LEFT JOIN
-        sensors USING (sensor_systems_id)
-        LEFT JOIN groups_sensors gs using (sensors_id)
-        WHERE gs.groups_id=groups.groups_id and ismobile
-    ) as ismobile
-) as m ON TRUE
-LEFT JOIN LATERAL(
-    SELECT EXISTS (
-        SELECT 1 FROM sensor_nodes sn LEFT JOIN
-        sensor_systems USING (sensor_nodes_id) LEFT JOIN
-        sensors USING (sensor_systems_id)
-        LEFT JOIN groups_sensors gs using (sensors_id)
-        WHERE gs.groups_id=groups.groups_id and (sn.metadata->>'is_analysis')::bool
-    ) as is_analysis
-) as a ON TRUE
-LEFT JOIN LATERAL(
-    SELECT sensor_nodes.metadata->>'entity' as entity, count(*) FROM sensor_nodes LEFT JOIN
-        sensor_systems USING (sensor_nodes_id) LEFT JOIN
-        sensors USING (sensor_systems_id)
-        LEFT JOIN groups_sensors gs using (sensors_id)
-        WHERE gs.groups_id=groups.groups_id group by 1 order by 2 desc limit 1
-) as e ON TRUE
-LEFT JOIN LATERAL (
-        SELECT sensor_nodes.metadata->>'sensorType' as "sensorType", count(*) FROM sensor_nodes LEFT JOIN
-        sensor_systems USING (sensor_nodes_id) LEFT JOIN
-        sensors USING (sensor_systems_id)
-        LEFT JOIN groups_sensors gs using (sensors_id)
-        WHERE gs.groups_id=groups.groups_id group by 1 order by 2 desc limit 1
-) as s ON TRUE
-WHERE groups.type='source';
-CREATE UNIQUE INDEX ON groups_sources_classify(groups_id);
+-- DROP MATERIALIZED VIEW IF EXISTS groups_sources_classify CASCADE;
+-- CREATE MATERIALIZED VIEW groups_sources_classify AS
+-- SELECT
+--     groups_id,
+--     m.ismobile as "isMobile",
+--     a.is_analysis as "isAnalysis",
+--     e.entity,
+--     s."sensorType"
+-- FROM groups
+-- LEFT JOIN LATERAL(
+--     SELECT EXISTS (
+--         SELECT 1 FROM sensor_nodes LEFT JOIN
+--         sensor_systems USING (sensor_nodes_id) LEFT JOIN
+--         sensors USING (sensor_systems_id)
+--         LEFT JOIN groups_sensors gs using (sensors_id)
+--         WHERE gs.groups_id=groups.groups_id and ismobile
+--     ) as ismobile
+-- ) as m ON TRUE
+-- LEFT JOIN LATERAL(
+--     SELECT EXISTS (
+--         SELECT 1 FROM sensor_nodes sn LEFT JOIN
+--         sensor_systems USING (sensor_nodes_id) LEFT JOIN
+--         sensors USING (sensor_systems_id)
+--         LEFT JOIN groups_sensors gs using (sensors_id)
+--         WHERE gs.groups_id=groups.groups_id and (sn.metadata->>'is_analysis')::bool
+--     ) as is_analysis
+-- ) as a ON TRUE
+-- LEFT JOIN LATERAL(
+--     SELECT sensor_nodes.metadata->>'entity' as entity, count(*) FROM sensor_nodes LEFT JOIN
+--         sensor_systems USING (sensor_nodes_id) LEFT JOIN
+--         sensors USING (sensor_systems_id)
+--         LEFT JOIN groups_sensors gs using (sensors_id)
+--         WHERE gs.groups_id=groups.groups_id group by 1 order by 2 desc limit 1
+-- ) as e ON TRUE
+-- LEFT JOIN LATERAL (
+--         SELECT sensor_nodes.metadata->>'sensorType' as "sensorType", count(*) FROM sensor_nodes LEFT JOIN
+--         sensor_systems USING (sensor_nodes_id) LEFT JOIN
+--         sensors USING (sensor_systems_id)
+--         LEFT JOIN groups_sensors gs using (sensors_id)
+--         WHERE gs.groups_id=groups.groups_id group by 1 order by 2 desc limit 1
+-- ) as s ON TRUE
+-- WHERE groups.type='source';
+-- CREATE UNIQUE INDEX ON groups_sources_classify(groups_id);
 
 
-DROP MATERIALIZED VIEW IF EXISTS groups_view CASCADE;
-CREATE MATERIALIZED VIEW groups_view AS
-SELECT
-    groups_id,
-    type,
-    name,
-    subtitle,
-    coalesce(metadata, '{}'::jsonb) as metadata,
-    measurands_id,
-    measurand,
-    units,
-    "isMobile",
-    "isAnalysis",
-    "sensorType",
-    "entity",
-    array_agg(DISTINCT sensors_id) as sensors_id_arr,
-    array_agg(DISTINCT sensor_nodes_id) as sensor_nodes_arr,
-    array_agg(DISTINCT country) FILTER (WHERE country is not null) as countries,
-    count(distinct sensor_nodes_id) as locations
-FROM
-groups_view_pre LEFT JOIN
-groups_sources_classify USING (groups_id)
-GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12
-;
+-- DROP MATERIALIZED VIEW IF EXISTS groups_view CASCADE;
+-- CREATE MATERIALIZED VIEW groups_view AS
+-- SELECT
+--     groups_id,
+--     type,
+--     name,
+--     subtitle,
+--     coalesce(metadata, '{}'::jsonb) as metadata,
+--     measurands_id,
+--     measurand,
+--     units,
+--     "isMobile",
+--     "isAnalysis",
+--     "sensorType",
+--     "entity",
+--     array_agg(DISTINCT sensors_id) as sensors_id_arr,
+--     array_agg(DISTINCT sensor_nodes_id) as sensor_nodes_arr,
+--     array_agg(DISTINCT country) FILTER (WHERE country is not null) as countries,
+--     count(distinct sensor_nodes_id) as locations
+-- FROM
+-- groups_view_pre LEFT JOIN
+-- groups_sources_classify USING (groups_id)
+-- GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12
+-- ;
 
-CREATE UNIQUE INDEX ON groups_view (groups_id, measurands_id);
-ANALYZE groups_view;
-
+-- CREATE UNIQUE INDEX ON groups_view (groups_id, measurands_id);
+-- ANALYZE groups_view;
 
 
 
