@@ -11,6 +11,10 @@ CREATE TABLE IF NOT EXISTS api_logs (
   , endpoint text
   , agent text
   , params jsonb
+  , timing double precision
+  , counter int
+  , rate_limiter text
+  , ip_address text
   , added_on timestamptz DEFAULT now()
 );
 
@@ -20,7 +24,7 @@ CREATE TABLE IF NOT EXISTS daily_requests (
   , requests_count int NOT NULL
 );
 
--- a table to list the clients we care about
+-- a table to list the agents we care about
 -- also reduces the size of the log table
 CREATE TABLE IF NOT EXISTS agents (
   agents_id int PRIMARY KEY GENERATED ALWAYS AS IDENTITY (START WITH 10)
@@ -61,21 +65,6 @@ CREATE TABLE IF NOT EXISTS groups_daily_requests (
   , UNIQUE(groups_id, day)
 );
 
--- a table to list the clients we care about
--- also reduces the size of the log table
-CREATE TABLE IF NOT EXISTS api_clients (
-  api_clients_id int PRIMARY KEY GENERATED ALWAYS AS IDENTITY (START WITH 10)
-  , label text NOT NULL UNIQUE
-  , key text NOT NULL UNIQUE
-  , description text
-);
-
-CREATE TABLE IF NOT EXISTS client_daily_requests (
-   api_clients_id int NOT NULL
-  , day date NOT NULL
-  , requests_count int NOT NULL
-  , UNIQUE(api_clients_id, day)
-);
 
 -- run this vie pg_cron
 CREATE OR REPLACE FUNCTION process_daily_logs(
@@ -97,19 +86,6 @@ BEGIN
     WHERE l.added_on::date = process_date
     GROUP BY a.agents_id
     ON CONFLICT (agents_id, day)
-    DO UPDATE SET requests_count = EXCLUDED.requests_count;
-
-    -- Insert/update client daily requests
-    INSERT INTO client_daily_requests (api_clients_id, day, requests_count)
-    SELECT
-        c.api_clients_id
-        , process_date
-        , COUNT(1)
-    FROM api_logs l
-    JOIN api_clients c ON c.key = l.api_key
-    WHERE l.added_on::date = process_date
-    GROUP BY c.api_clients_id
-    ON CONFLICT (api_clients_id, day)
     DO UPDATE SET requests_count = EXCLUDED.requests_count;
 
     -- Insert/update sensor measurements daily requests
@@ -179,3 +155,74 @@ BEGIN
 
 END;
 $$ LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE FUNCTION clear_daily_requests(
+    clear_date date DEFAULT current_date+1
+)
+RETURNS void AS $$
+BEGIN
+    -- Clear daily_requests
+    DELETE FROM daily_requests WHERE day < clear_date;
+    -- Clear agent_daily_requests
+    DELETE FROM agent_daily_requests WHERE day < clear_date;
+    -- Clear client_daily_requests
+    DELETE FROM client_daily_requests WHERE day < clear_date;
+    -- Clear sensor_measurements_daily_requests
+    DELETE FROM sensor_measurements_daily_requests WHERE day < clear_date;
+    -- Clear sensor_nodes_daily_requests
+    DELETE FROM sensor_nodes_daily_requests WHERE day < clear_date;
+    -- Clear groups_daily_requests
+    DELETE FROM groups_daily_requests WHERE day < clear_date;
+END;
+$$ LANGUAGE plpgsql;
+
+
+-- testing data
+-- add the agents and clients
+INSERT INTO agents (label, key)
+  VALUES
+  ('Chrome','chrome')
+, ('Safari','safari')
+, ('Firefox','firefox')
+, ('Ie8','ie8')
+  ON CONFLICT DO NOTHING;
+INSERT INTO apI_clients (label, key)
+  VALUES
+  ('Chrome','chrome')
+, ('Safari','safari')
+, ('Firefox','firefox')
+, ('Ie8','ie8')
+  ON CONFLICT DO NOTHING;
+
+
+
+TRUNCATE api_logs;
+SELECT clear_daily_requests();
+WITH random_calls AS (
+  SELECT day
+  , gen_random_uuid() as api_key
+  , (ARRAY[201, 200, 404, 301])[floor(random() * 4 + 1)] as status_code
+  , (ARRAY['chrome','safari','firefox','ie8'])[floor(random() * 4 + 1)] as agent
+  , (ARRAY[201, 200, 404, 301])[floor(random() * 4 + 1)]
+  , (ARRAY[
+      jsonb_build_object('sensors_id', floor(random() * 100 + 1))
+    , jsonb_build_object('sensor_nodes_id', floor(random() * 100 + 1))
+    , jsonb_build_object('groups_id', floor(random() * 100 + 1))
+    , jsonb_build_object()
+    ])[floor(random() * 4 + 1)] as params
+  FROM generate_series(current_date-7, current_date, '1day'::interval) as day
+  JOIN (SELECT generate_series(1,1000,1)) ON TRUE
+  )
+  INSERT INTO api_logs (api_key, status_code, endpoint, agent, params, added_on)
+  SELECT api_key, status_code,
+  CASE
+      WHEN params->'sensors_id' IS NOT NULL THEN format('sensors/%s', params->'sensors_id')
+      WHEN params->'sensor_nodes_id' IS NOT NULL THEN format('locations/%s', params->'sensor_nodes_id')
+      WHEN params->'groups_id' IS NOT NULL THEN format('groups/%s', params->'groups_id')
+      ELSE 'sensors/latest' END
+  , agent, params, day
+  FROM random_calls;
+  SELECT process_daily_logs(dy::date, FALSE)
+  FROM generate_series(current_date-8, current_date, '1day') as dy;
+  SELECT COUNT(1) FROM api_logs;
