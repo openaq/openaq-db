@@ -18,26 +18,30 @@ CREATE TABLE IF NOT EXISTS api_logs (
   , added_on timestamptz DEFAULT now()
 );
 
+-- a table to list the agents we care about
+-- also reduces the size of the log table
+CREATE TABLE IF NOT EXISTS agents (
+    agents_id int PRIMARY KEY GENERATED ALWAYS AS IDENTITY (START WITH 10)
+  , label text NOT NULL UNIQUE
+  , pattern text NOT NULL UNIQUE
+  , description text
+);
+
+
 -- how many requests per node/day
 CREATE TABLE IF NOT EXISTS daily_requests (
     day date NOT NULL UNIQUE
   , requests_count int NOT NULL
+  , requests_time int NOT NULL
 );
 
--- a table to list the agents we care about
--- also reduces the size of the log table
-CREATE TABLE IF NOT EXISTS agents (
-  agents_id int PRIMARY KEY GENERATED ALWAYS AS IDENTITY (START WITH 10)
-  , label text NOT NULL UNIQUE
-  , key text NOT NULL UNIQUE
-  , description text
-);
 
 -- where are the request comeing from each day
 CREATE TABLE IF NOT EXISTS agent_daily_requests (
     agents_id int NOT NULL
   , day date NOT NULL
   , requests_count int NOT NULL
+  , requests_time int NOT NULL
   , UNIQUE(agents_id, day)
 );
 
@@ -46,6 +50,7 @@ CREATE TABLE IF NOT EXISTS sensor_measurements_daily_requests (
    sensors_id int NOT NULL
   , day date NOT NULL
   , requests_count int NOT NULL
+  , requests_time int NOT NULL
   , UNIQUE(sensors_id, day)
 );
 
@@ -54,6 +59,7 @@ CREATE TABLE IF NOT EXISTS sensor_nodes_daily_requests (
    sensor_nodes_id int NOT NULL
   , day date NOT NULL
   , requests_count int NOT NULL
+  , requests_time int NOT NULL
   , UNIQUE(sensor_nodes_id, day)
 );
 
@@ -62,8 +68,36 @@ CREATE TABLE IF NOT EXISTS groups_daily_requests (
    groups_id int NOT NULL
   , day date NOT NULL
   , requests_count int NOT NULL
+  , requests_time int NOT NULL
   , UNIQUE(groups_id, day)
 );
+
+-- how many requests per group/day
+CREATE TABLE IF NOT EXISTS user_daily_requests (
+   users_id int NOT NULL
+  , day date NOT NULL
+  , requests_count int NOT NULL
+  , requests_time int NOT NULL
+  , UNIQUE(users_id, day)
+);
+
+CREATE TABLE IF NOT EXISTS status_code_daily_requests (
+    status_code int NOT NULL
+  , day date NOT NULL
+  , requests_count int NOT NULL
+  , requests_time int NOT NULL
+  , UNIQUE(status_code, day)
+);
+
+
+    CREATE VIEW uncategorized_requests AS
+    SELECT l.agent, COUNT(1) as n, ROUND(SUM(timing)) as time, MIN(added_on) as first_requested, MAX(added_on) as last_requested, COUNT(DISTINCT api_key) as keys
+    FROM api_logs l
+    LEFT JOIN LATERAL (SELECT agents_id FROM agents a WHERE l.agent ~ a.pattern LIMIT 1) rp ON TRUE
+    WHERE rp.agents_id IS NULL
+    --AND l.added_on::date = current_date - 1
+    GROUP BY 1;
+
 
 
 -- run this vie pg_cron
@@ -71,78 +105,112 @@ CREATE OR REPLACE FUNCTION process_daily_logs(
     process_date date DEFAULT CURRENT_DATE - INTERVAL '1 day',
     delete_processed_logs boolean DEFAULT false
 )
-RETURNS void AS $$
+RETURNS int AS $$
 DECLARE
     processed_count integer := 0;
 BEGIN
     -- Insert/update agent daily requests
-    INSERT INTO agent_daily_requests (agents_id, day, requests_count)
-    SELECT
-        a.agents_id
-        , process_date
-        , COUNT(1)
+    INSERT INTO agent_daily_requests (agents_id, requests_count, requests_time, day)
+    SELECT rp.agents_id, COUNT(1), ROUND(SUM(timing)), process_date
     FROM api_logs l
-    JOIN agents a ON a.key = l.api_key
+    JOIN LATERAL (SELECT agents_id FROM agents a WHERE l.agent ~ a.pattern LIMIT 1) rp ON TRUE
     WHERE l.added_on::date = process_date
-    GROUP BY a.agents_id
+    GROUP BY 1
     ON CONFLICT (agents_id, day)
-    DO UPDATE SET requests_count = EXCLUDED.requests_count;
+    DO UPDATE SET
+    requests_count = EXCLUDED.requests_count
+    , requests_time = EXCLUDED.requests_time;
+
+  -- http codes
+    INSERT INTO status_code_daily_requests (status_code, requests_count, requests_time, day)
+    SELECT status_code, COUNT(1), ROUND(SUM(timing)), process_date
+    FROM api_logs l
+    WHERE l.added_on::date = process_date
+    GROUP BY status_code
+    ON CONFLICT (status_code, day)
+    DO UPDATE SET
+    requests_count = EXCLUDED.requests_count
+    , requests_time = EXCLUDED.requests_time;
+
+  -- use the api keys to match to user
+  WITH grouped_data AS (
+    SELECT api_key, COUNT(1) as n, ROUND(SUM(timing)) as t
+    FROM api_logs l
+    WHERE l.added_on::date = current_date - 1
+    GROUP BY 1
+  )
+  INSERT INTO user_daily_requests (users_id, requests_count, requests_time, day)
+  SELECT u.users_id, n, t, current_date - 1
+  FROM grouped_data d
+  JOIN user_keys u ON (d.api_key = u.token)
+    ON CONFLICT (users_id, day)
+    DO UPDATE SET
+    requests_count = EXCLUDED.requests_count
+    , requests_time = EXCLUDED.requests_time;
 
     -- Insert/update sensor measurements daily requests
     -- Assumes params contains sensors_id
-    INSERT INTO sensor_measurements_daily_requests (sensors_id, day, requests_count)
+    INSERT INTO sensor_measurements_daily_requests (sensors_id, day, requests_count, requests_time)
     SELECT
         (l.params->>'sensors_id')::int
         , process_date
         , COUNT(1)
+        , ROUND(SUM(timing))
     FROM api_logs l
     WHERE l.added_on::date = process_date
       AND l.params ? 'sensors_id'
       AND l.params->>'sensors_id' ~ '^\d+$'
     GROUP BY (l.params->>'sensors_id')::int
     ON CONFLICT (sensors_id, day)
-    DO UPDATE SET requests_count = EXCLUDED.requests_count;
+    DO UPDATE SET requests_count = EXCLUDED.requests_count
+    , requests_time = EXCLUDED.requests_time;
 
     -- Insert/update sensor nodes daily requests
     -- Assumes params contains sensor_nodes_id
-    INSERT INTO sensor_nodes_daily_requests (sensor_nodes_id, day, requests_count)
+    INSERT INTO sensor_nodes_daily_requests (sensor_nodes_id, day, requests_count, requests_time)
     SELECT
         (l.params->>'sensor_nodes_id')::int
         , process_date
         , COUNT(1)
+        , ROUND(SUM(timing))
     FROM api_logs l
     WHERE l.added_on::date = process_date
       AND l.params ? 'sensor_nodes_id'
       AND l.params->>'sensor_nodes_id' ~ '^\d+$'
     GROUP BY (l.params->>'sensor_nodes_id')::int
     ON CONFLICT (sensor_nodes_id, day)
-    DO UPDATE SET requests_count = EXCLUDED.requests_count;
+    DO UPDATE SET requests_count = EXCLUDED.requests_count
+    , requests_time = EXCLUDED.requests_time;
 
     -- Insert/update groups daily requests
     -- Assumes params contains groups_id
-    INSERT INTO groups_daily_requests (groups_id, day, requests_count)
-    SELECT
-        (l.params->>'groups_id')::int
-        , process_date
-        , COUNT(1)
-    FROM api_logs l
-    WHERE l.added_on::date = process_date
-      AND l.params ? 'groups_id'
-      AND l.params->>'groups_id' ~ '^\d+$'
-    GROUP BY (l.params->>'groups_id')::int
-    ON CONFLICT (groups_id, day)
-    DO UPDATE SET requests_count = EXCLUDED.requests_count;
+    -- INSERT INTO groups_daily_requests (groups_id, day, requests_count, requests_time)
+    -- SELECT
+    --     (l.params->>'groups_id')::int
+    --     , process_date
+    --     , COUNT(1)
+    --     , ROUND(SUM(timing))
+    -- FROM api_logs l
+    -- WHERE l.added_on::date = process_date
+    --   AND l.params ? 'groups_id'
+    --   AND l.params->>'groups_id' ~ '^\d+$'
+    -- GROUP BY (l.params->>'groups_id')::int
+    -- ON CONFLICT (groups_id, day)
+    -- DO UPDATE SET requests_count = EXCLUDED.requests_count
+    -- , requests_time = EXCLUDED.requests_time;
 
     -- Get count of processed records for logging
-    INSERT INTO daily_requests (day, requests_count)
+    INSERT INTO daily_requests (day, requests_count, requests_time)
     SELECT
           process_date
         , COUNT(1)
+        , ROUND(SUM(timing))
     FROM api_logs l
     WHERE l.added_on::date = process_date
     --GROUP BY 1
     ON CONFLICT (day)
     DO UPDATE SET requests_count = EXCLUDED.requests_count
+    , requests_time = EXCLUDED.requests_time
     RETURNING requests_count INTO processed_count;
 
     -- Optionally delete processed logs
@@ -152,9 +220,9 @@ BEGIN
     ELSE
         RAISE NOTICE 'Processed % log records for date % (logs retained)', processed_count, process_date;
     END IF;
-
+  RETURN processed_count;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SET search_path = logs, public;
 
 
 CREATE OR REPLACE FUNCTION clear_daily_requests(
@@ -174,55 +242,7 @@ BEGIN
     DELETE FROM sensor_nodes_daily_requests WHERE day < clear_date;
     -- Clear groups_daily_requests
     DELETE FROM groups_daily_requests WHERE day < clear_date;
+    DELETE FROM status_code_daily_requests WHERE day < clear_date;
+    DELETE FROM user_daily_requests WHERE day < clear_date;
 END;
 $$ LANGUAGE plpgsql;
-
-
--- testing data
--- add the agents and clients
-INSERT INTO agents (label, key)
-  VALUES
-  ('Chrome','chrome')
-, ('Safari','safari')
-, ('Firefox','firefox')
-, ('Ie8','ie8')
-  ON CONFLICT DO NOTHING;
-INSERT INTO apI_clients (label, key)
-  VALUES
-  ('Chrome','chrome')
-, ('Safari','safari')
-, ('Firefox','firefox')
-, ('Ie8','ie8')
-  ON CONFLICT DO NOTHING;
-
-
-
-TRUNCATE api_logs;
-SELECT clear_daily_requests();
-WITH random_calls AS (
-  SELECT day
-  , gen_random_uuid() as api_key
-  , (ARRAY[201, 200, 404, 301])[floor(random() * 4 + 1)] as status_code
-  , (ARRAY['chrome','safari','firefox','ie8'])[floor(random() * 4 + 1)] as agent
-  , (ARRAY[201, 200, 404, 301])[floor(random() * 4 + 1)]
-  , (ARRAY[
-      jsonb_build_object('sensors_id', floor(random() * 100 + 1))
-    , jsonb_build_object('sensor_nodes_id', floor(random() * 100 + 1))
-    , jsonb_build_object('groups_id', floor(random() * 100 + 1))
-    , jsonb_build_object()
-    ])[floor(random() * 4 + 1)] as params
-  FROM generate_series(current_date-7, current_date, '1day'::interval) as day
-  JOIN (SELECT generate_series(1,1000,1)) ON TRUE
-  )
-  INSERT INTO api_logs (api_key, status_code, endpoint, agent, params, added_on)
-  SELECT api_key, status_code,
-  CASE
-      WHEN params->'sensors_id' IS NOT NULL THEN format('sensors/%s', params->'sensors_id')
-      WHEN params->'sensor_nodes_id' IS NOT NULL THEN format('locations/%s', params->'sensor_nodes_id')
-      WHEN params->'groups_id' IS NOT NULL THEN format('groups/%s', params->'groups_id')
-      ELSE 'sensors/latest' END
-  , agent, params, day
-  FROM random_calls;
-  SELECT process_daily_logs(dy::date, FALSE)
-  FROM generate_series(current_date-8, current_date, '1day') as dy;
-  SELECT COUNT(1) FROM api_logs;
