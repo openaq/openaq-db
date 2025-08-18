@@ -2,7 +2,7 @@
   -- create log/metrics schema
 
 --CREATE SCHEMA IF NOT EXISTS logging;
---SET search_path = logging, public;
+--SET search_path = logs, public;
 
 -- simple table to hold the raw logs until we process them
 CREATE TABLE IF NOT EXISTS api_logs (
@@ -89,15 +89,26 @@ CREATE TABLE IF NOT EXISTS status_code_daily_requests (
   , UNIQUE(status_code, day)
 );
 
+CREATE TABLE IF NOT EXISTS resource_daily_requests (
+    resource text NOT NULL
+  , day date NOT NULL
+  , requests_count int NOT NULL
+  , requests_time int NOT NULL
+  , UNIQUE(resource, day)
+);
 
-    CREATE VIEW uncategorized_requests AS
-    SELECT l.agent, COUNT(1) as n, ROUND(SUM(timing)) as time, MIN(added_on) as first_requested, MAX(added_on) as last_requested, COUNT(DISTINCT api_key) as keys
-    FROM api_logs l
-    LEFT JOIN LATERAL (SELECT agents_id FROM agents a WHERE l.agent ~ a.pattern LIMIT 1) rp ON TRUE
-    WHERE rp.agents_id IS NULL
-    --AND l.added_on::date = current_date - 1
-    GROUP BY 1;
 
+CREATE VIEW uncategorized_requests AS
+SELECT l.agent
+  , COUNT(1) as n
+  , ROUND(SUM(timing)) as time
+  , MIN(added_on) as first_requested
+  , MAX(added_on) as last_requested
+  , COUNT(DISTINCT api_key) as keys
+FROM api_logs l
+LEFT JOIN LATERAL (SELECT agents_id FROM agents a WHERE l.agent ~ a.pattern LIMIT 1) rp ON TRUE
+WHERE rp.agents_id IS NULL
+GROUP BY 1;
 
 
 -- run this vie pg_cron
@@ -128,6 +139,17 @@ BEGIN
     WHERE l.added_on::date = process_date
     GROUP BY status_code
     ON CONFLICT (status_code, day)
+    DO UPDATE SET
+    requests_count = EXCLUDED.requests_count
+    , requests_time = EXCLUDED.requests_time;
+
+
+    INSERT INTO resource_daily_requests (resource, requests_count, requests_time, day)
+    SELECT endpoint, COUNT(1), ROUND(SUM(timing)), process_date
+    FROM api_logs l
+    WHERE l.added_on::date = process_date
+    GROUP BY endpoint
+    ON CONFLICT (resource, day)
     DO UPDATE SET
     requests_count = EXCLUDED.requests_count
     , requests_time = EXCLUDED.requests_time;
@@ -169,15 +191,15 @@ BEGIN
     -- Assumes params contains sensor_nodes_id
     INSERT INTO sensor_nodes_daily_requests (sensor_nodes_id, day, requests_count, requests_time)
     SELECT
-        (l.params->>'sensor_nodes_id')::int
+        (l.params->>'locations_id')::int
         , process_date
         , COUNT(1)
         , ROUND(SUM(timing))
     FROM api_logs l
     WHERE l.added_on::date = process_date
-      AND l.params ? 'sensor_nodes_id'
-      AND l.params->>'sensor_nodes_id' ~ '^\d+$'
-    GROUP BY (l.params->>'sensor_nodes_id')::int
+      AND l.params ? 'locations_id'
+      AND l.params->>'locations_id' ~ '^\d+$'
+    GROUP BY (l.params->>'locations_id')::int
     ON CONFLICT (sensor_nodes_id, day)
     DO UPDATE SET requests_count = EXCLUDED.requests_count
     , requests_time = EXCLUDED.requests_time;
@@ -243,6 +265,7 @@ BEGIN
     -- Clear groups_daily_requests
     DELETE FROM groups_daily_requests WHERE day < clear_date;
     DELETE FROM status_code_daily_requests WHERE day < clear_date;
+    DELETE FROM resource_daily_requests WHERE day < clear_date;
     DELETE FROM user_daily_requests WHERE day < clear_date;
 END;
 $$ LANGUAGE plpgsql;
