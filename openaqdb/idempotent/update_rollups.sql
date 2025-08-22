@@ -795,6 +795,12 @@ BEGIN
     AND data_averaging_period_seconds IS NULL;
     -----------
     UPDATE sensors
+    SET data_averaging_period_seconds = 3600
+    , data_logging_period_seconds = 3600
+    WHERE source_id ~* '^iqair'
+    AND data_averaging_period_seconds IS NULL;
+    -----------
+    UPDATE sensors
     SET data_averaging_period_seconds = 1
     , data_logging_period_seconds = 1
 	    WHERE source_id ~* 'habitatmap'
@@ -806,6 +812,7 @@ BEGIN
 		PERFORM update_instruments('clarity', 9, 4);
 		PERFORM update_instruments('purpleair', 8, 3);
 		PERFORM update_instruments('habitatmap', 11, 5);
+    	PERFORM update_instruments('iqair', 11957, 17);
 		PERFORM update_instruments('senstate', 10, 6);
 END;
 $$ LANGUAGE plpgsql;
