@@ -795,6 +795,12 @@ BEGIN
     AND data_averaging_period_seconds IS NULL;
     -----------
     UPDATE sensors
+    SET data_averaging_period_seconds = 3600
+    , data_logging_period_seconds = 3600
+    WHERE source_id ~* '^iqair'
+    AND data_averaging_period_seconds IS NULL;
+    -----------
+    UPDATE sensors
     SET data_averaging_period_seconds = 1
     , data_logging_period_seconds = 1
 	    WHERE source_id ~* 'habitatmap'
