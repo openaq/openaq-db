@@ -191,15 +191,17 @@ BEGIN
     -- Assumes params contains sensor_nodes_id
     INSERT INTO sensor_nodes_daily_requests (sensor_nodes_id, day, requests_count, requests_time)
     SELECT
-        (l.params->>'locations_id')::int
+         COALESCE((l.params->>'locations_id')::int, sy.sensor_nodes_id)
         , process_date
         , COUNT(1)
         , ROUND(SUM(timing))
     FROM api_logs l
+    JOIN sensors s ON (s.sensors_id = (l.params->>'sensors_id')::int)
+    JOIN sensor_systems sy ON (sy.sensor_systems_id = s.sensor_systems_id)
     WHERE l.added_on::date = process_date
-      AND l.params ? 'locations_id'
-      AND l.params->>'locations_id' ~ '^\d+$'
-    GROUP BY (l.params->>'locations_id')::int
+        AND ((l.params ? 'locations_id' AND l.params->>'locations_id' ~ '^\d+$')
+        OR (l.params ? 'sensors_id' AND l.params->>'sensors_id' ~ '^\d+$'))
+      GROUP BY 1
     ON CONFLICT (sensor_nodes_id, day)
     DO UPDATE SET requests_count = EXCLUDED.requests_count
     , requests_time = EXCLUDED.requests_time;
