@@ -812,6 +812,7 @@ BEGIN
 		PERFORM update_instruments('clarity', 9, 4);
 		PERFORM update_instruments('purpleair', 8, 3);
 		PERFORM update_instruments('habitatmap', 11, 5);
+    	PERFORM update_instruments('iqair', 11957, 17);
 		PERFORM update_instruments('senstate', 10, 6);
 END;
 $$ LANGUAGE plpgsql;
