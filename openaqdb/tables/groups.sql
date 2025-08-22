@@ -102,11 +102,43 @@ CREATE TABLE IF NOT EXISTS sensor_nodes_groups (
   INSERT INTO rules (rules_id, label, where_statement, params_config)
   OVERRIDING SYSTEM VALUE
   VALUES
-    (1, 'Countries', 'countries_id=ANY(:countries_id)', jsonb_build_object('countries_id', 'int[]'))
-  , (2, 'Providers', 'providers_id=ANY(:providers_id)', jsonb_build_object('providers_id', 'int[]'))
+    (1, 'Countries', 'countries_id=ANY((($1)->>''countries_id'')::int[])', jsonb_build_object('countries_id', 'int[]'))
+  , (2, 'Providers', 'providers_id=ANY((($1)->>''providers_id'')::int[])', jsonb_build_object('providers_id', 'int[]'))
   , (3, 'Owners', 'users_id=ANY(:users_id)', jsonb_build_object('_id', 'int[]'))
   , (4, 'Locations', 'sensor_nodes_id=ANY(:sensor_nodes_id)', jsonb_build_object('sensor_nodes_id', 'int[]'))
-  , (5, 'Geom', 'geom @> :geom', jsonb_build_object('geom', 'geometry'));
+  , (5, 'Geom', 'geom @> :geom', jsonb_build_object('geom', 'geometry'))
+  ON CONFLICT(rules_id) DO UPDATE
+  SET where_statement = EXCLUDED.where_statement;
+
+
+  -- the purpose of this function is to use the rules to create
+CREATE OR REPLACE FUNCTION get_group_sensor_nodes(gid int) RETURNS int AS $$
+DECLARE
+    qry text;
+    prm jsonb;
+    n int;
+BEGIN
+    -- set the query up
+    SELECT format('INSERT INTO sensor_nodes_groups (sensor_nodes_id, groups_id) SELECT id, $2 FROM locations_view_cached WHERE %s ON CONFLICT DO NOTHING'
+    , array_to_string(array_agg(where_statement), ' AND '))
+    INTO qry
+    FROM group_rules g
+    JOIN rules r USING (rules_id)
+    WHERE groups_id = gid;
+    -- now the params
+    SELECT jsonb_object_agg((x).key, (x).value) INTO prm
+    FROM (SELECT jsonb_each(args) as x
+          FROM group_rules
+          WHERE groups_id = gid);
+    -- delete the existing data
+    DELETE FROM sensor_nodes_groups WHERE groups_id = gid;
+    -- Prepare and execute via using
+    EXECUTE qry USING prm, gid; --(
+    GET DIAGNOSTICS n = ROW_COUNT;
+  RETURN n;
+END;
+$$ LANGUAGE plpgsql;
+
 
 
 -- some test examples
@@ -115,25 +147,13 @@ CREATE TABLE IF NOT EXISTS sensor_nodes_groups (
   VALUES
   (1, 'testing', 1);
 
+
+  TRUNCATE group_rules;
   INSERT INTO group_rules (groups_id, rules_id, args)
   VALUES
-  (1, 1, jsonb_build_object('countries_id', '{1}'));
+  (1, 1, jsonb_build_object('countries_id', '{155}'))
+  , (1, 2, jsonb_build_object('providers_id', '{119}'))
+  ;
 
 
--- CREATE OR REPLACE FUNCTION get_group_sensor_nodes2(gid int) RETURNS text AS $$ --RETURNS SETOF int AS $$
--- DECLARE
---     qry text;
--- BEGIN
---     -- set the query up
---     SELECT format('SELECT id FROM locations_view_cached WHERE %s'
---     , array_to_string(array_agg(where_statement), ' AND '))
---     INTO qry
---     FROM group_rules g
---     JOIN rules r USING (rules_id)
---     WHERE groups_id = gid;
---     -- Prepare and execute via using
---     RETURN QUERY EXECUTE query USING (
---       SELECT jsonb_each_text((SELECT args FROM group_rules WHERE groups_id = gid))
---     );
--- END;
--- $$ LANGUAGE plpgsql;
+SELECT get_group_sensor_nodes(1);
