@@ -59,6 +59,16 @@ WITH countries_locations AS (
   JOIN sensors_rollup sl USING (sensors_id)
 	WHERE sn.is_public AND s.is_public
   GROUP BY countries_id, measurands_id
+  -----------------------------------
+), countries_providers AS (
+-----------------------------------
+  SELECT sn.countries_id
+  , array_agg( DISTINCT sn.providers_id) as providers_ids
+  FROM sensor_nodes sn
+  JOIN sensor_systems ss USING (sensor_nodes_id)
+  JOIN sensors s USING (sensor_systems_id)
+	WHERE sn.is_public AND s.is_public
+  GROUP BY countries_id
 -----------------------------------
 ), countries_rollup AS (
 -----------------------------------
@@ -73,6 +83,7 @@ WITH countries_locations AS (
         )
     ) as parameters
 	, array_agg(DISTINCT m.measurands_id) AS parameter_ids
+
   FROM countries_parameters cp
   JOIN measurands m USING (measurands_id)
   JOIN countries_locations l USING (countries_id)
@@ -88,8 +99,10 @@ WITH countries_locations AS (
   , cl.providers_count
   , cr.parameters
   , cr.parameter_ids
+  , cp.providers_ids
   FROM countries
   JOIN countries_locations cl USING (countries_id)
+  JOIN countries_providers cp USING (countries_id)
   LEFT JOIN countries_rollup cr USING (countries_id);
 
 
