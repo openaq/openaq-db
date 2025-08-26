@@ -43,6 +43,7 @@ WITH countries_locations AS (
   SELECT countries_id
   , COUNT(1) as locations_count
   , COUNT(DISTINCT providers_id) as providers_count
+  , array_agg( DISTINCT providers_id) as providers_ids
   FROM sensor_nodes
   GROUP BY countries_id
 -----------------------------------
@@ -59,16 +60,6 @@ WITH countries_locations AS (
   JOIN sensors_rollup sl USING (sensors_id)
 	WHERE sn.is_public AND s.is_public
   GROUP BY countries_id, measurands_id
-  -----------------------------------
-), countries_providers AS (
------------------------------------
-  SELECT sn.countries_id
-  , array_agg( DISTINCT sn.providers_id) as providers_ids
-  FROM sensor_nodes sn
-  JOIN sensor_systems ss USING (sensor_nodes_id)
-  JOIN sensors s USING (sensor_systems_id)
-	WHERE sn.is_public AND s.is_public
-  GROUP BY countries_id
 -----------------------------------
 ), countries_rollup AS (
 -----------------------------------
@@ -99,10 +90,9 @@ WITH countries_locations AS (
   , cl.providers_count
   , cr.parameters
   , cr.parameter_ids
-  , cp.providers_ids
+  , cl.providers_ids
   FROM countries
   JOIN countries_locations cl USING (countries_id)
-  JOIN countries_providers cp USING (countries_id)
   LEFT JOIN countries_rollup cr USING (countries_id);
 
 
