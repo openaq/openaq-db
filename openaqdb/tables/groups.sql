@@ -1,5 +1,13 @@
-DROP TABLE IF EXISTS groups CASCADE;
-DROP TABLE IF EXISTS groups_sensors CASCADE;
+-- views
+  -- groups_view_pre
+  -- groups_sources_classify
+  -- groups_view
+DROP MATERIALIZED VIEW IF EXISTS groups_view;
+DROP VIEW IF EXISTS groups_view_pre;
+DROP MATERIALIZED VIEW IF EXISTS groups_sources_classify;
+
+DROP TABLE IF EXISTS groups_sensors;
+DROP TABLE IF EXISTS groups;
 -- functions
   -- nodes_from_group
   -- nodes_from_project (2)
@@ -8,13 +16,6 @@ DROP FUNCTION IF EXISTS public.nodes_from_project(int);
 DROP FUNCTION IF EXISTS public.nodes_from_project(text);
 DROP FUNCTION IF EXISTS public.project_in_nodes(int[], int[]);
 
--- views
-  -- groups_view_pre
-  -- groups_sources_classify
-  -- groups_view
-DROP VIEW IF EXISTS groups_view_pre CASCADE;
-DROP MATERIALIZED VIEW IF EXISTS groups_sources_classify CASCADE;
-DROP MATERIALIZED VIEW IF EXISTS groups_view CASCADE;
 
 -- update_rollups
 -- Drop functions
@@ -97,16 +98,19 @@ CREATE TABLE IF NOT EXISTS sensor_nodes_groups (
     , PRIMARY KEY (groups_id, sensor_nodes_id)
 );
 
+CREATE OR REPLACE FUNCTION as_int_array(jsonb) RETURNS int[] AS $$
+  SELECT translate($1::text, '[]', '{}')::int[];
+$$ LANGUAGE SQL;
 
   -- rules
   INSERT INTO rules (rules_id, label, where_statement, params_config)
   OVERRIDING SYSTEM VALUE
   VALUES
-    (1, 'Countries', 'countries_id=ANY((($1)->>''countries_id'')::int[])', jsonb_build_object('countries_id', 'int[]'))
-  , (2, 'Providers', 'providers_id=ANY((($1)->>''providers_id'')::int[])', jsonb_build_object('providers_id', 'int[]'))
-  , (3, 'Owners', 'users_id=ANY(:users_id)', jsonb_build_object('_id', 'int[]'))
-  , (4, 'Locations', 'sensor_nodes_id=ANY(:sensor_nodes_id)', jsonb_build_object('sensor_nodes_id', 'int[]'))
-  , (5, 'Geom', 'geom @> :geom', jsonb_build_object('geom', 'geometry'))
+    (1, 'Countries', 'countries_id=ANY(as_int_array($1->''countries_id''))', jsonb_build_object('countries_id', 'int[]'))
+  , (2, 'Providers', 'providers_id=ANY(as_int_array($1->''providers_id''))', jsonb_build_object('providers_id', 'int[]'))
+  , (3, 'Owners', 'users_id=ANY(as_int_array($1->''users_id''))', jsonb_build_object('_id', 'int[]'))
+  , (4, 'Locations', 'id=ANY(as_int_array($1->''sensor_nodes_id''))', jsonb_build_object('sensor_nodes_id', 'int[]'))
+  , (5, 'Geom', 'geom @> ($1->>''geom'')::geometry', jsonb_build_object('geom', 'geometry'))
   ON CONFLICT(rules_id) DO UPDATE
   SET where_statement = EXCLUDED.where_statement;
 
@@ -138,22 +142,3 @@ BEGIN
   RETURN n;
 END;
 $$ LANGUAGE plpgsql;
-
-
-
--- some test examples
-  INSERT INTO groups (groups_id, label, users_id)
-  OVERRIDING SYSTEM VALUE
-  VALUES
-  (1, 'testing', 1);
-
-
-  TRUNCATE group_rules;
-  INSERT INTO group_rules (groups_id, rules_id, args)
-  VALUES
-  (1, 1, jsonb_build_object('countries_id', '{155}'))
-  , (1, 2, jsonb_build_object('providers_id', '{119}'))
-  ;
-
-
-SELECT get_group_sensor_nodes(1);
