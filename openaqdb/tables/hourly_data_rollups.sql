@@ -105,7 +105,8 @@ BEGIN
    , ed
    FROM data_tables
    WHERE table_schema = 'public'
-   AND table_name = 'hourly_data';
+   AND table_name = 'hourly_data'
+   ON CONFLICT DO NOTHING;
    RETURN _table_name;
 END;
 $$ LANGUAGE plpgsql;

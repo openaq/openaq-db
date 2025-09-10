@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS data_table_partitions (
   , table_name text NOT NULL
   , start_date date NOT NULL
   , end_date date NOT NULL
+  , UNIQUE(table_schema, table_name)
 );
 
 CREATE SEQUENCE IF NOT EXISTS partitions_stats_sq START 10;
@@ -113,7 +114,8 @@ BEGIN
    , ed
    FROM data_tables
    WHERE table_schema = 'public'
-   AND table_name = 'measurements';
+   AND table_name = 'measurements'
+   ON CONFLICT DO NOTHING;
    RETURN _table_name;
 END;
 $$ LANGUAGE plpgsql;
