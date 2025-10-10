@@ -47,5 +47,16 @@ INSERT INTO measurands_map (key, measurands_id, units, source_name) VALUES
 , ('um025', 130, '', 'houston')
 , ('relativehumidity', 98, '', 'airqoon')
 , ('pressure', 95, '', 'airqoon')
+, ('bc_370', 19866, '', 'cac')
+, ('bc_375', 19861, '', 'cac')
+, ('bc_470', 19862, '', 'cac')
+, ('bc_528', 19863, '', 'cac')
+, ('bc_625', 19864, '', 'cac')
+, ('bc_880', 19865, '', 'cac')
+, ('wd', 22, '', 'cac')
+, ('ws', 34, '', 'cac')
+, ('nox', 23, '', 'cpcb')
+, ('wind_direction', 22, '', 'cpcb')
+, ('wind_speed', 34, '', 'cpcb')
 ON CONFLICT DO NOTHING
 ;
