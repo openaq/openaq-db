@@ -1,4 +1,8 @@
 
+\set moy_start_date '''2023-01-04'''::date
+\set moy_end_date '''2023-01-05'''::date
+--\set moy_start_date '''2021-12-15'''::date
+--\set moy_end_date '''2023-01-05'''::date
 
 
 -- create some test sites
@@ -98,7 +102,7 @@ WITH fake_times AS (
 --SELECT generate_series(current_date - (365 * 2), current_date, '1d'::interval) as datetime
 -- SELECT generate_series('2021-12-25'::date, '2023-01-05'::date, '1d'::interval) + '0m'::interval as datetime
   SELECT sensors_id, datetime
-  FROM sensors, generate_series('2021-12-15'::date, '2023-01-05'::date, make_interval(secs=>data_logging_period_seconds)) as datetime
+  FROM sensors, generate_series(:moy_start_date, :moy_end_date, make_interval(secs=>data_logging_period_seconds)) as datetime
   ) INSERT INTO measurements (datetime, sensors_id, value)
   --SELECT f.datetime, s.sensors_id, date_part('day', as_utc(datetime - interval '1sec', t.tzid))
   SELECT as_utc(datetime, t.tzid)
@@ -137,7 +141,7 @@ SELECT * FROM verify_email('john.mccormack@example.com', (SELECT verification_co
 SELECT * FROM create_user('Richard Tauber', 'richiet@example.com', '$pbkdf2-sha256$29000$nrMXtfT48DbQi3hJPPF/ug$z2gRQoGySzvJ3zeFDl6hbKXqkMO81JJ9eP7sgzn.Hp0', '0.0.0.0/32', 'Person');
 SELECT * FROM verify_email('richiet@example.com', (SELECT verification_code FROM users WHERE email_address = 'richiet@example.com'));
 
- 
+
 
 -- WITH data AS (
 -- SELECT generate_series('2024-01-01', '2024-02-01', '15m'::interval) as datetime

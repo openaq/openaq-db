@@ -119,6 +119,13 @@ SELECT cron.schedule_in_database(
   , 'openaq'
 );
 
+SELECT cron.schedule_in_database(
+  'process-yesterdays-logs'
+  , '0 1 * * *'
+  , $$SELECT logs.process_daily_logs()$$
+  , 'openaq'
+);
+
 
  CREATE OR REPLACE FUNCTION stop_rollups(bool DEFAULT 't') RETURNS bigint AS $$
   WITH jobs AS (

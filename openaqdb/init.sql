@@ -53,6 +53,7 @@ GRANT ALL ON FUNCTIONS to :DATABASE_WRITE_USER;
 \i tables/users.sql
 \i tables/flags.sql
 \i tables/metadata.sql
+\i tables/logs.sql
 \i idempotent/util_functions.sql
 
 --\i tables/rollups.sql
