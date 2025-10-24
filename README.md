@@ -16,6 +16,8 @@ Rather than tracking version to version migration files, it is recommended to ma
 ## change names/passwords as needed
 ## from the repo root directory
 docker compose up --build
+## If you want the mock data added try
+ADD_MOCK_DATA=true docker compose up --build
 ```
 
 # Connecting to DB

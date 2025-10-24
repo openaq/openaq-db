@@ -88,6 +88,10 @@ INSERT INTO measurands (measurand, units, display, description) VALUES
 , 'ug/m2'
 , 'BC @ 470 nm'
 , '')
+, ( 'bc_370'
+, 'ug/m2'
+, 'BC @ 370 nm'
+, 'Estimate of ultraviolet particulate matter (UVPM)')
 , ( 'bc_375'
 , 'ug/m2'
 , 'BC @ 375 nm'

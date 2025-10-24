@@ -1,8 +1,9 @@
-version: "3"
 services:
   db:
     build:
       context: .
+      args:
+        - ADD_MOCK_DATA=${ADD_MOCK_DATA}
       dockerfile: Dockerfile
     ports:
       - "5777:5432"

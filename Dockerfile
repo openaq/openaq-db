@@ -1,6 +1,7 @@
 FROM postgis/postgis:16-3.4 as pg
 
 LABEL maintainer="OpenAQ"
+ARG ADD_MOCK_DATA=false
 
 # defaults that may be overwritten by env
 ENV POSTGIS_MAJOR 3
@@ -24,7 +25,11 @@ EXPOSE 5432
  # Docker image will automatically run scripts in `/docker-entrypoint-initdb.d`
  RUN mkdir -p /docker-entrypoint-initdb.d \
      && echo "#!/bin/bash" >/docker-entrypoint-initdb.d/001_initdb.sh \
-     && echo "/openaqdb/init.sh" >> /docker-entrypoint-initdb.d/001_initdb.sh \
-     && echo "/openaqdb/mock.sh" >> /docker-entrypoint-initdb.d/001_initdb.sh
+     && echo "/openaqdb/init.sh" >> /docker-entrypoint-initdb.d/001_initdb.sh
+
+
+RUN if [ "$ADD_MOCK_DATA" = "true" ]; then \
+    echo "/openaqdb/mock.sh" >> /docker-entrypoint-initdb.d/001_initdb.sh;  \
+  fi
 
 WORKDIR /openaqdb
