@@ -1,6 +1,150 @@
-CREATE SCHEMA IF NOT EXISTS deployments;
+CREATE SCHEMA IF NOT EXISTS fetcher;
+SET search_path = fetcher, public;
 
-SET search_path = deployments, public;
+-- Helper function to validate individual cron fields
+CREATE OR REPLACE FUNCTION cron_validate_part(field_value TEXT, min_val INTEGER, max_val INTEGER)
+RETURNS BOOLEAN AS $$
+DECLARE
+    parts TEXT[];
+    part TEXT;
+    range_parts TEXT[];
+    step_parts TEXT[];
+    num INTEGER;
+BEGIN
+    -- Handle asterisk
+    IF field_value = '*' THEN
+        RETURN TRUE;
+    END IF;
+
+    -- Handle step values (*/n or number/n)
+    IF position('/' in field_value) > 0 THEN
+        step_parts := string_to_array(field_value, '/');
+        IF array_length(step_parts, 1) != 2 THEN
+            RETURN FALSE;
+        END IF;
+
+        -- Validate step number
+        BEGIN
+            num := step_parts[2]::INTEGER;
+            IF num <= 0 OR num > max_val THEN
+                RETURN FALSE;
+            END IF;
+        EXCEPTION WHEN OTHERS THEN
+            RETURN FALSE;
+        END;
+
+        -- If first part is *, it's valid
+        IF step_parts[1] = '*' THEN
+            RETURN TRUE;
+        END IF;
+
+        -- Otherwise validate the base number
+        BEGIN
+            num := step_parts[1]::INTEGER;
+            RETURN num >= min_val AND num <= max_val;
+        EXCEPTION WHEN OTHERS THEN
+            RETURN FALSE;
+        END;
+    END IF;
+
+    -- Handle comma-separated values
+    IF position(',' in field_value) > 0 THEN
+        parts := string_to_array(field_value, ',');
+        FOREACH part IN ARRAY parts
+        LOOP
+            IF NOT cron_validate_part(part, min_val, max_val) THEN
+                RETURN FALSE;
+            END IF;
+        END LOOP;
+        RETURN TRUE;
+    END IF;
+
+    -- Handle ranges (n-m)
+    IF position('-' in field_value) > 0 THEN
+        range_parts := string_to_array(field_value, '-');
+        IF array_length(range_parts, 1) != 2 THEN
+            RETURN FALSE;
+        END IF;
+
+        BEGIN
+            IF range_parts[1]::INTEGER < min_val OR
+               range_parts[1]::INTEGER > max_val OR
+               range_parts[2]::INTEGER < min_val OR
+               range_parts[2]::INTEGER > max_val OR
+               range_parts[1]::INTEGER > range_parts[2]::INTEGER THEN
+                RETURN FALSE;
+            END IF;
+        EXCEPTION WHEN OTHERS THEN
+            RETURN FALSE;
+        END;
+
+        RETURN TRUE;
+    END IF;
+
+    -- Handle single number
+    BEGIN
+        num := field_value::INTEGER;
+        RETURN num >= min_val AND num <= max_val;
+    EXCEPTION WHEN OTHERS THEN
+        RETURN FALSE;
+    END;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+
+CREATE OR REPLACE FUNCTION cron_validate_expr(cron_expr TEXT) RETURNS BOOLEAN AS $$
+DECLARE
+    fields TEXT[];
+    minute_field TEXT;
+    hour_field TEXT;
+    day_field TEXT;
+    month_field TEXT;
+    weekday_field TEXT;
+BEGIN
+    -- Remove extra whitespace and split into fields
+    cron_expr := trim(regexp_replace(cron_expr, '\s+', ' ', 'g'));
+    fields := string_to_array(cron_expr, ' ');
+
+    -- Must have exactly 5 fields
+    IF array_length(fields, 1) != 5 THEN
+        RETURN FALSE;
+    END IF;
+
+    minute_field := fields[1];
+    hour_field := fields[2];
+    day_field := fields[3];
+    month_field := fields[4];
+    weekday_field := fields[5];
+
+    -- Validate minute field (0-59)
+    IF NOT cron_validate_part(minute_field, 0, 59) THEN
+        RETURN FALSE;
+    END IF;
+
+    -- Validate hour field (0-23)
+    IF NOT cron_validate_part(hour_field, 0, 23) THEN
+        RETURN FALSE;
+    END IF;
+
+    -- Validate day field (1-31)
+    IF NOT cron_validate_part(day_field, 1, 31) THEN
+        RETURN FALSE;
+    END IF;
+
+    -- Validate month field (1-12)
+    IF NOT cron_validate_part(month_field, 1, 12) THEN
+        RETURN FALSE;
+    END IF;
+
+    -- Validate weekday field (0-6)
+    IF NOT cron_validate_part(weekday_field, 0, 6) THEN
+        RETURN FALSE;
+    END IF;
+
+    RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
 
 CREATE OR REPLACE FUNCTION cron_evaluate_part(
     field_expr TEXT,
@@ -171,7 +315,7 @@ DECLARE r bool;
 BEGIN
   -- runs every minute
    -- Every minute: TRUE
-  SET search_path = deployments;
+  SET search_path = fetcher;
   IF ((NOT is_cron_ready('* * * * *')) OR (SELECT (
   SELECT SUM(is_cron_ready('* * * * *', tm)::int)
   FROM generate_series(
@@ -277,6 +421,17 @@ BEGIN
   $$ LANGUAGE plpgsql;
 
 
+  SELECT cron_validate_expr('*/61 * * * *');
+  SELECT cron_validate_expr('* */24 * * *');
+  SELECT cron_validate_expr('* * */32 * *');
+  SELECT cron_validate_expr('* * * */13 *');
+  SELECT cron_validate_expr('* * * * */8');
+
+
+  SELECT cron_validate_expr('* * * * *');
+  SELECT cron_validate_expr('*/5 * * * *');
+  SELECT cron_validate_expr('0 1,2 * * 2-4,6');
+
   -- run it right away
   SELECT run_scheduler_tests();
 
@@ -288,3 +443,6 @@ BEGIN
 
   -- every 10min for the first 2 hours of every day
   SELECT check_scheduler('*/10 0,1 * * *', current_date, '1week');
+
+
+SET search_path = public;
