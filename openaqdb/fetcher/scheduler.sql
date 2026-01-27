@@ -1,5 +1,18 @@
+-- ============================================================================
+-- Cron Scheduler Functions
+-- ============================================================================
+-- Provides validation and evaluation of cron expressions for deployment scheduling.
+-- Supports standard 5-field cron format: minute hour day month weekday
+-- Examples: "*/15 * * * *" (every 15 min), "0 9 * * 1-5" (weekdays at 9am)
+
 CREATE SCHEMA IF NOT EXISTS fetcher;
 SET search_path = fetcher, public;
+
+
+-- ============================================================================
+-- Validation Functions
+-- ============================================================================
+-- These functions validate cron expression syntax before storage
 
 -- Helper function to validate individual cron fields
 CREATE OR REPLACE FUNCTION cron_validate_part(field_value TEXT, min_val INTEGER, max_val INTEGER)
@@ -92,6 +105,9 @@ END;
 $$ LANGUAGE plpgsql IMMUTABLE;
 
 
+-- Validates complete cron expression
+-- Returns TRUE if expression is valid, FALSE otherwise
+-- Used as CHECK constraint for cronexpr domain type
 CREATE OR REPLACE FUNCTION cron_validate_expr(cron_expr TEXT) RETURNS BOOLEAN AS $$
 DECLARE
     fields TEXT[];
@@ -146,6 +162,13 @@ END;
 $$ LANGUAGE plpgsql IMMUTABLE;
 
 
+-- ============================================================================
+-- Evaluation Functions
+-- ============================================================================
+-- These functions determine if a cron expression matches a given timestamp
+
+-- Evaluates a single cron field against a current time value
+-- Handles wildcards (*), ranges (1-5), lists (1,3,5), and steps (*/5, 1-10/2)
 CREATE OR REPLACE FUNCTION cron_evaluate_part(
     field_expr TEXT,
     current_value INTEGER,
@@ -215,6 +238,10 @@ END;
 $$ LANGUAGE plpgsql;
 
 
+-- Main evaluation function: determines if cron expression matches given time
+-- Returns TRUE if the cron expression indicates the job should run at check_time
+-- Implements standard cron OR logic: day-of-month OR day-of-week (if either specified)
+-- Used by queue_deployments() to find ready deployments
 CREATE OR REPLACE FUNCTION is_cron_ready(
     cron_expr TEXT,
     check_time TIMESTAMPTZ DEFAULT NOW()
@@ -297,8 +324,15 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-  -- a simple method for checking a potential cron expression
-  CREATE OR REPLACE FUNCTION check_scheduler(ce text, sd timestamptz DEFAULT now(), fr interval DEFAULT '1day') RETURNS jsonb AS $$
+
+-- ============================================================================
+-- Testing and Inspection Functions
+-- ============================================================================
+
+-- Helper function to preview when a cron expression will run
+-- Returns count and array of timestamps when expression matches
+-- Example: check_scheduler('*/15 * * * *', now(), '1 day') shows all runs in next 24h
+CREATE OR REPLACE FUNCTION check_scheduler(ce text, sd timestamptz DEFAULT now(), fr interval DEFAULT '1day') RETURNS jsonb AS $$
     SELECT jsonb_build_object(
       'runs', COUNT(1)
     , 'runtimes', array_agg(tm::timestamp(0))
@@ -308,8 +342,9 @@ $$ LANGUAGE plpgsql;
   $$ LANGUAGE SQL;
 
 
-
--- a set of tests that we can run if/when we update the method
+-- Comprehensive test suite for cron validation and evaluation
+-- Verifies correct behavior across various cron patterns and time ranges
+-- Run after any changes to cron functions to ensure correctness
 CREATE OR REPLACE FUNCTION run_scheduler_tests() RETURNS boolean AS $$
 DECLARE r bool;
 BEGIN

@@ -1,16 +1,21 @@
+-- ============================================================================
+-- Deployment Configuration Schema
+-- ============================================================================
+-- Defines the structure for scheduling and configuring data adapter deployments.
+-- Adapters fetch data from external sources, and deployments group adapters with
+-- schedules, temporal offsets, and execution handlers.
+
 --DROP SCHEMA IF EXISTS fetcher CASCADE;
 CREATE SCHEMA IF NOT EXISTS fetcher;
 SET search_path = fetcher, public;
 
 
-  -- an adapter_client table that keeps track of the custom clients we have made
-  -- and then an adapter table that lists those clients and any config that goes with them,
-  -- -- this is where any upload tool configs will go
-  -- finally the deployments table taht will combind the adapters with a schedule and offset
+-- ============================================================================
+-- Core Tables
+-- ============================================================================
 
--- create a list of queues that will accept a fetch job
-  -- the queue name will will need to be referenced in the deployments
-  -- and is currently an SQS queue name that is set to trigger a lmabda
+-- Handlers: Define execution queues (SQS) for routing deployment jobs
+-- Each deployment references a handler that determines where the job is sent
 CREATE TABLE IF NOT EXISTS handlers (
     handlers_id bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (START WITH 10)
   , label text NOT NULL
@@ -20,7 +25,9 @@ CREATE TABLE IF NOT EXISTS handlers (
 );
 
 
--- this will list all our clients we use for adapters
+-- Adapter Clients: Available adapter implementations
+-- Each represents a specific data source client (air4thai, clarity, etc.)
+-- Multiple adapters can use the same client with different configurations
 CREATE SEQUENCE IF NOT EXISTS adapter_clients_sq START 10;
 CREATE TABLE IF NOT EXISTS adapter_clients (
   adapter_clients_id int PRIMARY KEY DEFAULT nextval('adapter_clients_sq')
@@ -34,9 +41,10 @@ CREATE TABLE IF NOT EXISTS adapter_clients (
   , added_on timestamp with time zone DEFAULT now()
 );
 
-  -- instead of building off the providers table we create this link table
-  -- which allows us to create more than one adapter for a given provider
-  -- if we need to, which mostly we should not
+
+-- Adapters: Links providers to adapter clients with provider-specific configuration
+-- Allows the same adapter client to be reused across multiple providers
+-- The config field stores provider-specific parameters (URLs, field mappings, etc.)
 CREATE TABLE IF NOT EXISTS adapters (
     adapters_id int PRIMARY KEY GENERATED ALWAYS AS IDENTITY (START WITH 10)
   , providers_id int NOT NULL REFERENCES public.providers ON DELETE CASCADE
@@ -46,11 +54,20 @@ CREATE TABLE IF NOT EXISTS adapters (
 );
 
 
- -- * 1,2,3 */5 1-3
+-- ============================================================================
+-- Domain Types
+-- ============================================================================
+
+-- Cron Expression: Custom domain type that validates cron syntax on insert/update
+-- Ensures only valid cron expressions (5 fields: minute hour day month weekday) are stored
+-- Examples: "*/15 * * * *" (every 15 min), "0 9 * * 1-5" (weekdays at 9am)
 CREATE DOMAIN cronexpr AS TEXT
   CONSTRAINT is_valid_cron_expression CHECK (cron_validate_expr(VALUE));
 
 
+-- Deployments: Scheduling definitions for groups of adapters
+-- Each deployment runs on a cron schedule and may include temporal offset for delayed data
+-- last_deployed_datetime tracks most recent queue time for monitoring
 CREATE TABLE IF NOT EXISTS deployments (
     deployments_id int PRIMARY KEY GENERATED ALWAYS AS IDENTITY (START WITH 10)
   , handlers_id int NOT NULL REFERENCES handlers DEFAULT 1
@@ -65,64 +82,30 @@ CREATE TABLE IF NOT EXISTS deployments (
 );
 
 
-  CREATE TABLE IF NOT EXISTS deployment_adapters (
+-- Deployment Adapters: Junction table linking deployments to adapters (many-to-many)
+-- Allows a single deployment to run multiple adapters, or an adapter to run in multiple deployments
+CREATE TABLE IF NOT EXISTS deployment_adapters (
     deployments_id int NOT NULL REFERENCES deployments
   , adapters_id int NOT NULL REFERENCES adapters
   , added_on timestamp with time zone DEFAULT now()
   , PRIMARY KEY (deployments_id, adapters_id)
 );
 
-
-  -- instead of adding it here
---ALTER TABLE providers
---ADD COLUMN adapters_id int NOT NULL DEFAULT 1
---, ADD COLUMN is_active boolean DEFAULT 't'
-
-
-
-
-
--- -- If provider is provided than we use that and ignore the active flag
--- -- otherwise check for adapter and also use the active flag
--- -- otherwise just assume all active providers
--- CREATE OR REPLACE FUNCTION deployment_sources(pid int, aid int) RETURNS jsonb AS $$
--- SELECT --jsonb_build_object('count', COUNT(1))
--- json_agg(metadata)
--- FROM public.providers p
--- JOIN deployments.adapters a ON (p.adapters_id = a.adapters_id)
--- WHERE (pid IS NULL AND aid IS NULL AND p.is_active)
--- OR (aid IS NULL AND p.providers_id = pid)
--- OR (pid IS NULL AND a.adapters_id = aid AND p.is_active);
--- $$ LANGUAGE SQL;
-
-
--- -- should be one
--- SELECT deployment_sources(:airnow, NULL);
--- -- should be about 29
--- SELECT deployment_sources(NULL, 340);
--- -- should be about 150
--- SELECT deployment_sources(NULL, NULL);
-
-
-
--- -- Now we can update the providers with that data
--- SELECT name
--- , temporal_offset as offset
--- , jsonb_array_length(deployment_sources(providers_id, adapters_id)) as sources_count
--- FROM deployments
--- WHERE is_active;
-
-
--- SELECT name
--- , temporal_offset as offset
--- , deployment_sources(providers_id, adapters_id)
--- FROM deployments
--- WHERE is_active
--- AND name ~* 'airnow'
--- ;
-
-
--- Function 1: Get deployments that are ready to run (read-only, no side effects)
+-- ============================================================================
+-- Query Function: Get Ready Deployments
+-- ============================================================================
+-- Read-only function that identifies which deployments should run at given time
+-- Includes adapter count to distinguish between configured and empty deployments
+-- Use this for testing, monitoring, or "dry run" inspection without queueing jobs
+--
+-- Returns:
+--   - deployments_id: Deployment identifier
+--   - key: Unique fetchlog key (format: YYYY-MM-DD/prefix/prefix-YYYYMMDDHH24MI)
+--   - deployment_config: Full JSON payload with adapters, offsets, queue info
+--   - queue_name: SQS queue for routing execution
+--   - adapters_count: Number of adapters assigned (0 = not ready for queueing)
+--
+-- Example: SELECT * FROM get_ready_deployments('2026-01-27 14:30:00');
 CREATE OR REPLACE FUNCTION get_ready_deployments(
   check_time timestamptz DEFAULT now()
 )
@@ -175,7 +158,17 @@ END;
 $$ LANGUAGE plpgsql;
 
 
--- Function 2: Queue the ready deployments to fetchlogs table
+-- ============================================================================
+-- Action Function: Queue Deployments
+-- ============================================================================
+-- Queues ready deployments to fetchlogs table for execution by adapter application
+-- Only queues deployments with adapters assigned (adapters_count > 0)
+-- Uses ON CONFLICT to ensure idempotency - same deployment+time only queued once
+-- Updates last_deployed_datetime for successfully queued deployments
+--
+-- Typically called by pg_cron every minute: SELECT queue_deployments();
+--
+-- Returns: Count of deployments successfully queued (0 if all already queued or conflicted)
 CREATE OR REPLACE FUNCTION queue_deployments(
   check_time timestamptz DEFAULT now()
 )
