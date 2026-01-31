@@ -13,8 +13,19 @@ ALTER TABLE fetchlogs
   , ADD COLUMN IF NOT EXISTS deployment_config jsonb;
 
 
-\i ../scheduler.sql
-\i ../deployments.sql
+CREATE INDEX IF NOT EXISTS fetchlogs_unqueued_scheduled_idx
+ON fetchlogs(scheduled_datetime)
+WHERE scheduled_datetime IS NOT NULL AND queued_datetime IS NULL;
 
+
+\i ../fetcher/scheduler.sql
+\i ../fetcher/deployments.sql
+\i ../fetcher/deployment_data.sql
+
+
+GRANT USAGE ON SCHEMA fetcher TO postgresread, postgreswrite;
+GRANT SELECT ON ALL TABLES IN SCHEMA fetcher TO postgresread;
+GRANT ALL ON ALL TABLES IN SCHEMA fetcher TO postgreswrite;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA fetcher TO postgreswrite;
 
 COMMIT;

@@ -25,6 +25,12 @@ CREATE TABLE IF NOT EXISTS fetchlogs(
 CREATE INDEX IF NOT EXISTS fetchlogs_completed_datetime_idx ON fetchlogs(completed_datetime);
 CREATE INDEX IF NOT EXISTS fetchlogs_last_modified_idx ON fetchlogs (last_modified);
 
+-- Partial index for polling unqueued scheduled jobs
+-- Optimizes the get_and_mark_queued_jobs() query in fetcher schema
+CREATE INDEX IF NOT EXISTS fetchlogs_unqueued_scheduled_idx
+ON fetchlogs(scheduled_datetime)
+WHERE scheduled_datetime IS NOT NULL AND queued_datetime IS NULL;
+
 
 -- we ingest many fetchlog files at a time so this
 DROP TABLE IF EXISTS ingest_stats;

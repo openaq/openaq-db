@@ -106,5 +106,3 @@ WITH keys as (
 INSERT INTO fetchlogs (key, last_modified)
 SELECT *, now()
 FROM keys;
-
-\i fetcher/deployment_data.sql
