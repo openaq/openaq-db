@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS fetchlogs(
     , scheduled_datetime timestamptz
     , queue_name text
     , queued_datetime timestamptz
-    , deployment_config jsonb
+    , fetcher_config jsonb
 );
 
 CREATE INDEX IF NOT EXISTS fetchlogs_completed_datetime_idx ON fetchlogs(completed_datetime);

@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS deployment_adapters (
 -- Returns:
 --   - deployments_id: Deployment identifier
 --   - key: Unique fetchlog key (format: YYYY-MM-DD/prefix/prefix-YYYYMMDDHH24MI)
---   - deployment_config: Full JSON payload with adapters, offsets, queue info
+--   - fetcher_config: Full JSON payload with adapters, offsets, queue info
 --   - queue_name: SQS queue for routing execution
 --   - adapters_count: Number of adapters assigned (0 = not ready for queueing)
 --
@@ -115,7 +115,7 @@ CREATE OR REPLACE FUNCTION get_ready_deployments(
 RETURNS TABLE (
   deployments_id int
   , key text
-  , deployment_config jsonb
+  , fetcher_config jsonb
   , queue_name text
   , adapters_count bigint
 ) AS $$
@@ -154,7 +154,7 @@ BEGIN
       , 'scheduled_time', check_time
       , 'queue_name', h.queue_name
       , 'adapters', COALESCE(c.adapters_config, '[]'::jsonb)
-  ) as deployment_config
+  ) as fetcher_config
   , h.queue_name
   , COALESCE(c.adapters_count, 0) as adapters_count
   FROM deployments d
@@ -192,18 +192,18 @@ BEGIN
     INSERT INTO public.fetchlogs (
       key
       , scheduled_datetime
-      , deployment_config
+      , fetcher_config
       , queue_name
     )
     SELECT
       key
       , check_time
-      , deployment_config
+      , fetcher_config
       , queue_name
     FROM ready_deployments
     WHERE adapters_count > 0
     ON CONFLICT (key) DO NOTHING
-    RETURNING (deployment_config->>'deployments_id')::int as deployments_id
+    RETURNING (fetcher_config->>'deployments_id')::int as deployments_id
   )
   UPDATE deployments d
   SET last_deployed_datetime = check_time
@@ -238,7 +238,7 @@ RETURNS TABLE (
   , scheduled_datetime timestamptz
   , queued_datetime timestamptz
   , queue_name text
-  , deployment_config jsonb
+  , fetcher_config jsonb
 ) AS $$
 BEGIN
   SET search_path = fetcher, public;
@@ -263,7 +263,7 @@ BEGIN
       , f.scheduled_datetime
       , f.queued_datetime
       , f.queue_name
-      , f.deployment_config
+      , f.fetcher_config
   )
   SELECT * FROM updated_jobs;
 END;
@@ -284,7 +284,7 @@ SELECT
   , f.scheduled_datetime
   , f.queued_datetime
   , f.queue_name
-  , f.deployment_config
+  , f.fetcher_config
   , now() - f.queued_datetime as stuck_duration
 FROM public.fetchlogs f
 WHERE f.queued_datetime IS NOT NULL
@@ -307,16 +307,16 @@ SELECT
   , now() - d.last_deployed_datetime as time_since_last_run
   , (SELECT COUNT(*)
      FROM public.fetchlogs f
-     WHERE f.deployment_config->>'deployments_id' = d.deployments_id::text
+     WHERE f.fetcher_config->>'deployments_id' = d.deployments_id::text
      AND f.scheduled_datetime > now() - interval '24 hours') as runs_last_24h
   , (SELECT COUNT(*)
      FROM public.fetchlogs f
-     WHERE f.deployment_config->>'deployments_id' = d.deployments_id::text
+     WHERE f.fetcher_config->>'deployments_id' = d.deployments_id::text
      AND f.completed_datetime IS NOT NULL
      AND f.scheduled_datetime > now() - interval '24 hours') as completed_last_24h
   , (SELECT COUNT(*)
      FROM public.fetchlogs f
-     WHERE f.deployment_config->>'deployments_id' = d.deployments_id::text
+     WHERE f.fetcher_config->>'deployments_id' = d.deployments_id::text
      AND f.has_error = true
      AND f.scheduled_datetime > now() - interval '24 hours') as errors_last_24h
   , (SELECT COUNT(*)

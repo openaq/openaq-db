@@ -10,7 +10,7 @@ ALTER TABLE fetchlogs
   -- and then once the poller picks it up and queues it
   , ADD COLUMN IF NOT EXISTS queued_datetime timestamptz
   -- and the payload to pass to the queue
-  , ADD COLUMN IF NOT EXISTS deployment_config jsonb;
+  , ADD COLUMN IF NOT EXISTS fetcher_config jsonb;
 
 
 CREATE INDEX IF NOT EXISTS fetchlogs_unqueued_scheduled_idx
