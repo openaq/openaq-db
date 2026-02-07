@@ -125,20 +125,23 @@ BEGIN
     -- set the query up
     SELECT format('INSERT INTO sensor_nodes_groups (sensor_nodes_id, groups_id) SELECT id, $2 FROM locations_view_cached WHERE %s ON CONFLICT DO NOTHING'
     , array_to_string(array_agg(where_statement), ' AND '))
-    INTO qry
+    , COUNT(1)
+    INTO qry, n
     FROM group_rules g
     JOIN rules r USING (rules_id)
     WHERE groups_id = gid;
     -- now the params
     SELECT jsonb_object_agg((x).key, (x).value) INTO prm
     FROM (SELECT jsonb_each(args) as x
-          FROM group_rules
-          WHERE groups_id = gid);
+        FROM group_rules
+        WHERE groups_id = gid);
     -- delete the existing data
     DELETE FROM sensor_nodes_groups WHERE groups_id = gid;
-    -- Prepare and execute via using
-    EXECUTE qry USING prm, gid; --(
-    GET DIAGNOSTICS n = ROW_COUNT;
+      -- Prepare and execute via using
+    IF n > 0 THEN
+      EXECUTE qry USING prm, gid; --(
+      GET DIAGNOSTICS n = ROW_COUNT;
+    END IF;
   RETURN n;
 END;
 $$ LANGUAGE plpgsql;
