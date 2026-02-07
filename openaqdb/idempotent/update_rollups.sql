@@ -100,570 +100,570 @@ CREATE OR REPLACE FUNCTION update_sources() RETURNS VOID AS $$
 
 $$ LANGUAGE SQL;
 
--- CREATE OR REPLACE FUNCTION update_groups() RETURNS VOID AS $$
--- --OVERALL TOTAL
---     INSERT INTO groups (type, name, subtitle)
---     SELECT
---         'total',
---         'total',
---         'All Sensors'
---     ON CONFLICT (type, name)
---     DO NOTHING;
+CREATE OR REPLACE FUNCTION update_groups() RETURNS VOID AS $$
+--OVERALL TOTAL
+    INSERT INTO groups (type, name, subtitle)
+    SELECT
+        'total',
+        'total',
+        'All Sensors'
+    ON CONFLICT (type, name)
+    DO NOTHING;
 
---     -- Each sensor_node
---     INSERT INTO groups (type, name, subtitle)
---     SELECT 'node'
---     , sensor_nodes_id::text
---     , site_name
---     FROM sensor_nodes
---     ON CONFLICT (type, name) DO
---     UPDATE
---     SET
---         subtitle=EXCLUDED.subtitle
---     ;
+    -- Each sensor_node
+    INSERT INTO groups (type, name, subtitle)
+    SELECT 'node'
+    , sensor_nodes_id::text
+    , site_name
+    FROM sensor_nodes
+    ON CONFLICT (type, name) DO
+    UPDATE
+    SET
+        subtitle=EXCLUDED.subtitle
+    ;
 
---     -- Each Country
---     INSERT INTO groups (type, name, subtitle)
---     SELECT
---         'country',
---         iso,
---         name
---     FROM countries
---     WHERE iso is not null and name is not null
---     ON CONFLICT (type, name)
---     DO NOTHING;
+    -- Each Country
+    INSERT INTO groups (type, name, subtitle)
+    SELECT
+        'country',
+        iso,
+        name
+    FROM countries
+    WHERE iso is not null and name is not null
+    ON CONFLICT (type, name)
+    DO NOTHING;
 
---     -- Each Source from AQDC sources
---     /*INSERT INTO groups (type, name, subtitle)
---     SELECT
---         'source',
---         sn.source_name,
---         sn.metadata->>'sensor_node_source_fullname',
---         st_union(geom)::geography
---     FROM sensors
---     LEFT JOIN sensor_systems USING (sensor_systems_id)
---     LEFT JOIN sensor_nodes sn USING (sensor_nodes_id)
---     WHERE sn.metadata @> '{"origin":"AQDC"}'
---     GROUP BY 1,2,3
---     ON CONFLICT (type, name)
---     DO NOTHING;*/
---     INSERT INTO groups (type, name, subtitle, metadata)
---     SELECT 'source', slug, name, sources.metadata
---     FROM sources
---     JOIN sensor_nodes_sources USING (sources_id)
---     JOIN sensor_nodes USING (sensor_nodes_id)
---     WHERE origin='AQDC'
---     ON CONFLICT DO NOTHING
---     ;
+    -- Each Source from AQDC sources
+    /*INSERT INTO groups (type, name, subtitle)
+    SELECT
+        'source',
+        sn.source_name,
+        sn.metadata->>'sensor_node_source_fullname',
+        st_union(geom)::geography
+    FROM sensors
+    LEFT JOIN sensor_systems USING (sensor_systems_id)
+    LEFT JOIN sensor_nodes sn USING (sensor_nodes_id)
+    WHERE sn.metadata @> '{"origin":"AQDC"}'
+    GROUP BY 1,2,3
+    ON CONFLICT (type, name)
+    DO NOTHING;*/
+    INSERT INTO groups (type, name, subtitle, metadata)
+    SELECT 'source', slug, name, sources.metadata
+    FROM sources
+    JOIN sensor_nodes_sources USING (sources_id)
+    JOIN sensor_nodes USING (sensor_nodes_id)
+    WHERE origin='AQDC'
+    ON CONFLICT DO NOTHING
+    ;
 
---     -- each aqdc organization
---     INSERT INTO groups(type, name, subtitle)
---     SELECT DISTINCT 'organization'
---     , slugify(sources.metadata->>'organization')
---     , sources.metadata->>'organization'
---     FROM sources
---     JOIN sensor_nodes_sources USING (sources_id)
---     JOIN sensor_nodes USING (sensor_nodes_id)
---     WHERE origin='AQDC' and sources.metadata ? 'organization'
---     ON CONFLICT DO NOTHING
---     ;
+    -- each aqdc organization
+    INSERT INTO groups(type, name, subtitle)
+    SELECT DISTINCT 'organization'
+    , slugify(sources.metadata->>'organization')
+    , sources.metadata->>'organization'
+    FROM sources
+    JOIN sensor_nodes_sources USING (sources_id)
+    JOIN sensor_nodes USING (sensor_nodes_id)
+    WHERE origin='AQDC' and sources.metadata ? 'organization'
+    ON CONFLICT DO NOTHING
+    ;
 
---     --add country sensors
---     INSERT INTO groups_sensors (groups_id, sensors_id)
---     SELECT
---         groups_id,
---         s.sensors_id
---     FROM sensor_nodes
---     JOIN sensor_systems USING (sensor_nodes_id)
---     JOIN sensors s USING (sensor_systems_id)
---     JOIN groups g ON (country=g.name AND g.type = 'country')
---     ON CONFLICT DO NOTHING
---     ;
+    --add country sensors
+    INSERT INTO groups_sensors (groups_id, sensors_id)
+    SELECT
+        groups_id,
+        s.sensors_id
+    FROM sensor_nodes
+    JOIN sensor_systems USING (sensor_nodes_id)
+    JOIN sensors s USING (sensor_systems_id)
+    JOIN groups g ON (country=g.name AND g.type = 'country')
+    ON CONFLICT DO NOTHING
+    ;
 
---     -- add sensor node sensors
---     INSERT INTO groups_sensors (groups_id, sensors_id)
---     SELECT
---         groups_id,
---         s.sensors_id
---     FROM sensor_nodes
---     JOIN sensor_systems USING (sensor_nodes_id)
---     JOIN sensors s USING (sensor_systems_id)
---     JOIN groups ON (sensor_nodes_id::text=name)
---     ON CONFLICT DO NOTHING;
+    -- add sensor node sensors
+    INSERT INTO groups_sensors (groups_id, sensors_id)
+    SELECT
+        groups_id,
+        s.sensors_id
+    FROM sensor_nodes
+    JOIN sensor_systems USING (sensor_nodes_id)
+    JOIN sensors s USING (sensor_systems_id)
+    JOIN groups ON (sensor_nodes_id::text=name)
+    ON CONFLICT DO NOTHING;
 
---     -- add total sensors
---     INSERT INTO groups_sensors (groups_id, sensors_id)
---     SELECT
---         groups_id,
---         s.sensors_id
---     FROM
---     sensors s, groups
---     WHERE groups.type='total' and groups.name='total'
---     ON CONFLICT DO NOTHING
---     ;
+    -- add total sensors
+    INSERT INTO groups_sensors (groups_id, sensors_id)
+    SELECT
+        groups_id,
+        s.sensors_id
+    FROM
+    sensors s, groups
+    WHERE groups.type='total' and groups.name='total'
+    ON CONFLICT DO NOTHING
+    ;
 
---     -- add sensors for source
---     INSERT INTO groups_sensors (groups_id, sensors_id)
---     SELECT
---         groups_id,
---         s.sensors_id
---     FROM groups
---     JOIN sources ON (groups.name=sources.slug)
---     JOIN sensor_nodes_sources USING (sources_id)
---     JOIN sensor_systems USING (sensor_nodes_id)
---     JOIN sensors s USING (sensor_systems_id)
---     ON CONFLICT DO NOTHING
---     ;
---     -- add sensors for organizations
---     INSERT INTO groups_sensors (groups_id, sensors_id)
---     SELECT
---         groups_id,
---         s.sensors_id
---     FROM groups
---     JOIN sources ON (groups.name=slugify(sources.metadata->>'organization'))
---     JOIN sensor_nodes_sources USING (sources_id)
---     JOIN sensor_systems USING (sensor_nodes_id)
---     JOIN sensors s USING (sensor_systems_id)
---     WHERE sources.metadata ? 'organization'
---     ON CONFLICT DO NOTHING
---     ;
--- $$ LANGUAGE SQL;
-
-
--- CREATE OR REPLACE FUNCTION rollups_daily(
---     _start timestamptz = now()
--- )
--- RETURNS VOID
--- LANGUAGE PLPGSQL
--- SET SEARCH_PATH TO public
--- AS $$
--- DECLARE
--- _st timestamptz := date_trunc('day', _start);
--- _et timestamptz := date_trunc('day', _start) + '1 day'::interval - '1 second'::interval;
--- BEGIN
--- RAISE NOTICE 'Updating daily Rollups  %  --- %', _start, clock_timestamp();
--- --RAISE NOTICE '% %', _st, _et;
--- --RAISE NOTICE 'Deleting %', clock_timestamp();
---     DELETE FROM rollups
---     WHERE
---         rollup='day'
---         AND
---         st=_st
---     ;
--- --RAISE NOTICE 'Creating temp table by sensor %', clock_timestamp();
--- CREATE TEMP TABLE dailyrolluptemp_by_sensor AS
--- SELECT
---         sensors_id,
---         'day' as rollup,
---         _st as st,
---         _et as et,
---         min(datetime) as datetime_first,
---         max(datetime) as datetime_last,
---         count(*) as value_count,
---         sum(value) as value_sum,
---         last(value, datetime) as last_value,
---         min(lon) as minx,
---         min(lat) as miny,
---         max(lon) as maxx,
---         max(lat) as maxy,
---         last(st_makepoint(lon,lat)::geometry, datetime) as last_point
---     FROM measurements
---     JOIN groups_sensors USING (sensors_id)
---     JOIN sensors USING (sensors_id)
---     WHERE datetime >= _st
---     AND datetime <= _et
---     GROUP BY 1,2,3,4
---         ;
-
--- --RAISE NOTICE 'Created temp table by sensor from % to % - %: %', _st, _et, clock_timestamp(), (SELECT COUNT(1) FROM dailyrolluptemp_by_sensor);
--- --RAISE NOTICE 'Creating temp table by group %', clock_timestamp();
-
---     CREATE TEMP TABLE dailyrolluptemp AS
---     SELECT
---         groups_id,
---         measurands_id,
---         last(sensors_id, datetime_last) as sensors_id,
---         rollup,
---         st,
---         et,
---         min(datetime_first) as datetime_first,
---         max(datetime_last) as datetime_last,
---         sum(value_count) as value_count,
---         sum(value_sum) as value_sum,
---         last(last_value, datetime_last) as last_value,
---         min(minx) as minx,
---         min(miny) as miny,
---         max(maxx) as maxx,
---         max(maxy) as maxy,
---         last(last_point, datetime_last) as last_point
---     FROM dailyrolluptemp_by_sensor
---     JOIN groups_sensors USING (sensors_id)
---     JOIN sensors USING (sensors_id)
---     GROUP BY 1,2,4,5,6
---         ;
+    -- add sensors for source
+    INSERT INTO groups_sensors (groups_id, sensors_id)
+    SELECT
+        groups_id,
+        s.sensors_id
+    FROM groups
+    JOIN sources ON (groups.name=sources.slug)
+    JOIN sensor_nodes_sources USING (sources_id)
+    JOIN sensor_systems USING (sensor_nodes_id)
+    JOIN sensors s USING (sensor_systems_id)
+    ON CONFLICT DO NOTHING
+    ;
+    -- add sensors for organizations
+    INSERT INTO groups_sensors (groups_id, sensors_id)
+    SELECT
+        groups_id,
+        s.sensors_id
+    FROM groups
+    JOIN sources ON (groups.name=slugify(sources.metadata->>'organization'))
+    JOIN sensor_nodes_sources USING (sources_id)
+    JOIN sensor_systems USING (sensor_nodes_id)
+    JOIN sensors s USING (sensor_systems_id)
+    WHERE sources.metadata ? 'organization'
+    ON CONFLICT DO NOTHING
+    ;
+$$ LANGUAGE SQL;
 
 
---     RAISE NOTICE 'inserting % records - %', (SELECT COUNT(1) FROM dailyrolluptemp), clock_timestamp();
+CREATE OR REPLACE FUNCTION rollups_daily(
+    _start timestamptz = now()
+)
+RETURNS VOID
+LANGUAGE PLPGSQL
+SET SEARCH_PATH TO public
+AS $$
+DECLARE
+_st timestamptz := date_trunc('day', _start);
+_et timestamptz := date_trunc('day', _start) + '1 day'::interval - '1 second'::interval;
+BEGIN
+RAISE NOTICE 'Updating daily Rollups  %  --- %', _start, clock_timestamp();
+--RAISE NOTICE '% %', _st, _et;
+--RAISE NOTICE 'Deleting %', clock_timestamp();
+    DELETE FROM rollups
+    WHERE
+        rollup='day'
+        AND
+        st=_st
+    ;
+--RAISE NOTICE 'Creating temp table by sensor %', clock_timestamp();
+CREATE TEMP TABLE dailyrolluptemp_by_sensor AS
+SELECT
+        sensors_id,
+        'day' as rollup,
+        _st as st,
+        _et as et,
+        min(datetime) as datetime_first,
+        max(datetime) as datetime_last,
+        count(*) as value_count,
+        sum(value) as value_sum,
+        last(value, datetime) as last_value,
+        min(lon) as minx,
+        min(lat) as miny,
+        max(lon) as maxx,
+        max(lat) as maxy,
+        last(st_makepoint(lon,lat)::geometry, datetime) as last_point
+    FROM measurements
+    JOIN groups_sensors USING (sensors_id)
+    JOIN sensors USING (sensors_id)
+    WHERE datetime >= _st
+    AND datetime <= _et
+    GROUP BY 1,2,3,4
+        ;
 
---     INSERT INTO rollups (
---         groups_id,
---         measurands_id,
---         sensors_id,
---         rollup,
---         st,
---         et,
---         datetime_first,
---         datetime_last,
---         value_count,
---         value_sum,
---         last_value,
---         minx,
---         miny,
---         maxx,
---         maxy,
---         last_point
---     ) SELECT * FROM dailyrolluptemp;
+--RAISE NOTICE 'Created temp table by sensor from % to % - %: %', _st, _et, clock_timestamp(), (SELECT COUNT(1) FROM dailyrolluptemp_by_sensor);
+--RAISE NOTICE 'Creating temp table by group %', clock_timestamp();
 
---     drop table dailyrolluptemp_by_sensor;
---     drop table dailyrolluptemp;
-
--- END;
--- $$;
-
--- -- Added just to make it easier to rebuild the daily rollups during dev
--- DROP FUNCTION IF EXISTS rollups_daily_full();
--- CREATE OR REPLACE FUNCTION rollups_daily_full() RETURNS VOID AS $$
--- WITH days AS (
---   SELECT date_trunc('day', datetime - '1sec'::interval) as day
---   FROM measurements
---   GROUP BY date_trunc('day', datetime - '1sec'::interval)
--- )
--- SELECT rollups_daily(day)
--- FROM days;
--- $$ LANGUAGE SQL;
-
-
--- CREATE OR REPLACE FUNCTION rollups_monthly(
---     _start timestamptz = now()
--- )
--- RETURNS VOID
--- LANGUAGE PLPGSQL
--- SET SEARCH_PATH TO public
--- AS $$
--- DECLARE
--- _st timestamptz := date_trunc('month', _start);
--- _et timestamptz := date_trunc('month', _start) + '1 month'::interval - '1 second'::interval;
--- BEGIN
--- RAISE NOTICE 'Updating Monthly Rollups  %  --- %', _start, clock_timestamp();
-
--- RAISE NOTICE '% %', _st, _et;
---     DELETE FROM rollups
---     WHERE
---         rollup='month'
---         AND
---         st=_st
---     ;
---     INSERT INTO rollups (
---         groups_id,
---         measurands_id,
---         sensors_id,
---         rollup,
---         st,
---         et,
---         datetime_first,
---         datetime_last,
---         value_count,
---         value_sum,
---         last_value,
---         minx,
---         miny,
---         maxx,
---         maxy,
---         last_point
---     ) SELECT
---         groups_id,
---         measurands_id,
---         last(sensors_id, datetime_last),
---         'month',
---         _st,
---         _et,
---         min(datetime_first),
---         max(datetime_last),
---         sum(value_count),
---         sum(value_sum),
---         last(last_value, datetime_last),
---         min(minx),
---         min(miny),
---         max(maxx),
---         max(maxy),
---         last(last_point, datetime_last)
---     FROM rollups
---     WHERE
---         rollup = 'day' AND
---         st>= _st and st <= _et
---     GROUP BY 1,2,4,5,6
---     ;
--- END;
--- $$;
-
--- CREATE OR REPLACE FUNCTION rollups_yearly(
---     _start timestamptz = now()
--- )
--- RETURNS VOID
--- LANGUAGE PLPGSQL
--- SET SEARCH_PATH TO public
--- AS $$
--- DECLARE
--- _st timestamptz := date_trunc('year', _start);
--- _et timestamptz := date_trunc('year', _start) + '1 year'::interval - '1 second'::interval;
--- BEGIN
--- RAISE NOTICE 'Updating yearly Rollups  % --- %', _start, clock_timestamp();
-
--- RAISE NOTICE '% %', _st, _et;
---     DELETE FROM rollups
---     WHERE
---         rollup='year'
---         AND
---         st=_st
---     ;
---     INSERT INTO rollups (
---         groups_id,
---         measurands_id,
---         sensors_id,
---         rollup,
---         st,
---         et,
---         datetime_first,
---         datetime_last,
---         value_count,
---         value_sum,
---         last_value,
---         minx,
---         miny,
---         maxx,
---         maxy,
---         last_point
---     ) SELECT
---         groups_id,
---         measurands_id,
---         last(sensors_id, datetime_last),
---         'year',
---         _st,
---         _et,
---         min(datetime_first),
---         max(datetime_last),
---         sum(value_count),
---         sum(value_sum),
---         last(last_value, datetime_last),
---         min(minx),
---         min(miny),
---         max(maxx),
---         max(maxy),
---         last(last_point, datetime_last)
---     FROM rollups
---         WHERE
---             rollup = 'month' AND
---         st>= _st and st <= _et
---         GROUP BY 1,2,4,5,6
---         ;
--- END;
--- $$;
+    CREATE TEMP TABLE dailyrolluptemp AS
+    SELECT
+        groups_id,
+        measurands_id,
+        last(sensors_id, datetime_last) as sensors_id,
+        rollup,
+        st,
+        et,
+        min(datetime_first) as datetime_first,
+        max(datetime_last) as datetime_last,
+        sum(value_count) as value_count,
+        sum(value_sum) as value_sum,
+        last(last_value, datetime_last) as last_value,
+        min(minx) as minx,
+        min(miny) as miny,
+        max(maxx) as maxx,
+        max(maxy) as maxy,
+        last(last_point, datetime_last) as last_point
+    FROM dailyrolluptemp_by_sensor
+    JOIN groups_sensors USING (sensors_id)
+    JOIN sensors USING (sensors_id)
+    GROUP BY 1,2,4,5,6
+        ;
 
 
+    RAISE NOTICE 'inserting % records - %', (SELECT COUNT(1) FROM dailyrolluptemp), clock_timestamp();
 
--- CREATE OR REPLACE FUNCTION rollups_total()
--- RETURNS VOID
--- LANGUAGE PLPGSQL
--- SET SEARCH_PATH TO public
--- AS $$
--- BEGIN
--- RAISE NOTICE 'Updating total Rollups --- %', clock_timestamp();
---     DELETE FROM rollups
---     WHERE rollup='total'
---     ;
---     INSERT INTO rollups (
---             groups_id,
---             measurands_id,
---             sensors_id,
---             rollup,
---             st,
---             et,
---             datetime_first,
---             datetime_last,
---             value_count,
---             value_sum,
---             last_value,
---         minx,
---         miny,
---         maxx,
---         maxy,
---             last_point
---         ) SELECT
---             groups_id,
---             measurands_id,
---             last(sensors_id, datetime_last),
---             'total',
---             '1970-01-01'::timestamptz,
---             '2999-01-01'::timestamptz,
---             min(datetime_first),
---             max(datetime_last),
---             sum(value_count),
---             sum(value_sum),
---             last(last_value, datetime_last),
---         min(minx),
---         min(miny),
---         max(maxx),
---         max(maxy),
---         last(last_point, datetime_last)
---         FROM rollups
---         WHERE
---             rollup = 'year'
---         GROUP BY 1,2,4,5,6
---         ;
--- END;
--- $$;
+    INSERT INTO rollups (
+        groups_id,
+        measurands_id,
+        sensors_id,
+        rollup,
+        st,
+        et,
+        datetime_first,
+        datetime_last,
+        value_count,
+        value_sum,
+        last_value,
+        minx,
+        miny,
+        maxx,
+        maxy,
+        last_point
+    ) SELECT * FROM dailyrolluptemp;
 
--- CREATE OR REPLACE PROCEDURE run_updates(job_id int default Null, config jsonb default Null)
--- LANGUAGE PLPGSQL
--- AS $$
--- DECLARE
--- _st timestamptz;
--- _et timestamptz;
--- t timestamptz;
--- st timestamptz;
--- BEGIN
+    drop table dailyrolluptemp_by_sensor;
+    drop table dailyrolluptemp;
 
---     SELECT current_timestamp INTO st;
+END;
+$$;
 
---     SELECT (config->>'start')::timestamptz INTO STRICT _st;
---     SELECT (config->>'end')::timestamptz INTO STRICT _et;
-
---     _st:=date_trunc('day',coalesce(_st, now() - '1 days'::interval));
---     _et:=date_trunc('day',coalesce(_et, now()));
-
---     RAISE NOTICE 'updating timezones';
---     UPDATE sensor_nodes
---     SET timezones_id = get_timezones_id(geom)
---     WHERE geom IS NOT NULL
---     AND timezones_id IS NULL;
-
---     -- sn_lastpoint pulls directly from measurements at the moment
---     UPDATE sensor_nodes
---     SET timezones_id = get_timezones_id(sn_lastpoint(sensor_nodes_id))
---     WHERE geom IS NULL
---     AND ismobile
---     AND timezones_id IS NULL;
-
---     SELECT log_performance('update-timezone', st) INTO st;
-
---     RAISE NOTICE 'updating countries';
---     update sensor_nodes set country = country(geom)
---     where (country is null OR country = '99') and geom is not null;
---     update sensor_nodes set country = country(sn_lastpoint(sensor_nodes_id))
---     where country is null and geom is null and ismobile;
---     COMMIT;
---     SELECT log_performance('update-countries', st) INTO st;
-
---     RAISE NOTICE 'Updating sources Tables';
---     PERFORM update_sources();
---     COMMIT;
---     SELECT log_performance('update-sources', st) INTO st;
-
---     RAISE NOTICE 'Updating Groups Tables';
---     PERFORM update_groups();
---     COMMIT;
---     SELECT log_performance('update-groups', st) INTO st;
-
---     FOR t IN
---         (SELECT g FROM generate_series(_st, _et, '1 day'::interval) as g)
---     LOOP
---         --CALL refresh_continuous_aggregate('measurements_daily',_st,_et);
---         PERFORM rollups_daily(t);
---         COMMIT;
---     END LOOP;
-
---     SELECT log_performance('update-daily-rollups', st) INTO st;
-
---     FOR t IN
---         (SELECT g FROM generate_series(_st, _et, '1 month'::interval) as g)
---     LOOP
---         PERFORM rollups_monthly(t);
---         COMMIT;
---     END LOOP;
-
---     SELECT log_performance('update-monthly-rollups', st) INTO st;
-
---     FOR t IN
---         (SELECT g FROM generate_series(_st, _et, '1 year'::interval) as g)
---     LOOP
---         PERFORM rollups_yearly(t);
---         COMMIT;
---     END LOOP;
-
---     SELECT log_performance('update-yearly-rollups', st) INTO st;
-
---     PERFORM rollups_total();
---     COMMIT;
---     SELECT log_performance('update-total-rollups', st) INTO st;
-
---     RAISE NOTICE 'REFRESHING sensors_first_last';
---     REFRESH MATERIALIZED VIEW sensors_first_last;
---     COMMIT;
---     SELECT log_performance('update-sensors-first-last', st) INTO st;
-
---     RAISE NOTICE 'REFRESHING sensor_nodes_json';
---     REFRESH MATERIALIZED VIEW sensor_nodes_json;
---     COMMIT;
---     SELECT log_performance('update-sensor-nodes-json', st) INTO st;
-
---     RAISE NOTICE 'REFRESHING groups_view';
---     REFRESH MATERIALIZED VIEW groups_view;
---     COMMIT;
---     SELECT log_performance('update-groups-view', st) INTO st;
-
---     RAISE NOTICE 'REFRESHING sensor_stats';
---     REFRESH MATERIALIZED VIEW sensor_stats;
---     COMMIT;
---     SELECT log_performance('update-sensor-stats', st) INTO st;
-
---     RAISE NOTICE 'REFRESHING city_stats';
---     REFRESH MATERIALIZED VIEW city_stats;
---     COMMIT;
---     SELECT log_performance('update-city-stats', st) INTO st;
-
---     RAISE NOTICE 'REFRESHING country_stats';
---     REFRESH MATERIALIZED VIEW country_stats;
---     COMMIT;
---     SELECT log_performance('update-country-stats', st) INTO st;
-
---     RAISE NOTICE 'REFRESHING locations_base_v2';
---     REFRESH MATERIALIZED VIEW locations_base_v2;
---     COMMIT;
---     SELECT log_performance('update-locations-base', st) INTO st;
-
---     RAISE NOTICE 'REFRESHING locations';
---     REFRESH MATERIALIZED VIEW locations;
---     COMMIT;
---     SELECT log_performance('update-locations', st) INTO st;
-
---     RAISE NOTICE 'REFRESHING measurements_fastapi_base';
---     REFRESH MATERIALIZED VIEW measurements_fastapi_base;
---     COMMIT;
---     SELECT log_performance('update-measurements-base', st) INTO st;
-
--- END;
--- $$;
+-- Added just to make it easier to rebuild the daily rollups during dev
+DROP FUNCTION IF EXISTS rollups_daily_full();
+CREATE OR REPLACE FUNCTION rollups_daily_full() RETURNS VOID AS $$
+WITH days AS (
+  SELECT date_trunc('day', datetime - '1sec'::interval) as day
+  FROM measurements
+  GROUP BY date_trunc('day', datetime - '1sec'::interval)
+)
+SELECT rollups_daily(day)
+FROM days;
+$$ LANGUAGE SQL;
 
 
--- DROP PROCEDURE IF EXISTS run_updates_full();
--- CREATE OR REPLACE PROCEDURE run_updates_full() AS $$
--- DECLARE
--- _start timestamptz;
--- BEGIN
--- SELECT MIN(datetime) INTO _start FROM measurements;
--- CALL run_updates(NULL, jsonb_build_object('start', _start));
--- END;
--- $$ LANGUAGE plpgsql;
+CREATE OR REPLACE FUNCTION rollups_monthly(
+    _start timestamptz = now()
+)
+RETURNS VOID
+LANGUAGE PLPGSQL
+SET SEARCH_PATH TO public
+AS $$
+DECLARE
+_st timestamptz := date_trunc('month', _start);
+_et timestamptz := date_trunc('month', _start) + '1 month'::interval - '1 second'::interval;
+BEGIN
+RAISE NOTICE 'Updating Monthly Rollups  %  --- %', _start, clock_timestamp();
+
+RAISE NOTICE '% %', _st, _et;
+    DELETE FROM rollups
+    WHERE
+        rollup='month'
+        AND
+        st=_st
+    ;
+    INSERT INTO rollups (
+        groups_id,
+        measurands_id,
+        sensors_id,
+        rollup,
+        st,
+        et,
+        datetime_first,
+        datetime_last,
+        value_count,
+        value_sum,
+        last_value,
+        minx,
+        miny,
+        maxx,
+        maxy,
+        last_point
+    ) SELECT
+        groups_id,
+        measurands_id,
+        last(sensors_id, datetime_last),
+        'month',
+        _st,
+        _et,
+        min(datetime_first),
+        max(datetime_last),
+        sum(value_count),
+        sum(value_sum),
+        last(last_value, datetime_last),
+        min(minx),
+        min(miny),
+        max(maxx),
+        max(maxy),
+        last(last_point, datetime_last)
+    FROM rollups
+    WHERE
+        rollup = 'day' AND
+        st>= _st and st <= _et
+    GROUP BY 1,2,4,5,6
+    ;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION rollups_yearly(
+    _start timestamptz = now()
+)
+RETURNS VOID
+LANGUAGE PLPGSQL
+SET SEARCH_PATH TO public
+AS $$
+DECLARE
+_st timestamptz := date_trunc('year', _start);
+_et timestamptz := date_trunc('year', _start) + '1 year'::interval - '1 second'::interval;
+BEGIN
+RAISE NOTICE 'Updating yearly Rollups  % --- %', _start, clock_timestamp();
+
+RAISE NOTICE '% %', _st, _et;
+    DELETE FROM rollups
+    WHERE
+        rollup='year'
+        AND
+        st=_st
+    ;
+    INSERT INTO rollups (
+        groups_id,
+        measurands_id,
+        sensors_id,
+        rollup,
+        st,
+        et,
+        datetime_first,
+        datetime_last,
+        value_count,
+        value_sum,
+        last_value,
+        minx,
+        miny,
+        maxx,
+        maxy,
+        last_point
+    ) SELECT
+        groups_id,
+        measurands_id,
+        last(sensors_id, datetime_last),
+        'year',
+        _st,
+        _et,
+        min(datetime_first),
+        max(datetime_last),
+        sum(value_count),
+        sum(value_sum),
+        last(last_value, datetime_last),
+        min(minx),
+        min(miny),
+        max(maxx),
+        max(maxy),
+        last(last_point, datetime_last)
+    FROM rollups
+        WHERE
+            rollup = 'month' AND
+        st>= _st and st <= _et
+        GROUP BY 1,2,4,5,6
+        ;
+END;
+$$;
+
+
+
+CREATE OR REPLACE FUNCTION rollups_total()
+RETURNS VOID
+LANGUAGE PLPGSQL
+SET SEARCH_PATH TO public
+AS $$
+BEGIN
+RAISE NOTICE 'Updating total Rollups --- %', clock_timestamp();
+    DELETE FROM rollups
+    WHERE rollup='total'
+    ;
+    INSERT INTO rollups (
+            groups_id,
+            measurands_id,
+            sensors_id,
+            rollup,
+            st,
+            et,
+            datetime_first,
+            datetime_last,
+            value_count,
+            value_sum,
+            last_value,
+        minx,
+        miny,
+        maxx,
+        maxy,
+            last_point
+        ) SELECT
+            groups_id,
+            measurands_id,
+            last(sensors_id, datetime_last),
+            'total',
+            '1970-01-01'::timestamptz,
+            '2999-01-01'::timestamptz,
+            min(datetime_first),
+            max(datetime_last),
+            sum(value_count),
+            sum(value_sum),
+            last(last_value, datetime_last),
+        min(minx),
+        min(miny),
+        max(maxx),
+        max(maxy),
+        last(last_point, datetime_last)
+        FROM rollups
+        WHERE
+            rollup = 'year'
+        GROUP BY 1,2,4,5,6
+        ;
+END;
+$$;
+
+CREATE OR REPLACE PROCEDURE run_updates(job_id int default Null, config jsonb default Null)
+LANGUAGE PLPGSQL
+AS $$
+DECLARE
+_st timestamptz;
+_et timestamptz;
+t timestamptz;
+st timestamptz;
+BEGIN
+
+    SELECT current_timestamp INTO st;
+
+    SELECT (config->>'start')::timestamptz INTO STRICT _st;
+    SELECT (config->>'end')::timestamptz INTO STRICT _et;
+
+    _st:=date_trunc('day',coalesce(_st, now() - '1 days'::interval));
+    _et:=date_trunc('day',coalesce(_et, now()));
+
+    RAISE NOTICE 'updating timezones';
+    UPDATE sensor_nodes
+    SET timezones_id = get_timezones_id(geom)
+    WHERE geom IS NOT NULL
+    AND timezones_id IS NULL;
+
+    -- sn_lastpoint pulls directly from measurements at the moment
+    UPDATE sensor_nodes
+    SET timezones_id = get_timezones_id(sn_lastpoint(sensor_nodes_id))
+    WHERE geom IS NULL
+    AND ismobile
+    AND timezones_id IS NULL;
+
+    SELECT log_performance('update-timezone', st) INTO st;
+
+    RAISE NOTICE 'updating countries';
+    update sensor_nodes set country = country(geom)
+    where (country is null OR country = '99') and geom is not null;
+    update sensor_nodes set country = country(sn_lastpoint(sensor_nodes_id))
+    where country is null and geom is null and ismobile;
+    COMMIT;
+    SELECT log_performance('update-countries', st) INTO st;
+
+    RAISE NOTICE 'Updating sources Tables';
+    PERFORM update_sources();
+    COMMIT;
+    SELECT log_performance('update-sources', st) INTO st;
+
+    RAISE NOTICE 'Updating Groups Tables';
+    PERFORM update_groups();
+    COMMIT;
+    SELECT log_performance('update-groups', st) INTO st;
+
+    FOR t IN
+        (SELECT g FROM generate_series(_st, _et, '1 day'::interval) as g)
+    LOOP
+        --CALL refresh_continuous_aggregate('measurements_daily',_st,_et);
+        PERFORM rollups_daily(t);
+        COMMIT;
+    END LOOP;
+
+    SELECT log_performance('update-daily-rollups', st) INTO st;
+
+    FOR t IN
+        (SELECT g FROM generate_series(_st, _et, '1 month'::interval) as g)
+    LOOP
+        PERFORM rollups_monthly(t);
+        COMMIT;
+    END LOOP;
+
+    SELECT log_performance('update-monthly-rollups', st) INTO st;
+
+    FOR t IN
+        (SELECT g FROM generate_series(_st, _et, '1 year'::interval) as g)
+    LOOP
+        PERFORM rollups_yearly(t);
+        COMMIT;
+    END LOOP;
+
+    SELECT log_performance('update-yearly-rollups', st) INTO st;
+
+    PERFORM rollups_total();
+    COMMIT;
+    SELECT log_performance('update-total-rollups', st) INTO st;
+
+    RAISE NOTICE 'REFRESHING sensors_first_last';
+    REFRESH MATERIALIZED VIEW sensors_first_last;
+    COMMIT;
+    SELECT log_performance('update-sensors-first-last', st) INTO st;
+
+    RAISE NOTICE 'REFRESHING sensor_nodes_json';
+    REFRESH MATERIALIZED VIEW sensor_nodes_json;
+    COMMIT;
+    SELECT log_performance('update-sensor-nodes-json', st) INTO st;
+
+    RAISE NOTICE 'REFRESHING groups_view';
+    REFRESH MATERIALIZED VIEW groups_view;
+    COMMIT;
+    SELECT log_performance('update-groups-view', st) INTO st;
+
+    RAISE NOTICE 'REFRESHING sensor_stats';
+    REFRESH MATERIALIZED VIEW sensor_stats;
+    COMMIT;
+    SELECT log_performance('update-sensor-stats', st) INTO st;
+
+    RAISE NOTICE 'REFRESHING city_stats';
+    REFRESH MATERIALIZED VIEW city_stats;
+    COMMIT;
+    SELECT log_performance('update-city-stats', st) INTO st;
+
+    RAISE NOTICE 'REFRESHING country_stats';
+    REFRESH MATERIALIZED VIEW country_stats;
+    COMMIT;
+    SELECT log_performance('update-country-stats', st) INTO st;
+
+    RAISE NOTICE 'REFRESHING locations_base_v2';
+    REFRESH MATERIALIZED VIEW locations_base_v2;
+    COMMIT;
+    SELECT log_performance('update-locations-base', st) INTO st;
+
+    RAISE NOTICE 'REFRESHING locations';
+    REFRESH MATERIALIZED VIEW locations;
+    COMMIT;
+    SELECT log_performance('update-locations', st) INTO st;
+
+    RAISE NOTICE 'REFRESHING measurements_fastapi_base';
+    REFRESH MATERIALIZED VIEW measurements_fastapi_base;
+    COMMIT;
+    SELECT log_performance('update-measurements-base', st) INTO st;
+
+END;
+$$;
+
+
+DROP PROCEDURE IF EXISTS run_updates_full();
+CREATE OR REPLACE PROCEDURE run_updates_full() AS $$
+DECLARE
+_start timestamptz;
+BEGIN
+SELECT MIN(datetime) INTO _start FROM measurements;
+CALL run_updates(NULL, jsonb_build_object('start', _start));
+END;
+$$ LANGUAGE plpgsql;
 
 
 CREATE OR REPLACE PROCEDURE update_cached_tables() AS $$

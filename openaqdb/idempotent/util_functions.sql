@@ -323,17 +323,17 @@ LEFT JOIN sensor_systems USING (sensor_systems_id)
 ;
 $$ LANGUAGE SQL;
 
--- CREATE OR REPLACE FUNCTION node_from_group(int) returns int AS $$
--- WITH ids AS (
---     SELECT $1 as groups_id
--- )
--- SELECT sensor_nodes_id FROM
--- ids
--- LEFT JOIN groups_sensors USING (groups_id)
--- LEFT JOIN sensors USING (sensors_id)
--- LEFT JOIN sensor_systems USING (sensor_systems_id)
--- ;
--- $$ LANGUAGE SQL;
+CREATE OR REPLACE FUNCTION node_from_group(int) returns int AS $$
+WITH ids AS (
+    SELECT $1 as groups_id
+)
+SELECT sensor_nodes_id FROM
+ids
+LEFT JOIN groups_sensors USING (groups_id)
+LEFT JOIN sensors USING (sensors_id)
+LEFT JOIN sensor_systems USING (sensor_systems_id)
+;
+$$ LANGUAGE SQL;
 
 CREATE OR REPLACE FUNCTION nodes_from_sensors(int[]) returns int[] AS $$
 WITH ids AS (
@@ -346,12 +346,12 @@ LEFT JOIN sensor_systems USING (sensor_systems_id)
 ;
 $$ LANGUAGE SQL;
 
--- CREATE OR REPLACE FUNCTION nodes_from_project(int) returns int[] AS $$
--- select array_agg( DISTINCT sensor_nodes_id) from groups left join groups_sensors using (groups_id) left join sensors using (sensors_id) left join sensor_systems using (sensor_systems_id) where groups_id=$1;
--- $$ LANGUAGE SQL;
--- CREATE OR REPLACE FUNCTION nodes_from_project(text) returns int[] AS $$
--- select array_agg(DISTINCT sensor_nodes_id) from groups left join groups_sensors using (groups_id) left join sensors using (sensors_id) left join sensor_systems using (sensor_systems_id) where name=$1;
--- $$ LANGUAGE SQL;
+CREATE OR REPLACE FUNCTION nodes_from_project(int) returns int[] AS $$
+select array_agg( DISTINCT sensor_nodes_id) from groups left join groups_sensors using (groups_id) left join sensors using (sensors_id) left join sensor_systems using (sensor_systems_id) where groups_id=$1;
+$$ LANGUAGE SQL;
+CREATE OR REPLACE FUNCTION nodes_from_project(text) returns int[] AS $$
+select array_agg(DISTINCT sensor_nodes_id) from groups left join groups_sensors using (groups_id) left join sensors using (sensors_id) left join sensor_systems using (sensor_systems_id) where name=$1;
+$$ LANGUAGE SQL;
 
 
 CREATE OR REPLACE FUNCTION bounds(float, float, float, float) RETURNS geometry AS $$
@@ -407,15 +407,15 @@ RAISE NOTICE '% | %', clock_timestamp(), message;
 END;
 $$ LANGUAGE PLPGSQL;
 
--- CREATE OR REPLACE FUNCTION project_in_nodes(nodes int[], projectid int[]) RETURNS bool AS $$
--- SELECT EXISTS (SELECT 1
--- FROM
--- groups_sensors
--- LEFT JOIN sensors USING (sensors_id)
--- LEFT JOIN sensor_systems USING (sensor_systems_id)
--- WHERE sensor_nodes_id= ANY($1) AND groups_id=ANY($2)
--- );
--- $$ LANGUAGE SQL PARALLEL SAFE;
+CREATE OR REPLACE FUNCTION project_in_nodes(nodes int[], projectid int[]) RETURNS bool AS $$
+SELECT EXISTS (SELECT 1
+FROM
+groups_sensors
+LEFT JOIN sensors USING (sensors_id)
+LEFT JOIN sensor_systems USING (sensor_systems_id)
+WHERE sensor_nodes_id= ANY($1) AND groups_id=ANY($2)
+);
+$$ LANGUAGE SQL PARALLEL SAFE;
 
 CREATE OR REPLACE FUNCTION sn_lastpoint(_sn_id int) returns geometry AS $$
 SELECT st_setsrid(st_makepoint(lon,lat),4326)
