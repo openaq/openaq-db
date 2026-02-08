@@ -1,8 +1,8 @@
 
   -- create log/metrics schema
 
---CREATE SCHEMA IF NOT EXISTS logging;
---SET search_path = logs, public;
+CREATE SCHEMA IF NOT EXISTS logs;
+SET search_path = logs, public;
 
 -- simple table to hold the raw logs until we process them
 CREATE TABLE IF NOT EXISTS api_logs (
@@ -108,7 +108,7 @@ SELECT l.agent
 FROM api_logs l
 LEFT JOIN LATERAL (SELECT agents_id FROM agents a WHERE l.agent ~ a.pattern LIMIT 1) rp ON TRUE
 WHERE rp.agents_id IS NULL
-GROUP BY 1;
+GROUP BY l.agent;
 
 
 -- run this vie pg_cron
@@ -271,3 +271,6 @@ BEGIN
     DELETE FROM user_daily_requests WHERE day < clear_date;
 END;
 $$ LANGUAGE plpgsql;
+
+
+SET search_path = public;

@@ -195,16 +195,6 @@ $$ LANGUAGE SQL;
 
 
 
-
-SELECT datetime
-  , tz_offset
-  , datetime >= '-infinity'::date
-  , datetime <= current_date - '1hour'::interval
-  , current_date - '1hour'::interval
-  FROM hourly_data_queue WHERE calculated_on IS NULL AND queued_on IS NULL ORDER BY datetime DESC LIMIT 10;
-
-
-
 CREATE OR REPLACE FUNCTION fetch_hourly_data_jobs2(n int DEFAULT 1, min_hour timestamptz DEFAULT NULL, max_hour timestamptz DEFAULT NULL) RETURNS TABLE(
     datetime timestamptz
   , tz_offset interval
@@ -531,3 +521,16 @@ LOOP
 END LOOP;
 END;
 $$ LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE VIEW "public"."sensor_hourly_coverage" AS
+  SELECT r.sensors_id,
+    r.datetime,
+    r.value_count,
+    (s.metadata -> 'hourly_frequency'::text)::integer AS expected,
+        CASE
+            WHEN r.value_count >= (s.metadata -> 'hourly_frequency'::text)::integer THEN 100::numeric
+            ELSE round(r.value_count::numeric / (s.metadata -> 'hourly_frequency'::text)::integer::numeric * 100::numeric)
+        END AS coverage
+   FROM hourly_data r
+     JOIN sensors s ON r.sensors_id = s.sensors_id;
