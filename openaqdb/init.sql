@@ -62,7 +62,10 @@ GRANT ALL ON FUNCTIONS to :DATABASE_WRITE_USER;
 \i tables/thresholds.sql
 \i tables/performance_log.sql
 ----
-\i tables/deployments.sql
+
+\i fetcher/scheduler.sql
+\i fetcher/deployments.sql
+
 \i tables/licenses.sql
 \i locations/locations.sql
 \i tables/timezones_views.sql
