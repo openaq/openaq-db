@@ -1,26 +1,24 @@
-from migra import Migration
+#from migra import Migration
+from results import db
 from settings import settings
 from pprint import pprint
-from sqlbag import S
 from datetime import date
 
-from_url = settings.REMOTE_DATABASE_URL
+production_url = settings.REMOTE_DATABASE_URL
 target_url = settings.DATABASE_WRITE_URL
 
 today = date.today().strftime('%Y%m%d')
+a = db(production_url)
+b = db(target_url)
 
-with S(from_url) as ac0, S(target_url) as ac1:
-    m = Migration(
-        ac0,
-        ac1,
-        schema='public',
-    )
-    # turn safety off to allow drops
-    m.set_safety(False)
+public = b.schemadiff_as_statements(a, schema='public')
+logs = b.schemadiff_as_statements(a, schema='logs')
+deployments = b.schemadiff_as_statements(a, schema='deployments')
 
-    m.add_all_changes(privileges=False)
-
-    sql = m.sql.encode('utf8')
-    with open(f'migra/patches/patch_{today}.sql', 'w') as f:
-        for statement in m.statements:
-            f.write(f"----------------\n{statement}\n")
+with open(f"diff_{today}.sql", "w") as f:
+    for statement in logs:
+        f.write(f"----------------\n{statement}\n")
+    for statement in public:
+        f.write(f"----------------\n{statement}\n")
+    for statement in deployments:
+        f.write(f"----------------\n{statement}\n")

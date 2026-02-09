@@ -1,4 +1,5 @@
-FROM postgis/postgis:16-3.4 as pg
+#FROM postgis/postgis:16-3.5 as pg
+FROM postgis/postgis:16-3.5 as pg
 
 LABEL maintainer="OpenAQ"
 ARG ADD_MOCK_DATA=false

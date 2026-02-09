@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS data_table_partitions (
   , table_name text NOT NULL
   , start_date date NOT NULL
   , end_date date NOT NULL
-  , UNIQUE(table_schema, table_name)
+  , CONSTRAINT unique_schema_table_name UNIQUE(table_schema, table_name)
 );
 
 CREATE SEQUENCE IF NOT EXISTS partitions_stats_sq START 10;

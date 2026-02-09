@@ -6,6 +6,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS dblink;
 CREATE EXTENSION IF NOT EXISTS "unaccent"; -- used in slugify
+CREATE EXTENSION IF NOT EXISTS ltree; -- used for the groups
 --END;
 
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
@@ -46,13 +47,13 @@ GRANT ALL ON FUNCTIONS to :DATABASE_WRITE_USER;
 \i tables/measurements.sql
 \i tables/sources.sql
 \i tables/origins.sql
-\i tables/groups.sql
 \i tables/readmes.sql
 \i tables/exports.sql
 \i tables/rejects.sql
 \i tables/users.sql
 \i tables/flags.sql
 \i tables/metadata.sql
+\i tables/logs.sql
 \i idempotent/util_functions.sql
 
 --\i tables/rollups.sql
@@ -74,6 +75,7 @@ GRANT ALL ON FUNCTIONS to :DATABASE_WRITE_USER;
 \i tables/daily_data_rollups.sql
 \i tables/annual_data_rollups.sql
 \i tables/lists.sql
+\i tables/groups.sql
 \i tables/measurements_view.sql
 
 -- Load immutable views/functions

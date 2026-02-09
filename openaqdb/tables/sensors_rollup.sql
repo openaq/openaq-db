@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS sensors_rollup (
   , value_latest double precision NOT NULL          -- last recorded measurement (@ingest)
   , value_count int NOT NULL NOT NULL               -- total count of measurements (@ingest, @rollup)
   , value_avg double precision NOT NULL             -- average of all measurements (@ingest, @rollup)
-  , value_sd double precision NOT NULL              -- sd of all measurements (@ingest, @rollup)
+  , value_sd double precision                       -- sd of all measurements (@ingest, @rollup)
   , value_min double precision NOT NULL             -- lowest measurement value (@ingest, @rollup)
   , value_max double precision NOT NULL             -- highest value measured (@ingest, @rollup)
   , added_on timestamptz NOT NULL DEFAULT now()     -- first time measurements were added (@ingest)
