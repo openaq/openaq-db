@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS api_logs (
   , added_on timestamptz DEFAULT now()
 );
 
+CREATE INDEX CONCURRENTLY idx_api_logs_added_on ON api_logs (added_on);
+
 -- a table to list the agents we care about
 -- also reduces the size of the log table
 CREATE TABLE IF NOT EXISTS agents (
@@ -125,7 +127,8 @@ BEGIN
     SELECT rp.agents_id, COUNT(1), ROUND(SUM(timing)), process_date
     FROM api_logs l
     JOIN LATERAL (SELECT agents_id FROM agents a WHERE l.agent ~ a.pattern LIMIT 1) rp ON TRUE
-    WHERE l.added_on::date = process_date
+    WHERE l.added_on >= process_date
+    AND l.added_on < process_date + 1
     GROUP BY 1
     ON CONFLICT (agents_id, day)
     DO UPDATE SET
@@ -136,7 +139,8 @@ BEGIN
     INSERT INTO status_code_daily_requests (status_code, requests_count, requests_time, day)
     SELECT status_code, COUNT(1), ROUND(SUM(timing)), process_date
     FROM api_logs l
-    WHERE l.added_on::date = process_date
+    WHERE l.added_on >= process_date
+    AND l.added_on < process_date + 1
     GROUP BY status_code
     ON CONFLICT (status_code, day)
     DO UPDATE SET
@@ -147,7 +151,8 @@ BEGIN
     INSERT INTO resource_daily_requests (resource, requests_count, requests_time, day)
     SELECT endpoint, COUNT(1), ROUND(SUM(timing)), process_date
     FROM api_logs l
-    WHERE l.added_on::date = process_date
+    WHERE l.added_on >= process_date
+    AND l.added_on < process_date + 1
     GROUP BY endpoint
     ON CONFLICT (resource, day)
     DO UPDATE SET
@@ -158,7 +163,8 @@ BEGIN
   WITH grouped_data AS (
     SELECT api_key, COUNT(1) as n, ROUND(SUM(timing)) as t
     FROM api_logs l
-    WHERE l.added_on::date = current_date - 1
+    WHERE l.added_on >= current_date - 1
+    AND l.added_on < current_date
     GROUP BY 1
   )
   INSERT INTO user_daily_requests (users_id, requests_count, requests_time, day)
@@ -179,7 +185,8 @@ BEGIN
         , COUNT(1)
         , ROUND(SUM(timing))
     FROM api_logs l
-    WHERE l.added_on::date = process_date
+    WHERE l.added_on >= process_date
+      AND l.added_on < process_date + 1
       AND l.params ? 'sensors_id'
       AND l.params->>'sensors_id' ~ '^\d+$'
     GROUP BY (l.params->>'sensors_id')::int
@@ -198,7 +205,8 @@ BEGIN
     FROM api_logs l
     JOIN sensors s ON (s.sensors_id = (l.params->>'sensors_id')::int)
     JOIN sensor_systems sy ON (sy.sensor_systems_id = s.sensor_systems_id)
-    WHERE l.added_on::date = process_date
+    WHERE l.added_on >= process_date
+      AND l.added_on < process_date + 1
         AND ((l.params ? 'locations_id' AND l.params->>'locations_id' ~ '^\d+$')
         OR (l.params ? 'sensors_id' AND l.params->>'sensors_id' ~ '^\d+$'))
       GROUP BY 1
@@ -230,7 +238,8 @@ BEGIN
         , COUNT(1)
         , ROUND(SUM(timing))
     FROM api_logs l
-    WHERE l.added_on::date = process_date
+    WHERE l.added_on >= process_date
+    AND l.added_on < process_date + 1
     --GROUP BY 1
     ON CONFLICT (day)
     DO UPDATE SET requests_count = EXCLUDED.requests_count
@@ -239,7 +248,9 @@ BEGIN
 
     -- Optionally delete processed logs
     IF delete_processed_logs THEN
-        DELETE FROM api_logs WHERE added_on::date = process_date;
+        DELETE FROM api_logs
+        WHERE l.added_on >= process_date
+        AND l.added_on < process_date + 1;
         RAISE NOTICE 'Processed and deleted % log records for date %', processed_count, process_date;
     ELSE
         RAISE NOTICE 'Processed % log records for date % (logs retained)', processed_count, process_date;
