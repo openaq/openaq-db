@@ -33,7 +33,7 @@ GRANT ALL ON FUNCTIONS to :DATABASE_WRITE_USER;
 
 --BEGIN;
 -- Lookup tables for legacy OPENAQ
-\i tables/sources_from_openaq_v1.sql
+--\i tables/sources_from_openaq_v1.sql
 --COMMIT;
 
 --BEGIN;
