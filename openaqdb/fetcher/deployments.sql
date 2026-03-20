@@ -94,6 +94,40 @@ CREATE TABLE IF NOT EXISTS deployment_adapters (
   , PRIMARY KEY (deployments_id, adapters_id)
 );
 
+
+
+  CREATE OR REPLACE VIEW deployment_adapters_view AS
+  WITH deployment_adapters_config AS (
+    SELECT da.deployments_id
+   , jsonb_agg(
+           jsonb_build_object(
+            'adapters_id', a.adapters_id
+            , 'providers_id', p.providers_id
+            , 'provider_name', p.source_name
+            , 'adapter_client', ac.name
+            , 'adapter_config', a.config
+          )
+        ) as adapters_config
+      --, now() as check_time
+    FROM deployment_adapters da
+    JOIN adapters a ON da.adapters_id = a.adapters_id
+    JOIN fetcher_clients ac ON a.fetcher_clients_id = ac.fetcher_clients_id
+    JOIN public.providers p ON a.providers_id = p.providers_id
+    GROUP BY da.deployments_id
+  )
+  SELECT d.deployments_id
+    , d.label
+    , h.queue_name as queue_url
+    , d.temporal_offset
+   , COALESCE(c.adapters_config, '[]'::jsonb) as adapters
+   , d.filename_prefix
+  , h.output_format
+  FROM deployments d
+  LEFT JOIN deployment_adapters_config c ON (c.deployments_id = d.deployments_id)
+  JOIN handlers h ON d.handlers_id = h.handlers_id;
+
+
+
 -- ============================================================================
 -- Query Function: Get Ready Deployments
 -- ============================================================================
@@ -114,105 +148,60 @@ CREATE OR REPLACE FUNCTION get_ready_deployments(
 )
 RETURNS TABLE (
   deployments_id int
+  , label text
+  , queue_url text
+  , scheduled_datetime timestamptz
+  , temporal_offset int
   , key text
-  , fetcher_config jsonb
-  , queue_name text
-  , adapters_count bigint
+  , adapters jsonb -- array of adapters with confg
 ) AS $$
 BEGIN
   SET search_path = fetcher, public;
   RETURN QUERY
   WITH deployment_adapters_config AS (
-          SELECT da.deployments_id
-          , COUNT(1) as adapters_count
-          , jsonb_agg(
+    SELECT da.deployments_id
+   , jsonb_agg(
            jsonb_build_object(
             'adapters_id', a.adapters_id
-            , 'fetcher_client', ac.name
             , 'providers_id', p.providers_id
             , 'provider_name', p.source_name
-            , 'config', a.config
+            , 'adapter_client', ac.name
+            , 'adapter_config', a.config
           )
         ) as adapters_config
-        FROM deployment_adapters da
-        JOIN adapters a ON da.adapters_id = a.adapters_id
-        JOIN fetcher_clients ac ON a.fetcher_clients_id = ac.fetcher_clients_id
-        JOIN public.providers p ON a.providers_id = p.providers_id
-        GROUP BY da.deployments_id
+      --, now() as check_time
+    FROM deployment_adapters da
+    JOIN adapters a ON da.adapters_id = a.adapters_id
+    JOIN fetcher_clients ac ON a.fetcher_clients_id = ac.fetcher_clients_id
+    JOIN public.providers p ON a.providers_id = p.providers_id
+    GROUP BY da.deployments_id
   )
   SELECT d.deployments_id
+    , d.label
+    , h.queue_name as queue_url
+    , check_time as scheduled_time
+    , d.temporal_offset
     , format('%1$s/%2$s/%2$s-%3$s.%4$s'
         , to_char(check_time, 'YYYY-MM-DD')
         , d.filename_prefix
         , to_char(check_time, 'YYYYMMDDHH24MI')
         , h.output_format
      ) as key
-    , jsonb_build_object(
-      'deployments_id', d.deployments_id
-      , 'label', d.label
-      , 'temporal_offset', d.temporal_offset
-      , 'scheduled_time', check_time
-      , 'queue_name', h.queue_name
-      , 'adapters', COALESCE(c.adapters_config, '[]'::jsonb)
-  ) as fetcher_config
-  , h.queue_name
-  , COALESCE(c.adapters_count, 0) as adapters_count
+   , COALESCE(c.adapters_config, '[]'::jsonb) as adapters
   FROM deployments d
   LEFT JOIN deployment_adapters_config c ON (c.deployments_id = d.deployments_id)
   JOIN handlers h ON d.handlers_id = h.handlers_id
   WHERE d.is_active
+  AND (
+    d.last_deployed_datetime IS NULL
+    OR date_trunc('minute', check_time) != date_trunc('minute', d.last_deployed_datetime)
+  )
   AND is_cron_ready(d.schedule, check_time);
 END;
 $$ LANGUAGE plpgsql;
 
 
--- ============================================================================
--- Action Function: Queue Deployments
--- ============================================================================
--- Queues ready deployments to fetchlogs table for execution by adapter application
--- Only queues deployments with adapters assigned (adapters_count > 0)
--- Uses ON CONFLICT to ensure idempotency - same deployment+time only queued once
--- Updates last_deployed_datetime for successfully queued deployments
---
--- Typically called by pg_cron every minute: SELECT queue_deployments();
---
--- Returns: Count of deployments successfully queued (0 if all already queued or conflicted)
-CREATE OR REPLACE FUNCTION queue_deployments(
-  check_time timestamptz DEFAULT now()
-)
-RETURNS int AS $$
-DECLARE
-  rows_count int;
-BEGIN
-  SET search_path = fetcher, public;
-  WITH ready_deployments AS (
-    SELECT * FROM get_ready_deployments(check_time)
-  ),
-  inserted_rows AS (
-    INSERT INTO public.fetchlogs (
-      key
-      , scheduled_datetime
-      , fetcher_config
-      , queue_name
-    )
-    SELECT
-      key
-      , check_time
-      , fetcher_config
-      , queue_name
-    FROM ready_deployments
-    WHERE adapters_count > 0
-    ON CONFLICT (key) DO NOTHING
-    RETURNING (fetcher_config->>'deployments_id')::int as deployments_id
-  )
-  UPDATE deployments d
-  SET last_deployed_datetime = check_time
-  FROM inserted_rows ir
-  WHERE d.deployments_id = ir.deployments_id;
-  GET DIAGNOSTICS rows_count = ROW_COUNT;
-  RETURN rows_count;
-END;
-$$ LANGUAGE plpgsql;
+
 
 
 -- ============================================================================
@@ -233,41 +222,112 @@ CREATE OR REPLACE FUNCTION get_and_mark_queued_jobs(
   job_limit int DEFAULT NULL
 )
 RETURNS TABLE (
-  fetchlogs_id int
-  , key text
+    fetchlogs_id int
   , scheduled_datetime timestamptz
-  , queued_datetime timestamptz
-  , queue_name text
-  , fetcher_config jsonb
+  , queue_url text
+  , key text
+  , deployments_id int
+  , adapters jsonb -- array of adapters with confg
+  , temporal_offset int
+  , datetime_first timestamptz
+  , datetime_last timestamptz
 ) AS $$
 BEGIN
   SET search_path = fetcher, public;
   RETURN QUERY
-  WITH jobs_to_queue AS (
-    SELECT f.fetchlogs_id
-    FROM public.fetchlogs f
-    WHERE f.scheduled_datetime IS NOT NULL
-    AND f.scheduled_datetime <= now()
-    AND f.queued_datetime IS NULL
-    ORDER BY f.scheduled_datetime ASC
-    LIMIT job_limit
-    FOR UPDATE SKIP LOCKED
-  ),
-  updated_jobs AS (
     UPDATE public.fetchlogs f
     SET queued_datetime = now()
-    FROM jobs_to_queue j
-    WHERE f.fetchlogs_id = j.fetchlogs_id
-    RETURNING f.fetchlogs_id
-      , f.key
-      , f.scheduled_datetime
-      , f.queued_datetime
-      , f.queue_name
-      , f.fetcher_config
-  )
-  SELECT * FROM updated_jobs;
+    FROM (
+      SELECT f.fetchlogs_id
+      FROM fetchlogs f
+      WHERE f.scheduled_datetime IS NOT NULL
+      AND f.scheduled_datetime <= now()
+      AND f.queued_datetime IS NULL
+      ORDER BY f.scheduled_datetime ASC
+      LIMIT job_limit
+      FOR UPDATE SKIP LOCKED
+    ) pf
+    WHERE f.fetchlogs_id = pf.fetchlogs_id
+    RETURNING
+      f.fetchlogs_id
+    , f.scheduled_datetime
+    , f.queue_name
+    , f.key
+    , (fetcher_config->>'deployments_id')::int as deployments_id
+    , (fetcher_config->'adapters') as adapters
+    , (fetcher_config->>'temporal_offset')::int as temporal_offset
+    , (fetcher_config->>'datetime_first')::timestamptz as datetime_first
+    , (fetcher_config->>'datetime_last')::timestamptz as datetime_last;
 END;
 $$ LANGUAGE plpgsql;
+
+
+
+-- ============================================================================
+-- Action Function: Queue Deployments
+-- ============================================================================
+-- Queues ready deployments to fetchlogs table for execution by adapter application
+-- Only queues deployments with adapters assigned (adapters_count > 0)
+-- Uses ON CONFLICT to ensure idempotency - same deployment+time only queued once
+-- Updates last_deployed_datetime for successfully queued deployments
+--
+-- Typically called by pg_cron every minute: SELECT queue_deployments();
+--
+-- Returns: Count of deployments successfully queued (0 if all already queued or conflicted)
+CREATE OR REPLACE FUNCTION queue_deployments(
+  check_time timestamptz DEFAULT now(),
+  job_limit int DEFAULT 100
+)
+RETURNS TABLE (
+    fetchlogs_id int
+  , deployments_id int
+  , queue_url text
+  , scheduled_datetime timestamptz
+  , temporal_offset int
+  , datetime_first timestamptz
+  , datetime_last timestamptz
+  , key text
+  , adapters jsonb -- array of adapters with confg
+) AS $$
+DECLARE
+  rows_count int;
+BEGIN
+  SET search_path = fetcher, public;
+  -- first we are going to add the ready deployments to fetchlogs
+    INSERT INTO public.fetchlogs (
+        key
+      , scheduled_datetime
+      , queue_name
+      , fetcher_config
+    )
+    SELECT d.key
+    , d.scheduled_datetime
+    , d.queue_url
+    , jsonb_build_object(
+          'deployments_id', d.deployments_id
+        , 'temporal_offset', d.temporal_offset
+        , 'adapters', d.adapters
+    )
+    FROM get_ready_deployments(check_time) d
+    WHERE jsonb_array_length(d.adapters) > 0
+    ON CONFLICT DO NOTHING;
+  -- then we quuee them all up from fetchlogs are return evenything
+    RETURN QUERY
+    SELECT m.fetchlogs_id
+    , m.deployments_id
+    , m.queue_url
+    , m.scheduled_datetime
+    , m.temporal_offset
+    , m.datetime_first
+    , m.datetime_last
+    , m.key
+    , m.adapters
+    FROM get_and_mark_queued_jobs(job_limit) m;
+END;
+$$ LANGUAGE plpgsql;
+
+
+
 
 
 -- ============================================================================
@@ -329,5 +389,3 @@ ORDER BY d.is_active DESC, d.last_deployed_datetime DESC NULLS LAST;
 
 
   SET search_path = public;
-
-  COMMIT;

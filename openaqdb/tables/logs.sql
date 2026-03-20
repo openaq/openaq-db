@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS api_logs (
   , added_on timestamptz DEFAULT now()
 );
 
-CREATE INDEX CONCURRENTLY idx_api_logs_added_on ON api_logs (added_on);
+CREATE INDEX idx_api_logs_added_on ON api_logs (added_on);
 
 -- a table to list the agents we care about
 -- also reduces the size of the log table

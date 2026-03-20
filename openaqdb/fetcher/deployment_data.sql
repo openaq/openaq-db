@@ -63,6 +63,7 @@ VALUES
   , (7, 'hanoi', '', 12, 'hanoi', '*/15 * * * *')
   , (8, 'clarity', '', 0, 'clarity', '0 * * * *')
   , (9, 'senstate', '', 0, 'senstate', '*/5 * * * *')
+  , (10, 'testing-1min', 'this is one that should always fire unless its already been deployed for the current time', 0, 'senstate', '* * * * *')
  ON CONFLICT DO NOTHING;
 
 
@@ -89,6 +90,16 @@ VALUES
   JOIN fetcher_clients c USING (fetcher_clients_id)
   WHERE d.label ~* 'cleanup'
   AND c.name = 'airnow'
+  ON CONFLICT DO NOTHING
+  ;
+
+
+  INSERT INTO deployment_adapters (deployments_id, adapters_id)
+  SELECT deployments_id, adapters_id
+  FROM deployments d, adapters
+  JOIN fetcher_clients c USING (fetcher_clients_id)
+  WHERE d.label ~* 'testing'
+  AND c.name = 'senstate'
   ON CONFLICT DO NOTHING
   ;
 
