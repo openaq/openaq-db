@@ -223,3 +223,23 @@ ingest_stats:
     - ingest_count:
         usage: "COUNTER"
         description: ""
+
+
+pg_stat_statements_by_user:
+  query: |
+    SELECT
+      pg_get_userbyid(userid) as db_user,
+      sum(total_exec_time) as total_exec_time_ms,
+      sum(calls) as total_calls
+    FROM pg_stat_statements
+    GROUP BY userid
+  metrics:
+    - db_user:
+        usage: "LABEL"
+        description: "Database user"
+    - total_exec_time_ms:
+        usage: "COUNTER"
+        description: "Total execution time"
+    - total_calls:
+        usage: "COUNTER"
+        description: "Total calls"

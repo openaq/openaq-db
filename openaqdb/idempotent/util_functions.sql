@@ -172,6 +172,10 @@ RETURNS timestamptz AS $$
 SELECT date_trunc('hour',  (tstz + '-1sec'::interval + tz_offset)) - tz_offset
 $$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
 
+CREATE OR REPLACE FUNCTION truncate_timestamp_minutes(timestamptz, int) RETURNS timestamp AS $$
+SELECT date_trunc('hour',$1)+(floor(EXTRACT(minute FROM $1)/$2)*$2)*'1min'::interval;
+$$ LANGUAGE SQL STABLE;
+
 
 CREATE OR REPLACE FUNCTION truncate_timestamp(tstz timestamptz, period text, tz text, _offset interval)
 RETURNS timestamptz AS $$

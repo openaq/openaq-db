@@ -932,11 +932,60 @@ JOIN
   $$ LANGUAGE SQL;
 
 
-  -- SELECT * FROM measurements_per_hour('pm25', '1day'::interval);
-
-  -- WITH gs AS (
-  -- SELECT UNNEST(ARRAY['1 hour', '4 hours', '8 hours', '16 hours', '2 days', '1 week']) as dur)
-  -- SELECT gs.dur as lag, m.*
-  -- FROM gs, measurements_per_hour('^pm', dur::interval) m;
-
-COMMIT;
+CREATE OR REPLACE FUNCTION compare_api_timing(
+    cutoff_time timestamptz,
+    time_window interval DEFAULT NULL,
+    cutoff_count int DEFAULT 1000
+)
+RETURNS TABLE (
+    endpoint text,
+    before_hits int,
+    after_hits int,
+    before_timing integer,
+    after_timing integer,
+    diff_timing integer,
+    before_hours numeric,
+    after_hours numeric,
+    diff_hours numeric,
+    diff_percent numeric
+) LANGUAGE sql STABLE
+  SET search_path = logs, public
+  AS $$
+    WITH params AS (
+       SELECT cutoff_time as cutoff_timestamp
+              , COALESCE(time_window, now() - cutoff_time) as cutoff_interval
+    ), before_change AS (
+      SELECT endpoint
+      , COUNT(1) as hits
+      , AVG(timing::numeric) as mu
+      , SUM(timing::numeric/1000/60/60) as hours
+      FROM api_logs, params p
+      WHERE added_on < p.cutoff_timestamp
+      AND added_on > p.cutoff_timestamp - cutoff_interval
+      GROUP BY 1
+      HAVING COUNT(1) > cutoff_count
+    ), after_change AS (
+      SELECT endpoint
+      , COUNT(1) as hits
+      , AVG(timing::numeric) as mu
+      , SUM(timing::numeric/1000/60/60) as hours
+      FROM api_logs, params p
+      WHERE added_on > p.cutoff_timestamp
+      AND added_on < p.cutoff_timestamp + cutoff_interval
+      GROUP BY 1
+      HAVING COUNT(1) > cutoff_count
+    )
+      SELECT a.endpoint
+      , a.hits as before_hits
+      , b.hits as after_hits
+      , b.mu::int as before_timing
+      , a.mu::int as after_timing
+      , (a.mu - b.mu)::int as diff_timing
+      , ROUND(b.hours, 1) as before_hours
+      , ROUND(a.hours, 1) as after_hours
+      , ROUND(((a.mu - b.mu) * a.hits)/1000/60/60, 1) as diff_hours
+      , ROUND(((a.mu - b.mu)/b.mu)*100, 1) as diff_percent
+      FROM after_change a
+      JOIN before_change b USING (endpoint)
+      ORDER BY diff_timing ASC;
+  $$
