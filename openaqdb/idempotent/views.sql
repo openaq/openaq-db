@@ -1,5 +1,5 @@
-BEGIN;
--- this is just a shim to fix the missing last function issue
+
+  -- this is just a shim to fix the missing last function issue
 -- should explore not using it
 CREATE OR REPLACE FUNCTION public.last_time_agg (anyelement, anyelement, timestamptz )
 RETURNS anyelement LANGUAGE SQL IMMUTABLE STRICT AS $$
@@ -176,49 +176,6 @@ FROM
 
 
 
-DROP materialized view if exists measurements_fastapi_base;
-CREATE MATERIALIZED VIEW measurements_fastapi_base AS
-SELECT
-    sensor_nodes_id,
-    sensors_id,
-    measurands_id,
-    site_name,
-    measurand,
-    sensor_nodes.metadata->>'entity' as entity,
-    sensor_nodes.metadata->>'sensorType' as "sensorType",
-    sensor_nodes.metadata->>'timezone' as timezone,
-    geom::geography as geog,
-    units,
-    country,
-    city,
-    ismobile,
-    (sensor_nodes.metadata->>'is_analysis')::boolean as is_analysis,
-    source_name as "sourceName",
-    sensor_nodes.metadata->'attribution' as attribution,
-    jsonb_build_object('unit', 'seconds', 'value', sensors.metadata->'data_averaging_period_seconds') as "averagingPeriod"
-FROM
-    sensor_nodes
-    LEFT JOIN sensor_systems USING (sensor_nodes_id)
-    LEFT JOIN sensors USING (sensor_systems_id)
-    LEFT JOIN measurands USING (measurands_id)
-;
-CREATE UNIQUE INDEX ON measurements_fastapi_base (sensors_id);
-CREATE INDEX ON measurements_fastapi_base  (sensor_nodes_id);
-CREATE INDEX ON measurements_fastapi_base  (site_name);
-CREATE INDEX ON measurements_fastapi_base  (measurand);
-CREATE INDEX ON measurements_fastapi_base  (country);
-CREATE INDEX ON measurements_fastapi_base  (city);
-CREATE INDEX ON measurements_fastapi_base USING GIST (geog);
-
-
-
-create or replace view measurements_analyses AS
-SELECT * FROM measurements
-UNION ALL
-SELECT * FROM analyses;
-
-
-
 DROP VIEW IF EXISTS sensor_nodes_check;
 CREATE OR REPLACE VIEW sensor_nodes_check AS
 SELECT sn.sensor_nodes_id
@@ -248,6 +205,7 @@ LEFT JOIN sensor_systems sy USING (sensor_nodes_id)
 LEFT JOIN sensors s USING (sensor_systems_id)
 LEFT JOIN measurands m USING (measurands_id)
 LEFT JOIN sensors_rollup l USING (sensors_id);
+
 
 DROP VIEW IF EXISTS sensor_nodes_summary;
 CREATE OR REPLACE VIEW sensor_nodes_summary AS
@@ -340,22 +298,6 @@ JOIN sensors s USING (sensors_id)
 JOIN measurands USING (measurands_id)
 JOIN sensor_systems USING (sensor_systems_id)
 JOIN sensor_nodes USING (sensor_nodes_id);
-
-
-SELECT sensor_nodes_id as id
-, source_name||'/'||s.sensors_id||'/'|| measurand as ingest_id
-, v.value
-, to_json(v.datetime)#>>'{}' as datetime
-, COALESCE(v.lon, st_x(geom))
-, COALESCE(v.lat, st_y(geom))
-, sn.metadata->>'timezone'
-FROM measurements v
-JOIN sensors s USING (sensors_id)
-JOIN measurands m USING (measurands_id)
-JOIN sensor_systems ss USING (sensor_systems_id)
-JOIN sensor_nodes sn USING (sensor_nodes_id)
-LIMIT 10;
-
 
 
 
@@ -504,31 +446,6 @@ SELECT init_datetime::date as added_on
 , ROUND(SUM(inserted)::numeric/SUM(records)::numeric * 100, 1) as pct
 FROM fetchlogs
 WHERE init_datetime::date >= current_date - 14
-GROUP BY 1
-ORDER BY 1 DESC;
-
-
-SELECT init_datetime::date as added_on
-, MIN(age(completed_datetime, init_datetime)) as ingest_time_min
-, MAX(age(completed_datetime, init_datetime)) as ingest_time_max
-, AVG(age(completed_datetime, init_datetime)) as ingest_time_avg
---, MIN(age(completed_datetime, loaded_datetime)) as load_time_min
---, MAX(age(completed_datetime, loaded_datetime)) as load_time_max
---, AVG(age(completed_datetime, loaded_datetime)) as load_time_avg
-, COUNT(1) as files_added
-, SUM((completed_datetime IS NULL)::int) as files_pending
-, ROUND(AVG(jobs)) as jobs_avg
-, SUM((has_error)::int) as errors
-, ROUND(AVG(records)::int) as records_avg
-, MAX(records) as records_max
-, SUM(records) as records
-, SUM(inserted) as inserted
-, SUM(file_size) as total_size
-, ROUND(AVG(file_size)) as avg_size
-, ROUND(SUM(inserted)::numeric/SUM(records)::numeric * 100, 1) as pct
-FROM fetchlogs
-WHERE init_datetime::date >= current_date - 14
-AND key ~* 'airgradient'
 GROUP BY 1
 ORDER BY 1 DESC;
 
@@ -930,13 +847,3 @@ JOIN
   WHERE datetime_last > now() - dur
   AND n.parameter ~* param;
   $$ LANGUAGE SQL;
-
-
-  -- SELECT * FROM measurements_per_hour('pm25', '1day'::interval);
-
-  -- WITH gs AS (
-  -- SELECT UNNEST(ARRAY['1 hour', '4 hours', '8 hours', '16 hours', '2 days', '1 week']) as dur)
-  -- SELECT gs.dur as lag, m.*
-  -- FROM gs, measurements_per_hour('^pm', dur::interval) m;
-
-COMMIT;
