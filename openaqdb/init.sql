@@ -82,6 +82,13 @@ GRANT ALL ON FUNCTIONS to :DATABASE_WRITE_USER;
 -- file contains begin/commit
 \i refresh_idempotent.sql
 
+
+GRANT USAGE ON SCHEMA fetcher TO :DATABASE_READ_USER, :DATABASE_WRITE_USER;
+GRANT SELECT ON ALL TABLES IN SCHEMA fetcher TO :DATABASE_READ_USER;
+GRANT ALL ON ALL TABLES IN SCHEMA fetcher TO :DATABASE_WRITE_USER;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA fetcher TO :DATABASE_WRITE_USER;
+
+
 INSERT INTO fetchlogs (key, last_modified) VALUES
   ('uploaded/measures/houston/61509.csv.gz', now())
 , ('realtime-gzipped/2022-10-04/1664912239.ndjson.gz', now())

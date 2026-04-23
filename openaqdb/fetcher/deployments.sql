@@ -96,6 +96,7 @@ CREATE TABLE IF NOT EXISTS deployment_adapters (
 
 
 
+  DROP VIEW IF EXISTS deployment_adapters_view;
   CREATE OR REPLACE VIEW deployment_adapters_view AS
   WITH deployment_adapters_config AS (
     SELECT da.deployments_id
@@ -117,7 +118,7 @@ CREATE TABLE IF NOT EXISTS deployment_adapters (
   )
   SELECT d.deployments_id
     , d.label
-    , h.queue_name as queue_url
+    , h.queue_name
     , d.temporal_offset
    , COALESCE(c.adapters_config, '[]'::jsonb) as adapters
    , d.filename_prefix
@@ -149,7 +150,7 @@ CREATE OR REPLACE FUNCTION get_ready_deployments(
 RETURNS TABLE (
   deployments_id int
   , label text
-  , queue_url text
+  , queue_name text
   , scheduled_datetime timestamptz
   , temporal_offset int
   , key text
@@ -178,7 +179,7 @@ BEGIN
   )
   SELECT d.deployments_id
     , d.label
-    , h.queue_name as queue_url
+    , h.queue_name
     , check_time as scheduled_time
     , d.temporal_offset
     , format('%1$s/%2$s/%2$s-%3$s.%4$s'
@@ -224,7 +225,7 @@ CREATE OR REPLACE FUNCTION get_and_mark_queued_jobs(
 RETURNS TABLE (
     fetchlogs_id int
   , scheduled_datetime timestamptz
-  , queue_url text
+  , queue_name text
   , key text
   , deployments_id int
   , adapters jsonb -- array of adapters with confg
@@ -281,7 +282,7 @@ CREATE OR REPLACE FUNCTION queue_deployments(
 RETURNS TABLE (
     fetchlogs_id int
   , deployments_id int
-  , queue_url text
+  , queue_name text
   , scheduled_datetime timestamptz
   , temporal_offset int
   , datetime_first timestamptz
@@ -302,7 +303,7 @@ BEGIN
     )
     SELECT d.key
     , d.scheduled_datetime
-    , d.queue_url
+    , d.queue_name
     , jsonb_build_object(
           'deployments_id', d.deployments_id
         , 'temporal_offset', d.temporal_offset
@@ -315,7 +316,7 @@ BEGIN
     RETURN QUERY
     SELECT m.fetchlogs_id
     , m.deployments_id
-    , m.queue_url
+    , m.queue_name
     , m.scheduled_datetime
     , m.temporal_offset
     , m.datetime_first
