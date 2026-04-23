@@ -33,7 +33,7 @@ GRANT ALL ON FUNCTIONS to :DATABASE_WRITE_USER;
 
 --BEGIN;
 -- Lookup tables for legacy OPENAQ
-\i tables/sources_from_openaq_v1.sql
+--\i tables/sources_from_openaq_v1.sql
 --COMMIT;
 
 --BEGIN;
@@ -62,7 +62,10 @@ GRANT ALL ON FUNCTIONS to :DATABASE_WRITE_USER;
 \i tables/thresholds.sql
 \i tables/performance_log.sql
 ----
-\i tables/deployments.sql
+
+\i fetcher/scheduler.sql
+\i fetcher/deployments.sql
+
 \i tables/licenses.sql
 \i locations/locations.sql
 \i tables/timezones_views.sql

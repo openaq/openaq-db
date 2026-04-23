@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS fetchlogs(
     fetchlogs_id int generated always as identity primary key,
-    key text UNIQUE NOT NULL,
-    init_datetime timestamptz DEFAULT clock_timestamp(),
+    key text UNIQUE NOT NULL, -- name of the fetchlog file
+    init_datetime timestamptz,
     loaded_datetime timestamptz,
     completed_datetime timestamptz,
     jobs int default 0,
@@ -16,12 +16,23 @@ CREATE TABLE IF NOT EXISTS fetchlogs(
     last_message text
     , last_modified timestamptz
     , has_error bool NOT NULL DEFAULT false
+    , scheduled_datetime timestamptz
+    , queue_name text
+    , queued_datetime timestamptz
+    , fetcher_config jsonb
 );
 
 CREATE INDEX IF NOT EXISTS fetchlogs_completed_datetime_idx ON fetchlogs(completed_datetime);
 CREATE INDEX IF NOT EXISTS fetchlogs_last_modified_idx ON fetchlogs (last_modified);
 
+-- Partial index for polling unqueued scheduled jobs
+-- Optimizes the get_and_mark_queued_jobs() query in fetcher schema
+CREATE INDEX IF NOT EXISTS fetchlogs_unqueued_scheduled_idx
+ON fetchlogs(scheduled_datetime)
+WHERE scheduled_datetime IS NOT NULL AND queued_datetime IS NULL;
 
+
+-- we ingest many fetchlog files at a time so this
 DROP TABLE IF EXISTS ingest_stats;
 CREATE TABLE IF NOT EXISTS ingest_stats (
     ingest_method text NOT NULL PRIMARY KEY -- lcs vs realtime vs stations
