@@ -665,30 +665,6 @@ JOIN
 	list_bounds lb USING (lists_id);
 
 
-	CREATE OR REPLACE FUNCTION remove_sensor_data(id int, delete_sensor bool DEFAULT FALSE)
-	RETURNS bool AS $$
-	BEGIN
-		-- annual data
-		DELETE FROM annual_data WHERE sensors_id = id;
-		-- daily data
-		DELETE FROM daily_data WHERE sensors_id = id;
-		--- hourly data
-		DELETE FROM hourly_data WHERE sensors_id = id;
-		-- latest
-		DELETE FROM sensors_rollup WHERE sensors_id = id;
-		-- exceedances
-		DELETE FROM sensor_exceedances WHERE sensors_id = id;
-		-- sensors_history
-		DELETE FROM sensors_history WHERE sensors_id = id;
-		-- measurements
-		DELETE FROM measurements WHERE sensors_id = id;
-			-- sensors
-		IF delete_sensor THEN
-		  DELETE FROM sensors WHERE sensors_id = id;
-		END IF;
-	  RETURN (SELECT EXISTS(SELECT 1 FROM sensors WHERE sensors_id = id) != delete_sensor);
-	END;
-	$$ LANGUAGE plpgsql;
 
 
     CREATE OR REPLACE FUNCTION rank_duplicates_by_source_geom(src text) RETURNS TABLE (

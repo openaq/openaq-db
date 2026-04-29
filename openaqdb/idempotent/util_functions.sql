@@ -777,3 +777,131 @@ LIMIT 1)
 SELECT COUNT(1) > 0
 FROM m;
 $$ LANGUAGE SQL;
+
+
+CREATE OR REPLACE FUNCTION delete_sensors(sids int[]) RETURNS TABLE (
+    sensors_deleted bigint,
+    measurements_deleted bigint,
+    hourly_data_deleted bigint
+) LANGUAGE plpgsql AS $$
+DECLARE
+    _measurements_deleted bigint;
+    _hourly_data_deleted bigint;
+    _sensors_deleted bigint;
+BEGIN
+    -- Validate input
+    IF sids IS NULL OR array_length(sids, 1) IS NULL THEN
+        RAISE EXCEPTION 'No sensor ids provided';
+    END IF;
+
+    RAISE NOTICE 'Deleting data for % sensors: %', array_length(sids, 1), sids;
+
+    -- Delete measurements (partitioned, no FK cascade)
+    DELETE FROM measurements
+    WHERE sensors_id = ANY(sids);
+    GET DIAGNOSTICS _measurements_deleted = ROW_COUNT;
+    RAISE NOTICE 'Deleted % measurements', _measurements_deleted;
+
+    -- Delete hourly_data (partitioned, no FK cascade)
+    DELETE FROM hourly_data
+    WHERE sensors_id = ANY(sids);
+    GET DIAGNOSTICS _hourly_data_deleted = ROW_COUNT;
+    RAISE NOTICE 'Deleted % hourly_data rows', _hourly_data_deleted;
+
+    -- Delete sensors_rollup (no FK cascade)
+    DELETE FROM sensors_rollup
+    WHERE sensors_id = ANY(sids);
+
+    -- Delete sensors (cascades to annual_data, daily_data,
+    -- sensor_exceedances, versions, measurements_review)
+    DELETE FROM sensors
+    WHERE sensors_id = ANY(sids);
+    GET DIAGNOSTICS _sensors_deleted = ROW_COUNT;
+    RAISE NOTICE 'Deleted % sensors', _sensors_deleted;
+
+    RETURN QUERY SELECT
+        _sensors_deleted,
+        _measurements_deleted,
+        _hourly_data_deleted;
+END;
+$$;
+
+
+	CREATE OR REPLACE FUNCTION remove_sensor_data(id int, delete_sensor bool DEFAULT FALSE)
+	RETURNS bool AS $$
+	BEGIN
+		-- annual data
+		DELETE FROM annual_data WHERE sensors_id = id;
+		-- daily data
+		DELETE FROM daily_data WHERE sensors_id = id;
+		--- hourly data
+		DELETE FROM hourly_data WHERE sensors_id = id;
+		-- latest
+		DELETE FROM sensors_rollup WHERE sensors_id = id;
+		-- exceedances
+		DELETE FROM sensor_exceedances WHERE sensors_id = id;
+		-- measurements
+		DELETE FROM measurements WHERE sensors_id = id;
+			-- sensors
+		IF delete_sensor THEN
+		  -- sensors_history
+		  DELETE FROM sensors_history WHERE sensors_id = id;
+		  DELETE FROM sensors WHERE sensors_id = id;
+		END IF;
+	  RETURN (SELECT EXISTS(SELECT 1 FROM sensors WHERE sensors_id = id) != delete_sensor);
+	END;
+	$$ LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE FUNCTION remove_sensor_data(
+    sids int[],
+    delete_sensor boolean DEFAULT true
+) RETURNS TABLE (
+    sensors_deleted bigint,
+    measurements_deleted bigint,
+    hourly_data_deleted bigint
+) LANGUAGE plpgsql AS $$
+DECLARE
+    _measurements_deleted bigint;
+    _hourly_data_deleted bigint;
+    _sensors_deleted bigint := 0;
+BEGIN
+    IF sids IS NULL OR array_length(sids, 1) IS NULL THEN
+        RAISE EXCEPTION 'No sensor ids provided';
+    END IF;
+
+    DELETE FROM measurements
+    WHERE sensors_id = ANY(sids);
+    GET DIAGNOSTICS _measurements_deleted = ROW_COUNT;
+
+    DELETE FROM hourly_data
+    WHERE sensors_id = ANY(sids);
+    GET DIAGNOSTICS _hourly_data_deleted = ROW_COUNT;
+
+    DELETE FROM sensors_rollup
+    WHERE sensors_id = ANY(sids);
+
+    IF delete_sensor THEN
+        -- cascades to annual_data, daily_data, sensor_exceedances, versions
+        DELETE FROM sensors
+        WHERE sensors_id = ANY(sids);
+        GET DIAGNOSTICS _sensors_deleted = ROW_COUNT;
+    		-- sensors_history
+		    DELETE FROM sensors_history WHERE sensors_id = ANY(sids);
+    ELSE
+        -- clean up cascade-dependent tables manually since
+        -- we are not deleting the sensor
+        DELETE FROM annual_data WHERE sensors_id = ANY(sids);
+        DELETE FROM daily_data WHERE sensors_id = ANY(sids);
+        DELETE FROM sensor_exceedances WHERE sensors_id = ANY(sids);
+    END IF;
+
+    RAISE NOTICE 'Deleted % sensors, % measurements, % hourly_data rows',
+        _sensors_deleted, _measurements_deleted, _hourly_data_deleted;
+
+    RETURN QUERY SELECT
+        _sensors_deleted,
+        _measurements_deleted,
+        _hourly_data_deleted;
+END;
+$$;
