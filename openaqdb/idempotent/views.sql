@@ -190,7 +190,7 @@ SELECT sn.sensor_nodes_id
 --, sy.sensor_systems_id
 , sn.added_on
 , s.sensors_id
-, COALESCE(m.measurand, 'Not found') as parameter
+, COALESCE(m.measurand||' '||m.units, 'Not found') as parameter
 , l.datetime_first as datetime_first
 , l.datetime_last as datetime_last
 , CASE WHEN l.datetime_first < l.datetime_last THEN

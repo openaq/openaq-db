@@ -82,6 +82,19 @@ END;
 $$ LANGUAGE plpgsql;
 
 
+
+CREATE TABLE IF NOT EXISTS measurements_archive (
+    sensors_id integer
+  , datetime timestamp with time zone
+  , value double precision
+  , lon double precision
+  , lat double precision
+  , added_on timestamp with time zone
+  , archived_on timestamp with time zone DEFAULT now()
+  , archive_reason text
+);
+
+
 CREATE OR REPLACE FUNCTION create_measurements_partition(dt date) RETURNS text AS $$
 DECLARE
 _table_schema text := '_measurements_internal';

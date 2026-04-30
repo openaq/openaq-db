@@ -905,3 +905,93 @@ BEGIN
         _hourly_data_deleted;
 END;
 $$;
+
+  CREATE OR REPLACE PROCEDURE merge_sensors(bad_sensor_id int, good_sensor_id int)
+  AS $$
+  DECLARE
+    _conflict_count bigint;
+    _measurements_total bigint;
+    _measurements_merged bigint;
+    _hours_queued bigint;
+  BEGIN
+    IF bad_sensor_id IS NULL OR good_sensor_id IS NULL THEN
+        RAISE EXCEPTION 'Both bad_sensor_id and good_sensor_id must be provided';
+    END IF;
+    -- Check for basic mistakes
+    IF bad_sensor_id = good_sensor_id THEN
+        RAISE EXCEPTION 'bad_sensor_id and good_sensor_id must be different';
+    END IF;
+    RAISE NOTICE 'Merging sensor % into %', bad_sensor_id, good_sensor_id;
+    -- Only need to check measurements since rollup data is derived from it
+    SELECT COUNT(*) INTO _conflict_count
+    FROM measurements b
+    JOIN measurements g ON (g.sensors_id = good_sensor_id AND g.datetime = b.datetime)
+    WHERE b.sensors_id = bad_sensor_id AND b.value != g.value;
+    IF _conflict_count > 0 THEN
+        RAISE EXCEPTION 'Found % measurements with matching datetimes but different values between sensors % and %',
+            _conflict_count, bad_sensor_id, good_sensor_id;
+    END IF;
+    RAISE NOTICE 'Conflict check passed, proceeding with merge';
+    -- get a count of all possible sensor measurements
+    SELECT COUNT(*) INTO _measurements_total
+    FROM measurements WHERE sensors_id = bad_sensor_id;
+    -- insert the bad sensor data with the good sensor id
+    -- ignore duplicates
+    WITH inserts AS (
+        INSERT INTO measurements (sensors_id, datetime, value, lon, lat, added_on)
+        SELECT good_sensor_id, datetime, value, lon, lat, added_on
+        FROM measurements
+        WHERE sensors_id = bad_sensor_id
+        ON CONFLICT (sensors_id, datetime) DO NOTHING
+        RETURNING datetime
+    ), queue_updates AS (
+      -- update our rollup queue to fix these
+      INSERT INTO hourly_data_queue (datetime, tz_offset)
+      SELECT DISTINCT
+          date_trunc('hour', inserts.datetime)
+        , utc_offset(inserts.datetime, tz.tzid) as tz_offset
+      FROM inserts
+      JOIN sensors s ON s.sensors_id = good_sensor_id
+      JOIN sensor_systems sy ON s.sensor_systems_id = sy.sensor_systems_id
+      JOIN sensor_nodes sn ON sy.sensor_nodes_id = sn.sensor_nodes_id
+      JOIN timezones tz ON sn.timezones_id = tz.timezones_id
+      ON CONFLICT (datetime, tz_offset) DO UPDATE
+      SET modified_on = now()
+      , modified_count = hourly_data_queue.modified_count + 1
+      RETURNING 1
+    ), measurements_merged_count AS (
+      SELECT COUNT(*) as measurements_merged FROM inserts
+    ), hours_queued_count AS (
+      SELECT COUNT(*) as hours_queued FROM queue_updates
+    ) SELECT m.measurements_merged, h.hours_queued
+      INTO _measurements_merged, _hours_queued
+      FROM measurements_merged_count m, hours_queued_count h;
+    -- Delete the bad sensor and all its remaining data
+    RAISE NOTICE 'Archiving bad sensor: %',
+        bad_sensor_id;
+      INSERT INTO measurements_archive (
+        sensors_id
+      , datetime
+      , value
+      , lon
+      , lat
+      , added_on
+      , archive_reason
+    )
+    SELECT
+        sensors_id
+      , datetime
+      , value
+      , lon
+      , lat
+      , added_on
+      , format('merged into sensor %s', good_sensor_id)
+    FROM measurements
+    WHERE sensors_id = bad_sensor_id;
+    RAISE NOTICE 'Removing bad sensor: %',
+        bad_sensor_id;
+    PERFORM remove_sensor_data(bad_sensor_id, TRUE);
+    RAISE NOTICE 'Merge complete: measurements %/%, % hours queued for recalculation',
+        _measurements_merged, _measurements_total, _hours_queued;
+    END;
+  $$ LANGUAGE plpgsql;
