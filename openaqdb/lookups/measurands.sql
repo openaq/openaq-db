@@ -33,8 +33,6 @@ COPY public.measurands (measurands_id, measurand, units, display, description) F
 22	wind_direction	deg	\N	\N
 34	wind_speed	m/s	\N	\N
 19840	nox	ppm	NOx	Nitrogen Oxides concentration
-150	voc	iaq	\N	\N
-19841	bc	ppm	\N	\N
 33	ufp	particles/cm³	UFP count	Ultrafine Particles count concentration
 29	pn	particles/cm³	\N	\N
 126	um010	particles/cm³	PM1 count	PM1 count
