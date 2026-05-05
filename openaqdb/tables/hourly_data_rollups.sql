@@ -534,3 +534,55 @@ CREATE OR REPLACE VIEW "public"."sensor_hourly_coverage" AS
         END AS coverage
    FROM hourly_data r
      JOIN sensors s ON r.sensors_id = s.sensors_id;
+
+
+CREATE OR REPLACE VIEW hourly_data_queue_summary AS
+SELECT
+  count(*) AS total,
+  count(*) FILTER (
+    WHERE calculated_on IS NULL
+    OR modified_on > calculated_on
+  ) AS pending,
+  count(*) FILTER (
+    WHERE calculated_on IS NOT NULL
+    AND (modified_on IS NULL OR calculated_on >= modified_on)
+  ) AS done,
+  count(*) FILTER (
+    WHERE queued_on IS NOT NULL
+    AND calculated_on IS NULL
+  ) AS in_progress,
+  min(datetime) FILTER (
+    WHERE calculated_on IS NULL
+    OR modified_on > calculated_on
+  ) AS oldest_pending,
+  max(datetime) FILTER (
+    WHERE calculated_on IS NULL
+    OR modified_on > calculated_on
+  ) AS newest_pending,
+  round(avg(calculated_seconds)::numeric, 2) AS avg_seconds,
+  round(max(calculated_seconds)::numeric, 2) AS max_seconds,
+  sum(measurements_count) AS total_measurements,
+  sum(sensors_count) AS total_sensors,
+  max(calculated_on) AS last_calculated
+FROM hourly_data_queue;
+
+
+CREATE OR REPLACE VIEW hourly_data_queue_summary_monthly AS
+SELECT
+  date_trunc('month', datetime) AS month,
+  count(*) AS total,
+  count(*) FILTER (
+    WHERE calculated_on IS NULL
+    OR modified_on > calculated_on
+  ) AS pending,
+  count(*) FILTER (
+    WHERE calculated_on IS NOT NULL
+    AND (modified_on IS NULL OR calculated_on >= modified_on)
+  ) AS done,
+  round(avg(calculated_seconds)::numeric, 2) AS avg_seconds,
+  sum(measurements_count) AS total_measurements,
+  min(calculated_on) AS first_calculated,
+  max(calculated_on) AS last_calculated
+FROM hourly_data_queue
+GROUP BY 1
+ORDER BY 1;

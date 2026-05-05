@@ -42,6 +42,19 @@ SELECT cron.schedule_in_database(
   , 'openaq'
   );
 
+SELECT cron.schedule_in_database(
+  'rollup-hourly-data-extra-worker'
+  , '* * * * *'
+  , $$CALL update_hourly_data(500)$$
+  , 'openaq'
+);
+
+-- Start it disabled so you can turn it on when needed
+UPDATE cron.job
+SET active = false
+WHERE jobname = 'rollup-hourly-data-extra-worker';
+
+
 -- keep the cached tables up to date
 -- last checked this takes about 2s to run
 SELECT cron.schedule_in_database(
@@ -127,6 +140,27 @@ SELECT cron.schedule_in_database(
 );
 
 
+
+
+ CREATE OR REPLACE FUNCTION start_extra_worker(batch_size int DEFAULT 500) RETURNS bigint AS $$
+  WITH jobs AS (
+  UPDATE cron.job
+  SET active = true
+  ,  command = format('CALL update_hourly_data(%s)', batch_size)
+  WHERE jobname = 'rollup-hourly-data-extra-worker'
+  RETURNING jobid)
+  SELECT COUNT(1) FROM jobs;
+ $$ LANGUAGE SQL;
+
+CREATE OR REPLACE FUNCTION stop_extra_worker() RETURNS int AS $$
+  UPDATE cron.job
+  SET active = false
+  WHERE jobname = 'rollup-hourly-data-extra-worker'
+  AND active = true
+  RETURNING jobid;
+$$ LANGUAGE SQL;
+
+
  CREATE OR REPLACE FUNCTION stop_rollups(bool DEFAULT 't') RETURNS bigint AS $$
   WITH jobs AS (
   UPDATE cron.job
@@ -158,6 +192,7 @@ SELECT cron.schedule_in_database(
   RETURNING jobid)
   SELECT COUNT(1) FROM jobs;
  $$ LANGUAGE SQL;
+
 
 
  CREATE OR REPLACE FUNCTION stop_refreshing(bool DEFAULT 't') RETURNS bigint AS $$
