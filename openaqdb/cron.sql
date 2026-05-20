@@ -240,3 +240,50 @@ $$ LANGUAGE SQL;
 	FROM jobs
 	GROUP BY jobid, jobname, active
 	ORDER BY 1,2 DESC;
+
+
+CREATE OR REPLACE FUNCTION recent_jobs_summary(lookback interval DEFAULT '7 days')
+RETURNS TABLE (
+  jobid bigint,
+  jobname text,
+  active boolean,
+  min_duration interval,
+  max_duration interval,
+  avg_duration interval,
+  n bigint,
+  failed bigint
+) AS $$
+  WITH jobs AS (
+    SELECT d.jobid
+    , j.active
+    , j.jobname
+    , age(d.end_time, d.start_time) as duration
+    , (d.status = 'failed')::int as failed
+    FROM cron.job_run_details d
+    JOIN cron.job j ON (d.jobid = j.jobid)
+    WHERE d.start_time > now() - lookback
+  )
+  SELECT j.jobid
+  , j.jobname
+  , j.active
+  , MIN(j.duration) as min_duration
+  , MAX(j.duration) as max_duration
+  , AVG(j.duration) as avg_duration
+  , COUNT(1) as n
+  , SUM(j.failed) as failed
+  FROM jobs j
+  GROUP BY j.jobid, j.jobname, j.active
+  ORDER BY 1, 2 DESC;
+$$ LANGUAGE sql;
+```
+
+Usage:
+
+```sql
+-- default 7 days
+SELECT * FROM recent_jobs_summary();
+
+-- custom interval
+SELECT * FROM recent_jobs_summary('30 days');
+SELECT * FROM recent_jobs_summary('12 hours');
+```

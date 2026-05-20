@@ -151,3 +151,81 @@ SET description = EXCLUDED.description
 UPDATE measurands
 SET parameter_type = 'meteorological'
 WHERE measurand ~* 'temp|rh|relative|pressure|humid|wind';
+
+UPDATE measurands SET lower_limit = 0, upper_limit = 1000  WHERE measurand = 'pm1'   AND units = 'µg/m³';
+UPDATE measurands SET lower_limit = 0, upper_limit = 1000  WHERE measurand = 'pm25'  AND units = 'µg/m³';
+UPDATE measurands SET lower_limit = 0, upper_limit = 1500  WHERE measurand = 'pm10'  AND units = 'µg/m³';
+UPDATE measurands SET lower_limit = 0, upper_limit = 1500  WHERE measurand = 'pm100' AND units = 'µg/m³';
+UPDATE measurands SET lower_limit = 0, upper_limit = 1000  WHERE measurand = 'pm4'   AND units = 'µg/m³';
+UPDATE measurands SET lower_limit = 0, upper_limit = 1500  WHERE measurand = 'pm'    AND units = 'µg/m³';
+
+UPDATE measurands SET lower_limit = 0, upper_limit = 1500  WHERE measurand = 'pm'    AND units = 'ugm3|';
+
+-- Particle Counts (particles/cm³)
+UPDATE measurands SET lower_limit = 0, upper_limit = 1500000 WHERE measurand = 'um003' AND units = 'particles/cm³';
+UPDATE measurands SET lower_limit = 0, upper_limit = 1000000 WHERE measurand = 'um005' AND units = 'particles/cm³';
+UPDATE measurands SET lower_limit = 0, upper_limit = 500000  WHERE measurand = 'um010' AND units = 'particles/cm³';
+UPDATE measurands SET lower_limit = 0, upper_limit = 100000  WHERE measurand = 'um025' AND units = 'particles/cm³';
+UPDATE measurands SET lower_limit = 0, upper_limit = 50000   WHERE measurand = 'um050' AND units = 'particles/cm³';
+UPDATE measurands SET lower_limit = 0, upper_limit = 10000   WHERE measurand = 'um100' AND units = 'particles/cm³';
+UPDATE measurands SET lower_limit = 0, upper_limit = 500000  WHERE measurand = 'ufp'   AND units = 'particles/cm³';
+UPDATE measurands SET lower_limit = 0, upper_limit = 500000  WHERE measurand = 'pn'    AND units = 'particles/cm³';
+
+-- Gases (ppm)
+UPDATE measurands SET lower_limit = 0,     upper_limit = 100   WHERE measurand = 'co'  AND units = 'ppm';
+UPDATE measurands SET lower_limit = 0,     upper_limit = 5000  WHERE measurand = 'co2' AND units = 'ppm';
+UPDATE measurands SET lower_limit = 0,     upper_limit = 0.5   WHERE measurand = 'no2' AND units = 'ppm';
+UPDATE measurands SET lower_limit = 0,     upper_limit = 0.5   WHERE measurand = 'no'  AND units = 'ppm';
+UPDATE measurands SET lower_limit = 0,     upper_limit = 0.5   WHERE measurand = 'o3'  AND units = 'ppm';
+UPDATE measurands SET lower_limit = 0,     upper_limit = 2     WHERE measurand = 'so2' AND units = 'ppm';
+UPDATE measurands SET lower_limit = 0,     upper_limit = 10    WHERE measurand = 'nox' AND units = 'ppm';
+UPDATE measurands SET lower_limit = 0,     upper_limit = 10    WHERE measurand = 'ch4' AND units = 'ppm';
+
+-- Gases (ppb)
+UPDATE measurands SET lower_limit = 0,    upper_limit = 500   WHERE measurand = 'no2' AND units = 'ppb';
+UPDATE measurands SET lower_limit = 0,    upper_limit = 500   WHERE measurand = 'no'  AND units = 'ppb';
+UPDATE measurands SET lower_limit = 0,    upper_limit = 500   WHERE measurand = 'o3'  AND units = 'ppb';
+UPDATE measurands SET lower_limit = 0,    upper_limit = 2000  WHERE measurand = 'so2' AND units = 'ppb';
+UPDATE measurands SET lower_limit = 0,    upper_limit = 100000 WHERE measurand = 'co' AND units = 'ppb';
+UPDATE measurands SET lower_limit = 0,    upper_limit = 5000  WHERE measurand = 'nox' AND units = 'ppb';
+UPDATE measurands SET lower_limit = 0,    upper_limit = 500   WHERE measurand = 'ozone' AND units = 'ppb';
+
+-- Gases (µg/m³)
+UPDATE measurands SET lower_limit = 0, upper_limit = 100000 WHERE measurand = 'co'  AND units = 'µg/m³';
+UPDATE measurands SET lower_limit = 0, upper_limit = 500    WHERE measurand = 'no2' AND units = 'µg/m³';
+UPDATE measurands SET lower_limit = 0, upper_limit = 500    WHERE measurand = 'no'  AND units = 'µg/m³';
+UPDATE measurands SET lower_limit = 0, upper_limit = 2000   WHERE measurand = 'so2' AND units = 'µg/m³';
+UPDATE measurands SET lower_limit = 0, upper_limit = 500    WHERE measurand = 'o3'  AND units = 'µg/m³';
+UPDATE measurands SET lower_limit = 0, upper_limit = 1000   WHERE measurand = 'nox' AND units = 'µg/m³';
+
+-- Black Carbon
+UPDATE measurands SET lower_limit = 0, upper_limit = 200    WHERE measurand = 'bc' AND units = 'µg/m³';
+UPDATE measurands SET lower_limit = 0, upper_limit = 200000 WHERE measurand = 'bc' AND units = 'ng/m3';
+UPDATE measurands SET lower_limit = 0, upper_limit = 200 WHERE measurand IN ('bc_375','bc_470','bc_528','bc_625','bc_880','bc_370') AND units = 'ug/m2';
+
+-- Ions/Metals (ppb)
+UPDATE measurands SET lower_limit = 0, upper_limit = 100  WHERE measurand = 'so4' AND units = 'ppb';
+UPDATE measurands SET lower_limit = 0, upper_limit = 50   WHERE measurand = 'ec'  AND units = 'ppb';
+UPDATE measurands SET lower_limit = 0, upper_limit = 100  WHERE measurand = 'oc'  AND units = 'ppb';
+UPDATE measurands SET lower_limit = 0, upper_limit = 50   WHERE measurand = 'cl'  AND units = 'ppb';
+UPDATE measurands SET lower_limit = 0, upper_limit = 50   WHERE measurand = 'k'   AND units = 'ppb';
+UPDATE measurands SET lower_limit = 0, upper_limit = 100  WHERE measurand = 'no3' AND units = 'ppb';
+UPDATE measurands SET lower_limit = 0, upper_limit = 5    WHERE measurand = 'pb'  AND units = 'ppb';
+UPDATE measurands SET lower_limit = 0, upper_limit = 5    WHERE measurand = 'as'  AND units = 'ppb';
+UPDATE measurands SET lower_limit = 0, upper_limit = 50   WHERE measurand = 'ca'  AND units = 'ppb';
+UPDATE measurands SET lower_limit = 0, upper_limit = 50   WHERE measurand = 'fe'  AND units = 'ppb';
+UPDATE measurands SET lower_limit = 0, upper_limit = 10   WHERE measurand = 'ni'  AND units = 'ppb';
+UPDATE measurands SET lower_limit = 0, upper_limit = 10   WHERE measurand = 'v'   AND units = 'ppb';
+
+-- Meteorological
+UPDATE measurands SET lower_limit = -90,  upper_limit = 60    WHERE measurand IN ('temperature', 'ambient_temp') AND units IN ('c', 'deg_c');
+UPDATE measurands SET lower_limit = -130, upper_limit = 140   WHERE measurand = 'temperature' AND units = 'f';
+UPDATE measurands SET lower_limit = 0,    upper_limit = 100   WHERE measurand IN ('rh', 'relativehumidity', 'humidity');
+UPDATE measurands SET lower_limit = 0,    upper_limit = 360   WHERE measurand = 'wind_direction';
+UPDATE measurands SET lower_limit = 0,    upper_limit = 115   WHERE measurand = 'wind_speed';
+-- lower limit ever recorded was 870 and upper is 1013.25
+UPDATE measurands SET lower_limit = 850,  upper_limit = 1085  WHERE measurand = 'pressure' AND units = 'hpa';
+UPDATE measurands SET lower_limit = 850,  upper_limit = 1085  WHERE measurand = 'pressure' AND units = 'mb';
+
+-- CO2 (umol/mol — effectively same scale as ppm)
+UPDATE measurands SET lower_limit = 0, upper_limit = 5000 WHERE measurand = 'co2' AND units = 'umol/mol';

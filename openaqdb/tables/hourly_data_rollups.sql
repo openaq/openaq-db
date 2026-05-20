@@ -245,8 +245,9 @@ CREATE OR REPLACE FUNCTION fetch_hourly_data_jobs(n int DEFAULT 1, min_hour time
           OR (
               q.queued_on < now() - '1h'::interval -- a set amount of time has passed AND
               AND (
-                q.queued_on < q.modified_on  -- its been changed since being queued
-                OR calculated_on IS NULL     -- it was never calculated
+                q.queued_on < q.modified_on         -- its been changed since being queued
+                OR calculated_on < q.modified_on    -- its been changed since being calculated
+                OR calculated_on IS NULL            -- it was never calculated
               )
           ))
           ORDER BY q.datetime, q.tz_offset
@@ -582,7 +583,25 @@ SELECT
   round(avg(calculated_seconds)::numeric, 2) AS avg_seconds,
   sum(measurements_count) AS total_measurements,
   min(calculated_on) AS first_calculated,
-  max(calculated_on) AS last_calculated
+  max(calculated_on) AS last_calculated,
+  max(added_on) as last_added_on
 FROM hourly_data_queue
 GROUP BY 1
 ORDER BY 1;
+
+
+  CREATE OR REPLACE VIEW hourly_data_queue_summary_recent AS
+SELECT
+  count(*) AS total,
+  count(*) FILTER (
+    WHERE queued_on IS NOT NULL
+    AND calculated_on IS NULL
+  ) AS in_progress,
+  round(avg(calculated_seconds)::numeric, 2) AS avg_seconds,
+  round(max(calculated_seconds)::numeric, 2) AS max_seconds,
+  sum(measurements_count) AS total_measurements,
+  sum(sensors_count) AS total_sensors,
+  max(datetime) AS last_datetime
+FROM hourly_data_queue
+  WHERE calculated_on IS NOT NULL
+  AND calculated_on > now() - interval '1h';

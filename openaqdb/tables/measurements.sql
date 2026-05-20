@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS measurements (
     sensors_id integer,
     datetime timestamp with time zone,
     value double precision,
+    value_original double precision,
     lon double precision,
     lat double precision,
     added_on timestamp with time zone DEFAULT now()

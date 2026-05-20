@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS flags (
 );
 
 CREATE INDEX flags_period_idx ON flags USING GiST (period);
-
+CREATE INDEX CONCURRENTLY flags_sensors_ids_idx ON flags USING gin (sensors_ids);
 
 -- CREATE OR REPLACE FUNCTION check_flags() RETURNS TRIGGER AS $$
 -- DECLARE

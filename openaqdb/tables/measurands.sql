@@ -9,8 +9,11 @@ CREATE TABLE IF NOT EXISTS measurands (
     units text not null,
     display text,
     description text,
-    parameter_type parameter_type NOT NULL DEFAULT 'pollutant',
-    unique (measurand, units)
+    parameter_type parameter_type NOT NULL DEFAULT 'pollutant'
+    , upper_limit double precision
+    , lower_limit double precision
+    , UNIQUE (measurand, units)
+    , CHECK (upper_limit > lower_limit)
 );
 
 
