@@ -6,21 +6,21 @@
   VALUES
   (1, 'default', 'Fetch handler to use a default for deployments', 'default-fetcher');
 
-  INSERT INTO fetcher_clients (name, handler, description, authorization_method) VALUES
-    ('clarity', NULL, 'Transform client written for the Clarity API', 'API Key')
-  , ('air4thai', NULL, 'Custom transform client written for the air4thai API', NULL)
-  , ('bam', NULL, 'Custom transform client written for BAM data', NULL)
-  , ('data354', NULL, 'Custom transform client written for the data354 API', NULL)
-  , ('eea', NULL, 'Custom transform client written for EEA data', NULL)
-  , ('habitatmap', NULL, 'Custom transform client written for the HabitatMap API', NULL)
-  , ('senstate', NULL, 'Custom transform client written for the Senstate API', 'API Key')
-  , ('airqo', NULL, 'Custom transform client written for the Senstate API', NULL)
-  , ('openaq', NULL, 'Custom transform client written for the OpenAQ API', 'API Key')
-  , ('airnow', NULL, 'Custom transform client written for the OpenAQ API', NULL)
-  , ('london', NULL, 'Custom transform client written for the OpenAQ API', NULL)
-  , ('japan', NULL, 'Custom transform client written for the OpenAQ API', NULL)
-  , ('mexico', NULL, 'Custom transform client written for the OpenAQ API', NULL)
-  , ('hanoi', NULL, 'Custom transform client written for the OpenAQ API', NULL)
+  INSERT INTO fetcher_clients (name, description, authorization_method) VALUES
+    ('clarity', 'Transform client written for the Clarity API', 'API Key')
+  , ('air4thai', 'Custom transform client written for the air4thai API', NULL)
+  , ('bam', 'Custom transform client written for BAM data', NULL)
+  , ('data354', 'Custom transform client written for the data354 API', NULL)
+  , ('eea', 'Custom transform client written for EEA data', NULL)
+  , ('habitatmap', 'Custom transform client written for the HabitatMap API', NULL)
+  , ('senstate', 'Custom transform client written for the Senstate API', 'API Key')
+  , ('airqo', 'Custom transform client written for the Senstate API', NULL)
+  , ('openaq', 'Custom transform client written for the OpenAQ API', 'API Key')
+  , ('airnow', 'Custom transform client written for the OpenAQ API', NULL)
+  , ('london', 'Custom transform client written for the OpenAQ API', NULL)
+  , ('japan', 'Custom transform client written for the OpenAQ API', NULL)
+  , ('mexico', 'Custom transform client written for the OpenAQ API', NULL)
+  , ('hanoi', 'Custom transform client written for the OpenAQ API', NULL)
   ON CONFLICT (name) DO UPDATE
   SET description = EXCLUDED.description
   , authorization_method = EXCLUDED.authorization_method;
@@ -32,6 +32,7 @@
   FROM fetcher_clients a
   JOIN public.providers p ON (lower(p.source_name) = lower(a.name))
   ON CONFLICT DO NOTHING;
+
 
   INSERT INTO adapters (fetcher_clients_id, providers_id, config)
   SELECT ac.fetcher_clients_id
@@ -103,6 +104,42 @@ VALUES
   ON CONFLICT DO NOTHING
   ;
 
+
+SELECT setval(
+  pg_get_serial_sequence('fetcher.handlers', 'handlers_id'),
+  COALESCE((SELECT MAX(handlers_id) FROM fetcher.handlers), 1)
+);
+
+SELECT setval(
+  pg_get_serial_sequence('fetcher.adapters', 'adapters_id'),
+  COALESCE((SELECT MAX(adapters_id) FROM fetcher.adapters), 1)
+);
+
+SELECT setval(
+  pg_get_serial_sequence('fetcher.deployments', 'deployments_id'),
+  COALESCE((SELECT MAX(deployments_id) FROM fetcher.deployments), 1)
+);
+
+-- fetcher_clients uses an explicit sequence, not identity:
+SELECT setval(
+  'fetcher.fetcher_clients_sq',
+  COALESCE((SELECT MAX(fetcher_clients_id) FROM fetcher.fetcher_clients), 1)
+);
+
+SELECT setval(
+  'providers_sq',
+  COALESCE((SELECT MAX(providers_id) FROM providers), 1)
+);
+
+SELECT setval(
+  'instruments_sq',
+  COALESCE((SELECT MAX(instruments_id) FROM instruments), 1)
+);
+
+SELECT setval(
+  'entities_sq',
+  COALESCE((SELECT MAX(entities_id) FROM entities), 1)
+);
 
 --SELECT * FROM fetcher.get_ready_deployments('2026-01-26 12:45:00');
 

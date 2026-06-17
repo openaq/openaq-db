@@ -402,6 +402,7 @@ SELECT date_trunc('hour', init_datetime) as added_on
 , array_agg(DISTINCT batch_uuid) as batches
 FROM fetchlogs
 WHERE completed_datetime IS NULL
+AND init_datetime IS NOT NULL
 AND NOT has_error
 GROUP BY 1
 ORDER BY 1 DESC;

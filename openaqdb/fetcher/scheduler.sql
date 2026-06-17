@@ -102,7 +102,9 @@ BEGIN
         RETURN FALSE;
     END;
 END;
-$$ LANGUAGE plpgsql IMMUTABLE;
+$$ LANGUAGE plpgsql
+  IMMUTABLE
+  SET search_path = public, fetcher;
 
 
 -- Validates complete cron expression
@@ -159,7 +161,9 @@ BEGIN
 
     RETURN TRUE;
 END;
-$$ LANGUAGE plpgsql IMMUTABLE;
+$$ LANGUAGE plpgsql IMMUTABLE
+  SET search_path = public, fetcher;
+
 
 
 -- ============================================================================
@@ -235,7 +239,9 @@ BEGIN
 
     RETURN FALSE;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql
+  SET search_path = public, fetcher;
+
 
 
 -- Main evaluation function: determines if cron expression matches given time

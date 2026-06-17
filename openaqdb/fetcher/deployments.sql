@@ -33,7 +33,7 @@ CREATE SEQUENCE IF NOT EXISTS fetcher_clients_sq START 10;
 CREATE TABLE IF NOT EXISTS fetcher_clients (
   fetcher_clients_id int PRIMARY KEY DEFAULT nextval('fetcher_clients_sq')
   , name text NOT NULL UNIQUE -- name of adapter/provider
-  , handler text   -- lcs or fetcher
+  --, handler text   -- lcs or fetcher
   , description text
   , authorization_method text -- NULL means none
   , accepts_start_date boolean DEFAULT 'f'
@@ -96,7 +96,7 @@ CREATE TABLE IF NOT EXISTS deployment_adapters (
 
 
 
-  DROP VIEW IF EXISTS deployment_adapters_view;
+  -- DROP VIEW IF EXISTS deployment_adapters_view;
   CREATE OR REPLACE VIEW deployment_adapters_view AS
   WITH deployment_adapters_config AS (
     SELECT da.deployments_id
@@ -125,7 +125,8 @@ CREATE TABLE IF NOT EXISTS deployment_adapters (
   , h.output_format
   FROM deployments d
   LEFT JOIN deployment_adapters_config c ON (c.deployments_id = d.deployments_id)
-  JOIN handlers h ON d.handlers_id = h.handlers_id;
+   JOIN handlers h ON d.handlers_id = h.handlers_id;
+
 
 
 
@@ -265,7 +266,7 @@ $$ LANGUAGE plpgsql;
 
 
 -- ============================================================================
--- Action Function: Queue Deployments
+-- Action Function: Queue scheduled Deployments
 -- ============================================================================
 -- Queues ready deployments to fetchlogs table for execution by adapter application
 -- Only queues deployments with adapters assigned (adapters_count > 0)
@@ -295,6 +296,7 @@ DECLARE
 BEGIN
   SET search_path = fetcher, public;
   -- first we are going to add the ready deployments to fetchlogs
+  WITH queued AS (
     INSERT INTO public.fetchlogs (
         key
       , scheduled_datetime
@@ -311,7 +313,13 @@ BEGIN
     )
     FROM get_ready_deployments(check_time) d
     WHERE jsonb_array_length(d.adapters) > 0
-    ON CONFLICT DO NOTHING;
+    ON CONFLICT DO NOTHING
+    RETURNING (fetchlogs.fetcher_config->>'deployments_id')::int AS deployments_id, fetchlogs.scheduled_datetime
+   )
+  UPDATE deployments d
+  SET last_deployed_datetime = q.scheduled_datetime
+  FROM queued q
+  WHERE d.deployments_id = q.deployments_id;
   -- then we quuee them all up from fetchlogs are return evenything
     RETURN QUERY
     SELECT m.fetchlogs_id
@@ -328,6 +336,66 @@ END;
 $$ LANGUAGE plpgsql;
 
 
+CREATE OR REPLACE FUNCTION queue_manual_deployment(
+    _deployments_id int
+  , _temporal_offset int DEFAULT NULL
+  , _datetime_first timestamptz DEFAULT NULL
+  , _datetime_last timestamptz DEFAULT NULL
+  , _scheduled_datetime timestamptz DEFAULT NULL
+)
+RETURNS TABLE (
+    fetchlogs_id int
+  , key text
+  , scheduled_datetime timestamptz
+) AS $$
+#variable_conflict use_column
+BEGIN
+  IF _scheduled_datetime IS NULL THEN
+    _scheduled_datetime := now();
+  END IF;
+  -- Manually queue deployments
+  RETURN QUERY
+  WITH queued AS (
+    INSERT INTO public.fetchlogs (
+        key
+      , scheduled_datetime
+      , queue_name
+      , fetcher_config
+    )
+  SELECT
+     format('%1$s/%2$s/%2$s-%3$s.%4$s'
+        , to_char(_scheduled_datetime, 'YYYY-MM-DD')
+        , d.filename_prefix
+        , to_char(_scheduled_datetime, 'YYYYMMDDHH24MI')
+        , d.output_format
+     ) as key
+    , _scheduled_datetime
+    , d.queue_name
+    , jsonb_build_object(
+          'deployments_id', d.deployments_id
+        , 'temporal_offset', COALESCE(_temporal_offset, d.temporal_offset)
+        , 'datetime_first', _datetime_first
+        , 'datetime_last', _datetime_last
+        , 'adapters', d.adapters
+    )
+  FROM fetcher.deployment_adapters_view d
+  WHERE deployments_id = _deployments_id
+  ON CONFLICT (key) DO UPDATE SET
+    fetcher_config = EXCLUDED.fetcher_config
+    RETURNING fetchlogs_id, scheduled_datetime, key
+  ), updated AS (
+    UPDATE fetcher.deployments d
+    SET last_deployed_datetime = q.scheduled_datetime
+    FROM queued q
+    WHERE d.deployments_id = _deployments_id
+  )
+    SELECT fetchlogs_id
+    , key
+    , scheduled_datetime
+    FROM queued;
+  END;
+$$ LANGUAGE plpgsql
+   SET search_path = fetcher, public;
 
 
 
