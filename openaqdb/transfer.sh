@@ -112,8 +112,6 @@ fi
 echo "Streaming pg_dump -> psql ..."
 echo $DUMP_ARGS
 
-exit 0
-
 pg_dump "$SOURCE_URI" \
     --data-only \
     "${DUMP_ARGS[@]}" \
