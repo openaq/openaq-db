@@ -104,7 +104,7 @@ case "$MODE" in
 esac
 
 if [[ "$MODE" == "replace" ]]; then
-    read -p "This will TRUNCATE ${TRUNCATE_LIST} CASCADE. Continue? [y/N] " ans
+    read -p "This will TRUNCATE ${TRUNCATE_LIST} CASCADE on $(echo "$LOCAL_URI" | sed -E 's|://[^:]+:[^@]+@|://**:**@|'). Continue? [y/N] " ans
     [[ "$ans" == "y" ]] || exit 1
 fi
 
