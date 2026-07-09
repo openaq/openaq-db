@@ -3,15 +3,18 @@ CREATE TYPE parameter_type AS ENUM (
 , 'meteorological'
 );
 
+
 CREATE TABLE IF NOT EXISTS measurands (
     measurands_id int generated always as identity primary key,
     measurand text not null,
     units text not null,
     display text,
-    description text,
-    parameter_type parameter_type NOT NULL DEFAULT 'pollutant'
+    description text
+    , ingest_key text UNIQUE
+    , parameter_type parameter_type NOT NULL DEFAULT 'pollutant'
     , upper_limit double precision
     , lower_limit double precision
+    , is_active boolean DEFAULT true
     , UNIQUE (measurand, units)
     , CHECK (upper_limit > lower_limit)
 );
@@ -26,14 +29,23 @@ CREATE TABLE IF NOT EXISTS measurands_map (
 );
 
 CREATE OR REPLACE VIEW measurands_map_view AS
+WITH all_measurands AS (
 SELECT measurands_id
 , key
 FROM measurands_map
+JOIN measurands USING (measurands_id)
+  WHERE is_active
 UNION ALL
 SELECT measurands_id
-, concat(measurand, units)
+, CASE WHEN ingest_key IS NOT NULL THEN ingest_key ELSE concat(measurand, units) END
 FROM measurands
-GROUP BY 1,2;
+  WHERE is_active
+  )
+  SELECT key
+  , MIN(measurands_id) as measurands_id
+  , COUNT(DISTINCT measurands_id) as measurand_duplicates
+  FROM all_measurands
+GROUP BY 1;
 
 
 CREATE OR REPLACE FUNCTION get_measurands_id(m text)

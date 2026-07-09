@@ -229,3 +229,51 @@ UPDATE measurands SET lower_limit = 850,  upper_limit = 1085  WHERE measurand = 
 
 -- CO2 (umol/mol — effectively same scale as ppm)
 UPDATE measurands SET lower_limit = 0, upper_limit = 5000 WHERE measurand = 'co2' AND units = 'umol/mol';
+
+
+
+-- the current list of measurands is the supported list
+  UPDATE measurands
+  SET is_active = false
+  WHERE measurands_id NOT IN (
+  SELECT measurands_id
+  FROM measurands
+  WHERE
+       (measurand IN ('co2', 'ch4', 'so2', 'no', 'no2', 'nox', 'o3') AND units IN ('ppb'))
+    OR (measurand IN ('co', 'co2', 'pm1', 'pm10', 'pm100', 'pm25', 'pm4') AND units IN ('ppm'))
+    OR (measurand IN ('co', 'co2', 'ch4', 'so2', 'no', 'no2', 'nox', 'o3', 'pm1', 'pm10', 'pm100', 'pm25', 'pm4') AND units IN ('µg/m³'))
+    OR (measurand ~* 'um|ufp' AND units IN ('particles/cm3','particles/cm³'))
+    OR (measurand ~* 'wind')
+    OR (measurand ~* '^bc' AND units IN ('ng/m3', 'ng/m³'))
+    OR (measurand ~* 'relative' AND units = '%')
+    OR (measurand ~* 'pressure' AND units = 'hpa')
+    OR (measurand ~* 'temperature' AND units = 'c')
+    ORDER BY measurand);
+
+
+  WITH ingest_ids AS (
+    SELECT measurands_id
+    , measurand
+    , units
+    , CASE WHEN measurand ~* 'bc'
+        THEN REPLACE(measurand, '_', '@')
+      WHEN measurand IN ('co', 'co2', 'ch4', 'so2', 'no', 'no2', 'nox', 'o3', 'pm1', 'pm10', 'pm100', 'pm25', 'pm4') AND units IN ('ppb', 'ppm', '')
+        THEN format('%s:parts', measurand)
+      WHEN measurand IN ('co', 'co2', 'ch4', 'so2', 'no', 'no2', 'nox', 'o3', 'pm1', 'pm10', 'pm100', 'pm25', 'pm4') AND units IN ('µg/m³', '')
+        THEN format('%s:mass', measurand)
+      WHEN units IN ('particles/cm³')
+        THEN format('%s:conc', measurand)
+      WHEN measurand = 'wind_direction'
+        THEN 'wd'
+      WHEN measurand = 'wind_speed'
+        THEN 'ws'
+      ELSE measurand
+      END as ingest_id
+    FROM measurands
+    WHERE is_active
+    ORDER BY measurand
+  )
+  UPDATE measurands
+  SET ingest_key = i.ingest_id
+  FROM ingest_ids i
+  WHERE measurands.measurands_id = i.measurands_id;
