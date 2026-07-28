@@ -277,3 +277,8 @@ UPDATE measurands SET lower_limit = 0, upper_limit = 5000 WHERE measurand = 'co2
   SET ingest_key = i.ingest_id
   FROM ingest_ids i
   WHERE measurands.measurands_id = i.measurands_id;
+
+
+UPDATE measurands
+SET units_id = get_units_id(units)
+WHERE units_id IS NULL AND is_active;

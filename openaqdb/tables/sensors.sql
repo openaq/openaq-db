@@ -3,7 +3,8 @@ CREATE TABLE IF NOT EXISTS sensors (
     sensors_id int generated always as identity primary key
     , sensor_systems_id int not null
     , measurands_id int not null
-    , source_id text UNIQUE -- this is not the case in production
+    --, source_id text UNIQUE -- this is not the case in production
+    , source_id text -- this is what production looks like
     , metadata jsonb
 		, is_public boolean DEFAULT 't'
 );

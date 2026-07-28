@@ -42,6 +42,7 @@ GRANT ALL ON FUNCTIONS to :DATABASE_WRITE_USER;
 \i tables/sensor_nodes.sql
 \i tables/sensor_systems.sql
 \i tables/measurands.sql
+\i tables/measurands_data.sql
 \i tables/sensors.sql
 \i tables/versions.sql
 \i tables/measurements.sql

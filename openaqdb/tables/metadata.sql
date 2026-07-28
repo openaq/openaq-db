@@ -91,26 +91,27 @@ COMMENT ON COLUMN sensor_types.is_reference IS
 -- '';
 
 
--- units
-CREATE SEQUENCE IF NOT EXISTS units_sq START 10;
-CREATE TABLE IF NOT EXISTS units (
-  units_id int PRIMARY KEY DEFAULT nextval('units_sq')
-  , display_short text NOT NULL UNIQUE
-  , display_long text NOT NULL UNIQUE
-);
+ -- THE following was updated and moved to the measurands file
+-- -- units
+-- CREATE SEQUENCE IF NOT EXISTS units_sq START 10;
+-- CREATE TABLE IF NOT EXISTS units (
+--   units_id int PRIMARY KEY DEFAULT nextval('units_sq')
+--   , display_short text NOT NULL UNIQUE
+--   , display_long text NOT NULL UNIQUE
+-- );
 
--- this will take some thought in how and where its done
--- for example, it might be easiest to do at the application level
--- in which case we just reference the method here
--- or maybe at the databse level and we reference the db function
-CREATE SEQUENCE IF NOT EXISTS unit_conversions_sq START 10;
-CREATE TABLE IF NOT EXISTS unit_conversions (
-  unit_conversions_id int PRIMARY KEY DEFAULT nextval('unit_conversions_sq')
-  , from_units_id int NOT NULL REFERENCES units(units_id) ON DELETE CASCADE
-  , to_units_id int NOT NULL REFERENCES units(units_id) ON DELETE CASCADE
-  , conversion_function text NOT NULL
-  , UNIQUE(from_units_id, to_units_id)
-);
+-- -- this will take some thought in how and where its done
+-- -- for example, it might be easiest to do at the application level
+-- -- in which case we just reference the method here
+-- -- or maybe at the databse level and we reference the db function
+-- CREATE SEQUENCE IF NOT EXISTS unit_conversions_sq START 10;
+-- CREATE TABLE IF NOT EXISTS unit_conversions (
+--   unit_conversions_id int PRIMARY KEY DEFAULT nextval('unit_conversions_sq')
+--   , from_units_id int NOT NULL REFERENCES units(units_id) ON DELETE CASCADE
+--   , to_units_id int NOT NULL REFERENCES units(units_id) ON DELETE CASCADE
+--   , conversion_function text NOT NULL
+--   , UNIQUE(from_units_id, to_units_id)
+-- );
 
 -- instruments
 -- a list of all possible instruments
@@ -142,7 +143,7 @@ CREATE TABLE IF NOT EXISTS models_sensors (
   , models_id int NOT NULL REFERENCES models
   , sensor_types_id int NOT NULL REFERENCES sensor_types
   , measurands_id int NOT NULL REFERENCES measurands
-  , units_id int NOT NULL REFERENCES units
+  --- , units_id int NOT NULL REFERENCES units -- likely not useful anymore
   , UNIQUE(models_id, measurands_id)
 );
 

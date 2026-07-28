@@ -859,20 +859,30 @@ CREATE OR REPLACE FUNCTION remove_sensor_data(
 ) RETURNS TABLE (
     sensors_deleted bigint,
     measurements_deleted bigint,
-    hourly_data_deleted bigint
+    hourly_data_deleted bigint,
+    datetime_first timestamptz,
+    datetime_last timestamptz
 ) LANGUAGE plpgsql AS $$
 DECLARE
     _measurements_deleted bigint;
     _hourly_data_deleted bigint;
     _sensors_deleted bigint := 0;
+    _dt_first timestamptz;
+    _dt_last timestamptz;
 BEGIN
     IF sids IS NULL OR array_length(sids, 1) IS NULL THEN
         RAISE EXCEPTION 'No sensor ids provided';
     END IF;
 
-    DELETE FROM measurements
-    WHERE sensors_id = ANY(sids);
-    GET DIAGNOSTICS _measurements_deleted = ROW_COUNT;
+    -- capture count + min/max while deleting
+    WITH d AS (
+        DELETE FROM measurements
+        WHERE sensors_id = ANY(sids)
+        RETURNING datetime
+    )
+    SELECT COUNT(*), MIN(datetime), MAX(datetime)
+      INTO _measurements_deleted, _dt_first, _dt_last
+      FROM d;
 
     DELETE FROM hourly_data
     WHERE sensors_id = ANY(sids);
@@ -902,7 +912,9 @@ BEGIN
     RETURN QUERY SELECT
         _sensors_deleted,
         _measurements_deleted,
-        _hourly_data_deleted;
+        _hourly_data_deleted,
+        _dt_first,
+        _dt_last;
 END;
 $$;
 
