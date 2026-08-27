@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS deployments (
   , description text
   , temporal_offset int
   , filename_prefix text NOT NULL
+  , bucket text
   , is_active boolean NOT NULL DEFAULT 't'
   , schedule cronexpr NOT NULL
   , last_deployed_datetime timestamptz
@@ -229,14 +230,16 @@ RETURNS TABLE (
   , queue_name text
   , key text
   , deployments_id int
-  , adapters jsonb -- array of adapters with confg
+  , adapters jsonb
   , temporal_offset int
+  , bucket text
   , datetime_first timestamptz
   , datetime_last timestamptz
 ) AS $$
 BEGIN
   SET search_path = fetcher, public;
   RETURN QUERY
+  WITH marked AS (
     UPDATE public.fetchlogs f
     SET queued_datetime = now()
     FROM (
@@ -255,14 +258,26 @@ BEGIN
     , f.scheduled_datetime
     , f.queue_name
     , f.key
-    , (fetcher_config->>'deployments_id')::int as deployments_id
-    , (fetcher_config->'adapters') as adapters
-    , (fetcher_config->>'temporal_offset')::int as temporal_offset
-    , (fetcher_config->>'datetime_first')::timestamptz as datetime_first
-    , (fetcher_config->>'datetime_last')::timestamptz as datetime_last;
+    , (f.fetcher_config->>'deployments_id')::int as deployments_id
+    , (f.fetcher_config->'adapters') as adapters
+    , (f.fetcher_config->>'temporal_offset')::int as temporal_offset
+    , (f.fetcher_config->>'datetime_first')::timestamptz as datetime_first
+    , (f.fetcher_config->>'datetime_last')::timestamptz as datetime_last
+  )
+  SELECT m.fetchlogs_id
+  , m.scheduled_datetime
+  , m.queue_name
+  , m.key
+  , m.deployments_id
+  , m.adapters
+  , m.temporal_offset
+  , d.bucket
+  , m.datetime_first
+  , m.datetime_last
+  FROM marked m
+  LEFT JOIN fetcher.deployments d ON d.deployments_id = m.deployments_id;
 END;
 $$ LANGUAGE plpgsql;
-
 
 
 -- ============================================================================
@@ -286,6 +301,7 @@ RETURNS TABLE (
   , queue_name text
   , scheduled_datetime timestamptz
   , temporal_offset int
+  , bucket text
   , datetime_first timestamptz
   , datetime_last timestamptz
   , key text
@@ -327,6 +343,7 @@ BEGIN
     , m.queue_name
     , m.scheduled_datetime
     , m.temporal_offset
+    , m.bucket
     , m.datetime_first
     , m.datetime_last
     , m.key
