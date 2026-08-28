@@ -240,3 +240,35 @@ SELECT u.units_id,
        GROUP BY units_id
   ) a ON a.units_id = u.units_id
  ORDER BY u.dimension, u.units;
+
+CREATE OR REPLACE VIEW measurands_reference AS
+WITH specific_conversions AS (
+    SELECT uc.measurand,
+           array_agg(
+               format('%s → %s (×%s)',
+                      fu.units, tu.units, uc.factor)
+               ORDER BY fu.units, tu.units
+           ) AS conversions
+      FROM unit_conversions uc
+      JOIN units fu ON fu.units_id = uc.from_units_id
+      JOIN units tu ON tu.units_id = uc.to_units_id
+     WHERE uc.measurand IS NOT NULL
+     GROUP BY uc.measurand
+)
+SELECT
+    m.measurands_id,
+    m.measurand,
+    m.units          AS units,
+    u.display        AS units_display,
+    u.dimension      AS units_dimension,
+    m.units_id,
+    m.display        AS measurand_display,
+    m.description,
+    m.lower_limit,
+    m.upper_limit,
+    m.is_active,
+    COALESCE(sc.conversions, '{}') AS specific_conversions
+  FROM measurands m
+  LEFT JOIN units u              ON u.units_id = m.units_id
+  LEFT JOIN specific_conversions sc ON sc.measurand = m.measurand
+ ORDER BY m.measurand;

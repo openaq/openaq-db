@@ -17,7 +17,11 @@ CREATE INDEX IF NOT EXISTS sensor_nodes_public_idx ON sensor_nodes USING btree (
 CREATE INDEX IF NOT EXISTS sensor_nodes_geom_idx ON sensor_nodes USING gist (geom);
 CREATE INDEX IF NOT EXISTS sensor_nodes_metadata_idx ON sensor_nodes USING gin (metadata);
 CREATE INDEX IF NOT EXISTS sensor_nodes_site_name_source_name_idx ON sensor_nodes USING btree (site_name, source_name);
-CREATE UNIQUE INDEX IF NOT EXISTS sensor_nodes_source_name_source_id_idx ON sensor_nodes USING btree (source_name, source_id);
+--CREATE UNIQUE INDEX IF NOT EXISTS sensor_nodes_source_name_source_id_idx ON sensor_nodes USING btree (source_name, source_id);
+--CREATE UNIQUE INDEX IF NOT EXISTS sensor_nodes_source_name_source_id_geom_idx ON sensor_nodes USING btree (source_name, source_id, geom);
+ALTER TABLE sensor_nodes ADD CONSTRAINT sensor_nodes_deployment_key
+    UNIQUE NULLS NOT DISTINCT (source_name, source_id, geom);
+
 
 
 CREATE TABLE IF NOT EXISTS sensor_nodes_history (
