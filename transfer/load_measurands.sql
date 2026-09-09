@@ -47,3 +47,12 @@ SET
 SELECT
     (SELECT count(*) FROM stage_measurands)  AS staged,
     (SELECT count(*) FROM public.measurands) AS total;
+
+
+-- allow all measurands and use the current units
+-- moving forward we are migrating mb to hpa
+UPDATE measurands
+  SET units_id = get_units_id(units)
+  WHERE units != 'mb';
+
+\i ../openaqdb/lookups/measurands_map.sql

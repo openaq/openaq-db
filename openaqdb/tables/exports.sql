@@ -152,7 +152,7 @@ CREATE TABLE IF NOT EXISTS providers (
   , label text NOT NULL UNIQUE
   , description text
   , is_public boolean DEFAULT true
-  , spatial_match_tolerance double precision DEFAULT 0.002
+  , spatial_match_tolerance double precision DEFAULT 0.0001 -- seems to be the right size to split some airnow stations that are likely the same
   -- relates to the sensor_nodes table
   -- in the future we should link the providers_id directly to sensor_nodes
   , source_name text NOT NULL --REFERENCES sensor_nodes(source_name)

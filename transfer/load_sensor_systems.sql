@@ -49,7 +49,7 @@ WHERE sensor_nodes_id IN (SELECT sensor_nodes_id FROM public.sensor_nodes)
 WITH orphans AS (
     SELECT count(*) AS n
     FROM stage_sensor_systems s
-    WHERE s.sensor_nodes_id NOT IN (SELECT sensor_nodes_id FROM public.sensor_nodes)
+    WHERE s.sensor_systems_id NOT IN (SELECT sensor_systems_id FROM public.sensor_systems)
 )
 SELECT
     (SELECT count(*) FROM stage_sensor_systems)  AS staged,

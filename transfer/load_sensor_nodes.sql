@@ -23,6 +23,16 @@ CREATE TEMP TABLE stage_sensor_nodes (
 
 \COPY stage_sensor_nodes FROM PSTDIN WITH (FORMAT CSV, HEADER)
 
+-- DELETE THE source id from realtime
+-- UPDATE stage_sensor_nodes
+--   SET source_id = NULL
+--   WHERE source_name ~* 'airnow';
+
+UPDATE stage_sensor_nodes
+  SET source_id = sensor_nodes_id
+  --WHERE providers_id IN (118,119,151,152,16,162,164,17,202,206,210,224,283,35,52,62,69,70,223);
+  WHERE providers_id NOT IN (443,66,21,11,479,445,166,168,14,200,440,15,444,222,10,13); -- all the lcs providers
+
 
 \echo Constraint check:
   WITH duplicates AS (
@@ -38,6 +48,7 @@ SELECT source_name
   HAVING COUNT(1) > 1
   ORDER BY COUNT(1) DESC)
   SELECT COUNT(*) FROM duplicates;
+
 
 WITH deduped AS (
     SELECT DISTINCT ON (source_name, source_id, geom) *
@@ -90,3 +101,14 @@ SELECT
     countries_id,
     owner_entities_id
 FROM deduped;
+
+
+WITH orphans AS (
+    SELECT count(*) AS n
+    FROM stage_sensor_nodes s
+    WHERE s.sensor_nodes_id NOT IN (SELECT sensor_nodes_id FROM public.sensor_nodes)
+)
+SELECT
+    (SELECT count(*) FROM stage_sensor_nodes)  AS staged,
+    (SELECT n FROM orphans)                AS skipped_orphans,
+    (SELECT count(*) FROM public.sensor_nodes)  AS total;
