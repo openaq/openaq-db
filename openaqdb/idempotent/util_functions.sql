@@ -1007,3 +1007,33 @@ $$;
         _measurements_merged, _measurements_total, _hours_queued;
     END;
   $$ LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE FUNCTION jsonb_actor(
+    actor_type text,
+    actor_id bigint,
+    reason text DEFAULT NULL
+) RETURNS jsonb AS $$
+    SELECT jsonb_strip_nulls(jsonb_build_object(
+        'type', actor_type,
+        'id', actor_id,
+        'reason', reason
+    ));
+$$ LANGUAGE SQL IMMUTABLE;
+
+
+CREATE OR REPLACE FUNCTION jsonb_added(
+    actor_type text,
+    actor_id bigint,
+    reason text DEFAULT NULL
+) RETURNS jsonb AS $$
+    SELECT jsonb_build_object('added_by', jsonb_actor(actor_type, actor_id, reason));
+$$ LANGUAGE SQL IMMUTABLE;
+
+CREATE OR REPLACE FUNCTION jsonb_modified(
+    actor_type text,
+    actor_id bigint,
+    reason text DEFAULT NULL
+) RETURNS jsonb AS $$
+    SELECT jsonb_build_object('modified_by', jsonb_actor(actor_type, actor_id, reason));
+$$ LANGUAGE SQL IMMUTABLE;

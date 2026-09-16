@@ -69,15 +69,24 @@ CREATE TABLE IF NOT EXISTS ingest_stats (
 -- A table to store responses sent from the fetchers
 CREATE TABLE IF NOT EXISTS fetcher_responses (
     source_name text NOT NULL
+  , fetchlogs_id int
   , datetime timestamptz NOT NULL DEFAULT now()
   , message text NOT NULL
   , records int NOT NULL DEFAULT 0
+  , boundary Geometry(Polygon, 4326)
   , locations int
+  , systems int
+  , sensors int
+  , flags int
+  , started_on timestamptz
+  , finished_on timestamptz
+  , exported_on timestamptz
   , datetime_from timestamptz
   , datetime_to timestamptz
   , duration_seconds real
   , errors json
   , parameters json
+  , UNIQUE(source_name, fetchlogs_id)
 );
 
 

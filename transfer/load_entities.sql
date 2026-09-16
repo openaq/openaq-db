@@ -7,6 +7,7 @@ CREATE TEMP TABLE stage_entities (
     added_by     int,
     modified_on  timestamptz,
     modified_by  int,
+  ingest_id text,
     metadata     jsonb
 );
 

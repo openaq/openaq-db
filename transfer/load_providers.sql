@@ -11,7 +11,8 @@ CREATE TEMP TABLE stage_providers (
   license text,
     metadata      jsonb,
   owner_entities_id int,
-    is_active     boolean
+    is_active     boolean,
+  spatial_match_tolerance double precision
 );
 
 \COPY stage_providers FROM PSTDIN WITH (FORMAT CSV, HEADER)
@@ -26,7 +27,8 @@ INSERT INTO public.providers AS p (
     source_name,
     export_prefix,
     metadata,
-    is_active
+    is_active,
+  spatial_match_tolerance
 )
 SELECT
     providers_id,
@@ -34,7 +36,7 @@ SELECT
     source_name,
     export_prefix,
     metadata,
-    is_active
+    is_active, spatial_match_tolerance
 FROM stage_providers
 ON CONFLICT (providers_id) DO UPDATE
 SET

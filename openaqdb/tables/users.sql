@@ -103,6 +103,7 @@ CREATE TABLE IF NOT EXISTS entities (
   , full_name text NOT NULL
   -- add any details that we want to track about a person
   -- some tracking tables that we may want to include
+  , ingest_id text UNIQUE
   , metadata jsonb
   , added_on timestamptz NOT NULL DEFAULT now()
   , added_by int NOT NULL REFERENCES users DEFAULT 1

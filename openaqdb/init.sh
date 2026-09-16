@@ -60,6 +60,7 @@ psql --single-transaction -v ON_ERROR_STOP=1 -f lookups/instruments_list.sql
 
 
 psql --single-transaction -v ON_ERROR_STOP=1 \
+     -c "UPDATE measurands SET is_active = 't', ingest_key = 'rh' WHERE measurand = 'rh'" \
      -c "UPDATE measurands SET units_id = get_units_id(units) WHERE units != 'mb'"
 
 psql --single-transaction -v ON_ERROR_STOP=1 -f lookups/measurands_map.sql

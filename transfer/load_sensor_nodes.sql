@@ -31,7 +31,10 @@ CREATE TEMP TABLE stage_sensor_nodes (
 UPDATE stage_sensor_nodes
   SET source_id = sensor_nodes_id
   --WHERE providers_id IN (118,119,151,152,16,162,164,17,202,206,210,224,283,35,52,62,69,70,223);
-  WHERE providers_id NOT IN (443,66,21,11,479,445,166,168,14,200,440,15,444,222,10,13); -- all the lcs providers
+ -- WHERE providers_id NOT IN (443,66,21,11,479,445,166,168,14,200,440,15,444,222,10,13); -- all the lcs providers
+  WHERE lower(source_name) IN (SELECT lower(source_name)
+                FROM providers
+                WHERE providers_id NOT IN (443,66,21,11,479,445,166,168,14,200,440,15,444,222,10,13));
 
 
 \echo Constraint check:

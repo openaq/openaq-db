@@ -7,7 +7,10 @@ CREATE TEMP TABLE stage_measurands (
     description    text,
     parameter_type text,
     upper_limit    double precision,
-    lower_limit    double precision
+    lower_limit    double precision,
+    ingest_key text,
+  is_active boolean,
+  units_id int
 );
 
 \COPY stage_measurands FROM PSTDIN WITH (FORMAT CSV, HEADER)
@@ -20,7 +23,10 @@ INSERT INTO public.measurands AS m (
     description,
     parameter_type,
     upper_limit,
-    lower_limit
+    lower_limit,
+  ingest_key,
+  is_active,
+  units_id
 )
 OVERRIDING SYSTEM VALUE
 SELECT
@@ -31,8 +37,12 @@ SELECT
     description,
     parameter_type::parameter_type,
     upper_limit,
-    lower_limit
+    lower_limit,
+  ingest_key,
+  is_active,
+  units_id
 FROM stage_measurands
+ WHERE measurands_id != 132
 ON CONFLICT (measurands_id) DO UPDATE
 SET
     measurand      = EXCLUDED.measurand,

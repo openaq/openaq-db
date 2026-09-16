@@ -57,8 +57,19 @@ CREATE TABLE unit_conversions (
       UNIQUE NULLS NOT DISTINCT (from_units_id, to_units_id, measurand)
 );
 
+ -- Old view and can be removed after migration
+CREATE OR REPLACE VIEW public.measurands_map_view AS
+ SELECT measurands_map.measurands_id,
+    measurands_map.key
+   FROM measurands_map
+UNION ALL
+ SELECT measurands.measurands_id,
+    concat(measurands.measurand, measurands.units) AS key
+   FROM measurands
+  GROUP BY measurands.measurands_id, (concat(measurands.measurand, measurands.units));
 
-CREATE OR REPLACE VIEW measurands_map_view AS
+
+CREATE OR REPLACE VIEW active_measurands_view AS
 WITH all_measurands AS (
 SELECT measurands_id
 , key

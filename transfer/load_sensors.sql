@@ -36,7 +36,7 @@ OVERRIDING SYSTEM VALUE
 SELECT
     sensors_id,
     sensor_systems_id,
-    measurands_id,
+    CASE WHEN measurands_id = 132 THEN 95 ELSE measurands_id END,
     source_id,
     metadata,
     is_public,

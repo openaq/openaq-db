@@ -123,6 +123,9 @@ CREATE TABLE IF NOT EXISTS instruments (
   , description text
   , is_monitor boolean NOT NULL DEFAULT 'f'
   , ingest_id text UNIQUE -- not required unless expected in provider data
+  , metadata jsonb
+  , added_on timestamptz DEFAULT now()
+  , modified_on timestamptz
 );
 
 -- models
@@ -131,6 +134,9 @@ CREATE TABLE IF NOT EXISTS models (
   models_id int PRIMARY KEY DEFAULT nextval('models_sq')
   , instruments_id int NOT NULL REFERENCES instruments
   , label text NOT NULL
+  , metadata jsonb
+  , added_on timestamptz DEFAULT now()
+  , modified_on timestamptz
   , UNIQUE(instruments_id, label)
 );
 
