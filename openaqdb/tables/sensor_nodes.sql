@@ -17,7 +17,9 @@ CREATE INDEX IF NOT EXISTS sensor_nodes_public_idx ON sensor_nodes USING btree (
 CREATE INDEX IF NOT EXISTS sensor_nodes_geom_idx ON sensor_nodes USING gist (geom);
 CREATE INDEX IF NOT EXISTS sensor_nodes_metadata_idx ON sensor_nodes USING gin (metadata);
 CREATE INDEX IF NOT EXISTS sensor_nodes_site_name_source_name_idx ON sensor_nodes USING btree (site_name, source_name);
-CREATE UNIQUE INDEX IF NOT EXISTS sensor_nodes_source_name_source_id_idx ON sensor_nodes USING btree (source_name, source_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS sensor_nodes_deployment_idx ON sensor_nodes USING btree (source_name, source_id, geom);
+ALTER TABLE sensor_nodes ADD CONSTRAINT sensor_nodes_deployment_key UNIQUE NULLS NOT DISTINCT (source_name, source_id, geom);
 
 
 CREATE TABLE IF NOT EXISTS sensor_nodes_history (
@@ -66,7 +68,9 @@ BEGIN
             source_names=public.array_distinct(array_cat(sensor_nodes_harrays.source_names, EXCLUDED.source_names), true),
             site_names=public.array_distinct(array_cat(sensor_nodes_harrays.site_names, EXCLUDED.site_names), true)
     ;
-    INSERT INTO public.sensor_nodes_history
+    INSERT INTO public.sensor_nodes_history (
+      sensor_nodes_id, ismobile, geom, site_name
+      , source_name, city, country, metadata, source_id)
     SELECT
         OLD.sensor_nodes_id,
         OLD.ismobile,
@@ -74,10 +78,8 @@ BEGIN
         OLD.site_name,
         OLD.source_name,
         OLD.city,
-        OLD.geocoding_result,
         OLD.country,
         OLD.metadata,
-        now(),
         OLD.source_id;
     RETURN NEW;
 END;

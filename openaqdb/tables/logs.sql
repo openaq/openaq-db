@@ -283,5 +283,120 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+CREATE TABLE IF NOT EXISTS user_profiles (
+    users_id int PRIMARY KEY,
+    label text NOT NULL,           -- e.g. 'bulk-downloader', 'dashboard-poller', 'explorer'
+    avg_daily_requests int,
+    avg_request_time numeric,
+    primary_endpoint text,         -- most common endpoint
+    primary_agent text,            -- most common agent
+    endpoint_richness int,        -- how many distinct endpoints they hit
+    endpoint_evenness int,        -- a measure of endpoint skewness
+    updated_on timestamptz DEFAULT now()
+);
+
 
 SET search_path = public;
+
+
+
+CREATE OR REPLACE FUNCTION classify_users(lookback_days int DEFAULT 30)
+RETURNS int AS $$
+DECLARE
+    classified int;
+BEGIN
+    WITH user_stats AS (
+        SELECT
+            users_id,
+            SUM(requests_count) AS total_requests,
+            ROUND(AVG(requests_count)) AS avg_daily_requests,
+            ROUND(AVG(requests_time::numeric / NULLIF(requests_count, 0)), 1) AS avg_request_time,
+            COUNT(DISTINCT day) AS active_days
+        FROM user_daily_requests
+        WHERE day > current_date - lookback_days
+        GROUP BY users_id
+    )
+    INSERT INTO user_profiles (users_id, label, avg_daily_requests, avg_request_time, endpoint_richness)
+    SELECT
+        users_id,
+        CASE
+            WHEN avg_daily_requests > 5000
+                THEN 'bulk-downloader'
+            WHEN avg_daily_requests > 1000
+                THEN 'heavy-integrator'
+            WHEN avg_daily_requests BETWEEN 100 AND 1000 AND active_days > lookback_days * 0.5
+                THEN 'regular-consumer'
+            WHEN avg_daily_requests BETWEEN 100 AND 1000
+                THEN 'occasional-consumer'
+            WHEN avg_daily_requests < 100 AND active_days > lookback_days * 0.5
+                THEN 'light-steady'
+            WHEN avg_daily_requests < 100
+                THEN 'casual'
+            ELSE 'other'
+        END AS label,
+        avg_daily_requests,
+        avg_request_time,
+        NULL  -- no endpoint diversity from summary table
+    FROM user_stats
+    ON CONFLICT (users_id)
+    DO UPDATE SET
+        label = EXCLUDED.label,
+        avg_daily_requests = EXCLUDED.avg_daily_requests,
+        avg_request_time = EXCLUDED.avg_request_time,
+        updated_on = now();
+    GET DIAGNOSTICS classified = ROW_COUNT;
+    RETURN classified;
+END;
+$$ LANGUAGE plpgsql SET search_path = logs, public;
+
+
+
+
+CREATE OR REPLACE FUNCTION characterize_traffic(
+    window_start timestamptz,
+    window_minutes int DEFAULT 15
+)
+RETURNS TABLE (
+    user_label text,
+    active_users int,
+    total_requests bigint,
+    total_time_seconds numeric,
+    avg_time_ms numeric,
+    top_endpoints text[],
+    pct_of_traffic numeric
+) AS $$
+DECLARE
+    window_end timestamptz := window_start + (window_minutes || ' minutes')::interval;
+BEGIN
+    RETURN QUERY
+    WITH window_logs AS (
+        SELECT
+            l.*,
+            COALESCE(p.label, 'unclassified') AS user_label
+        FROM api_logs l
+        LEFT JOIN user_keys k ON (l.api_key = k.token)
+        LEFT JOIN user_profiles p ON (k.users_id = p.users_id)
+        WHERE l.added_on >= window_start
+          AND l.added_on < window_end
+    ),
+    total AS (
+        SELECT COUNT(1) AS n FROM window_logs
+    ),
+    by_label AS (
+        SELECT
+            w.user_label,
+            COUNT(DISTINCT k.users_id)::int AS active_users,
+            COUNT(1) AS total_requests,
+            ROUND(SUM(timing)::numeric / 1000, 1) AS total_time_seconds,
+            ROUND(AVG(timing)::numeric, 1) AS avg_time_ms,
+            (array_agg(DISTINCT endpoint ORDER BY endpoint))[1:3] AS top_endpoints,
+            ROUND(COUNT(1)::numeric / t.n * 100, 1) AS pct_of_traffic
+        FROM window_logs w
+        LEFT JOIN user_keys k ON (w.api_key = k.token)
+        CROSS JOIN total t
+        GROUP BY w.user_label, t.n
+    )
+    SELECT * FROM by_label
+    ORDER BY total_requests DESC;
+END;
+$$ LANGUAGE plpgsql SET search_path = logs, public;

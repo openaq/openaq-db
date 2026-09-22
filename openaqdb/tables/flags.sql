@@ -19,7 +19,10 @@ CREATE TABLE IF NOT EXISTS flag_types (
   , flag_level flag_level NOT NULL
   , label text NOT NULL
   , description text
+  , metadata jsonb
   , ingest_id text NOT NULL UNIQUE
+  , added_on timestamptz DEFAULT now()
+  , modified_on timestamptz
 );
 
 
@@ -54,12 +57,14 @@ CREATE TABLE IF NOT EXISTS flags (
   , period tstzrange NOT NULL
   , sensors_ids int[] --NOT NULL DEFAULT '{}'::int[]
   , note text
+  , metadata jsonb
   , added_on timestamptz DEFAULT now()
   , modified_on timestamptz
 );
 
 CREATE INDEX flags_period_idx ON flags USING GiST (period);
-CREATE INDEX CONCURRENTLY flags_sensors_ids_idx ON flags USING gin (sensors_ids);
+CREATE INDEX flags_sensors_ids_idx ON flags USING gin (sensors_ids);
+CREATE INDEX flags_sensor_nodes_idx ON flags (sensor_nodes_id);
 
 -- CREATE OR REPLACE FUNCTION check_flags() RETURNS TRIGGER AS $$
 -- DECLARE

@@ -7,3 +7,4 @@ CREATE TABLE IF NOT EXISTS countries(
 );
 CREATE INDEX ON countries USING GIST (geog);
 CREATE INDEX ON countries (iso);
+CREATE INDEX IF NOT EXISTS countries_geom_idx ON countries USING gist ((geog::geometry));
