@@ -1037,3 +1037,13 @@ CREATE OR REPLACE FUNCTION jsonb_modified(
 ) RETURNS jsonb AS $$
     SELECT jsonb_build_object('modified_by', jsonb_actor(actor_type, actor_id, reason));
 $$ LANGUAGE SQL IMMUTABLE;
+
+-- used to create a pattern to use to match sensors and instruments
+-- that previously did not have a an instrument ingest key attached
+CREATE OR REPLACE FUNCTION without_instrument_pattern(input text)
+RETURNS text AS $$
+  SELECT '^' || regexp_replace(
+    regexp_replace(input, '/[^/]+::[^/]+', '', 'g'),
+    '/', '[/-]', 'g'
+  ) || '$';
+$$ LANGUAGE sql IMMUTABLE;

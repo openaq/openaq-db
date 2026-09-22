@@ -68,7 +68,9 @@ BEGIN
             source_names=public.array_distinct(array_cat(sensor_nodes_harrays.source_names, EXCLUDED.source_names), true),
             site_names=public.array_distinct(array_cat(sensor_nodes_harrays.site_names, EXCLUDED.site_names), true)
     ;
-    INSERT INTO public.sensor_nodes_history
+    INSERT INTO public.sensor_nodes_history (
+      sensor_nodes_id, ismobile, geom, site_name
+      , source_name, city, country, metadata, source_id)
     SELECT
         OLD.sensor_nodes_id,
         OLD.ismobile,
@@ -76,10 +78,8 @@ BEGIN
         OLD.site_name,
         OLD.source_name,
         OLD.city,
-        OLD.geocoding_result,
         OLD.country,
         OLD.metadata,
-        now(),
         OLD.source_id;
     RETURN NEW;
 END;

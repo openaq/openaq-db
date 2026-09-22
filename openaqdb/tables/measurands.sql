@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS measurands_map (
   , measurands_id int NOT NULL REFERENCES measurands ON DELETE CASCADE
   , units text NOT NULL
   , source_name text NOT NULL
-  , UNIQUE(key, units)
+  , UNIQUE(key, units, source_name)
 );
 
 -- Alias table for the "µg/m³ vs ug/m3" problem
@@ -71,17 +71,17 @@ UNION ALL
 
 CREATE OR REPLACE VIEW active_measurands_view AS
 WITH all_measurands AS (
-SELECT measurands_id
-, key
-FROM measurands_map
-JOIN measurands USING (measurands_id)
+  SELECT measurands_id
+  , format('%s:%s', source_name, key) as key
+  FROM measurands_map
+  JOIN measurands USING (measurands_id)
   WHERE is_active
-UNION ALL
-SELECT measurands_id
-, CASE WHEN ingest_key IS NOT NULL THEN ingest_key ELSE concat(measurand, units) END
-FROM measurands
+    UNION ALL
+  SELECT measurands_id
+  , CASE WHEN ingest_key IS NOT NULL THEN ingest_key ELSE concat(measurand, units) END
+  FROM measurands
   WHERE is_active
-  )
+)
   SELECT key
   , MIN(measurands_id) as measurands_id
   , COUNT(DISTINCT measurands_id) as measurand_duplicates
