@@ -39,7 +39,7 @@ The fetcher schema manages scheduling and configuration for data adapter deploym
 
 **fetchlogs as queue**: The `public.fetchlogs` table serves as both execution queue and audit log. The `scheduled_datetime` field marks queued jobs; `loaded_datetime` and `completed_datetime` track progress through the pipeline.
 
-**Unique keys for idempotency**: Fetchlog keys use format `YYYY-MM-DD/prefix/prefix-YYYYMMDDHH24MI`. Each deployment+time combination produces exactly one job via ON CONFLICT DO NOTHING constraint.
+**Unique keys for idempotency**: Fetchlog keys use format `data/YYYY-MM-DD/prefix/prefix-YYYYMMDDHH24MI`. Each deployment+time combination produces exactly one job via ON CONFLICT DO NOTHING constraint.
 
 **Temporal offsets**: The `temporal_offset` field (in hours) tells adapters to fetch data from N hours in the past, accommodating data sources that publish with delay.
 
