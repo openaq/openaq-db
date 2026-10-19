@@ -184,7 +184,7 @@ BEGIN
     , h.queue_name
     , check_time as scheduled_time
     , d.temporal_offset
-    , format('%1$s/%2$s/%2$s-%3$s.%4$s'
+    , format('data/%1$s/%2$s/%2$s-%3$s.%4$s'
         , to_char(check_time, 'YYYY-MM-DD')
         , d.filename_prefix
         , to_char(check_time, 'YYYYMMDDHH24MI')
@@ -380,7 +380,7 @@ BEGIN
       , fetcher_config
     )
   SELECT
-     format('%1$s/%2$s/%2$s-%3$s.%4$s'
+     format('data/%1$s/%2$s/%2$s-%3$s.%4$s'
         , to_char(_scheduled_datetime, 'YYYY-MM-DD')
         , d.filename_prefix
         , to_char(_scheduled_datetime, 'YYYYMMDDHH24MI')
