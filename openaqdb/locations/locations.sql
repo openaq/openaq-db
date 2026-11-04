@@ -11,7 +11,7 @@
   SELECT p.providers_id
   , json_agg(json_build_object(
     'id', p.licenses_id
-  , 'name', l.name
+  , 'label', l.label
   , 'date_from', lower(active_period)
   , 'date_to', upper(active_period)
   )) as licenses
@@ -24,7 +24,7 @@
   SELECT sn.sensor_nodes_id
   , json_agg(json_build_object(
     'id', pl.licenses_id
-    , 'name', l.name
+    , 'label', l.label
     , 'date_from', lower(pl.active_period)
     , 'date_to', upper(pl.active_period)
       , 'attribution', json_build_object(
