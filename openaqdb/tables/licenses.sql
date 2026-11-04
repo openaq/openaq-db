@@ -13,7 +13,8 @@ DROP SEQUENCE IF EXISTS licenses_sq;
 CREATE SEQUENCE IF NOT EXISTS licenses_sq START 10;
 CREATE TABLE IF NOT EXISTS licenses (
   licenses_id int PRIMARY KEY DEFAULT nextval('licenses_sq')
-	, name text NOT NULL UNIQUE
+  , name text NOT NULL UNIQUE -- identifier for license SPDX if available
+  , label text NOT NULL -- human readable name of license
   , description text -- short descriptive summary
   , url text -- link to the actual text/pdf/copy of license
  -- , author_entities_id int NOT NULL REFERENCES entities
