@@ -1047,3 +1047,103 @@ RETURNS text AS $$
     '/', '[/-]', 'g'
   ) || '$';
 $$ LANGUAGE sql IMMUTABLE;
+
+
+CREATE OR REPLACE PROCEDURE convert_sensor_units(
+    p_sensor_id int
+  , p_to_measurands_id int                    -- e.g. the ppb version of the same parameter
+  , p_factor double precision                 -- new_value = value * p_factor + p_addend
+  , p_addend double precision DEFAULT 0
+)
+AS $$
+DECLARE
+    _from_measurands_id int;
+    _tzid text;
+    _measurements_total bigint;
+    _measurements_updated bigint;
+    _hours_queued bigint;
+BEGIN
+    IF p_sensor_id IS NULL OR p_to_measurands_id IS NULL
+       OR p_factor IS NULL OR p_addend IS NULL THEN
+        RAISE EXCEPTION 'sensor id, target measurand, factor and addend must all be provided';
+    END IF;
+    IF p_factor = 0 THEN
+        RAISE EXCEPTION 'factor cannot be 0';
+    END IF;
+
+    SELECT s.measurands_id, tz.tzid
+      INTO _from_measurands_id, _tzid
+    FROM sensors s
+    JOIN sensor_systems sy ON s.sensor_systems_id = sy.sensor_systems_id
+    JOIN sensor_nodes sn ON sy.sensor_nodes_id = sn.sensor_nodes_id
+    JOIN timezones tz ON sn.timezones_id = tz.timezones_id
+    WHERE s.sensors_id = p_sensor_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Sensor % not found', p_sensor_id;
+    END IF;
+
+    PERFORM 1
+    FROM measurands f
+    JOIN measurands t ON t.measurands_id = p_to_measurands_id
+    WHERE f.measurands_id = _from_measurands_id
+      AND f.measurand = t.measurand
+      AND f.units IS DISTINCT FROM t.units;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Measurand % is not a different unit of the same parameter as sensor %''s current measurand %',
+            p_to_measurands_id, p_sensor_id, _from_measurands_id;
+    END IF;
+
+    RAISE NOTICE 'Converting sensor % from measurand % to %: value * % + %',
+        p_sensor_id, _from_measurands_id, p_to_measurands_id, p_factor, p_addend;
+
+    SELECT COUNT(*) INTO _measurements_total
+    FROM measurements WHERE sensors_id = p_sensor_id;
+
+    INSERT INTO measurements_archive (
+        sensors_id
+      , datetime
+      , value
+      , lon
+      , lat
+      , added_on
+      , archive_reason
+    )
+    SELECT
+        sensors_id
+      , datetime
+      , value
+      , lon
+      , lat
+      , added_on
+      , format('unit conversion: measurand %s to  %s, value * %s + %s',
+               _from_measurands_id, p_to_measurands_id, p_factor, p_addend)
+    FROM measurements
+    WHERE sensors_id = p_sensor_id;
+
+    WITH updated AS (
+        UPDATE measurements
+        SET value = value * p_factor + p_addend
+        WHERE sensors_id = p_sensor_id
+        RETURNING datetime
+    ), queued AS (
+        INSERT INTO hourly_data_queue (datetime, tz_offset)
+        SELECT DISTINCT
+            date_trunc('hour', updated.datetime)
+          , utc_offset(updated.datetime, _tzid)
+        FROM updated
+        ON CONFLICT (datetime, tz_offset) DO UPDATE
+        SET modified_on = now()
+          , modified_count = hourly_data_queue.modified_count + 1
+        RETURNING 1
+    )
+    SELECT (SELECT COUNT(*) FROM updated), (SELECT COUNT(*) FROM queued)
+      INTO _measurements_updated, _hours_queued;
+
+    UPDATE sensors
+    SET measurands_id = p_to_measurands_id
+    WHERE sensors_id = p_sensor_id;
+
+    RAISE NOTICE 'Conversion complete: measurements %/%, % hours queued for recalculation',
+        _measurements_updated, _measurements_total, _hours_queued;
+END;
+$$ LANGUAGE plpgsql;
